@@ -26,7 +26,7 @@
 //! {...}}`. Exit codes: 0 on success, 1 on every forge failure, and the
 //! `state` word carries which failure it was. 2 stays clap's.
 
-use std::io::IsTerminal;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -469,6 +469,10 @@ fn login(args: LoginArgs) -> Result<()> {
         &cancel,
         &door.ctx,
     );
+    // Whatever the wait left standing on the terminal goes before
+    // anything is printed over it: a refusal written into "Still
+    // waiting, 13 minutes left." reads as both at once (JOY-02A9-48).
+    progress.clear();
     match outcome {
         Ok(result) if result.known => signed_in(
             &door.host,
@@ -495,8 +499,15 @@ fn login(args: LoginArgs) -> Result<()> {
             // The connector's own `error` event carries the reason; the
             // sink kept it, because the runner's error keeps the
             // message alone.
-            let (state, message) = match progress.failure {
+            let (state, message) = match progress.failure.take() {
                 Some((code, message)) => (state_of_code(&code).to_string(), message),
+                // Nothing was refused: joy itself stopped the call, so
+                // the sentence says which sign in it stopped and how
+                // much of the code was left (D3.10: one sentence, one
+                // next step).
+                None if error.state() == "plugin_timed_out" => {
+                    ("expired".to_string(), progress.stopped_sentence(&door.host))
+                }
                 None => (error.state().to_string(), error.to_string()),
             };
             refused(Refusal::new(&door.host, &state, message))
@@ -627,6 +638,9 @@ fn state_of_code(code: &str) -> &'static str {
         "network" | "offline" => "offline",
         "rate_limited" => "rate_limited",
         "no-login" | "no-keychain" | "no-login-for-repo" | "needs_sign_in" => "needs_sign_in",
+        // The organisation's own wall (D2.7c): nobody signs their way
+        // through it, so it is never `needs_sign_in`.
+        "needs_org_approval" => "needs_org_approval",
         "busy" => "busy",
         _ => "error",
     }
@@ -679,13 +693,86 @@ fn refused(refusal: Refusal) -> Result<()> {
 }
 
 /// What the person sees while the connector polls the forge: the two
-/// lines of D3.10 on stderr, and the countdown the verification event
-/// asked for. The CLI never opens a browser.
+/// lines of D3.10 on stderr, and the countdown the CONNECTOR reports.
+/// The CLI never opens a browser and never counts the time itself: the
+/// seconds it prints are the `seconds_left` of the event it just read,
+/// so the countdown, the connector's own deadline and the runner's
+/// bound are one number and not three (JOY-02A9-48).
 #[derive(Default)]
 struct LoginProgress {
     /// The last `error` event, kept because the runner's error carries
     /// the message but not the connector's own code.
     failure: Option<(String, String)>,
+    /// The width of the progress line standing on the terminal, which
+    /// has to be wiped before anything else is written over it. Without
+    /// this the refusal was printed INTO "Still waiting, 13 minutes
+    /// left." and the person read both at once.
+    standing: usize,
+    /// The last countdown the connector reported, and the moment it
+    /// reported it, for the sentence a stopped call ends with. Both
+    /// halves are needed: the number the connector wrote is the code's
+    /// life at THAT moment, and joy waits on after it. Reporting it as
+    /// it stands made a silent connector's one second code read "the
+    /// code had 1 second left" after joy had waited twenty (the review
+    /// of JOY-02A9-48).
+    seconds_left: Option<(u64, std::time::Instant)>,
+    /// The connector has said its last word (`result` or `error`).
+    /// Nothing is printed after it, and the call has only as long as it
+    /// takes the process to exit.
+    finished: bool,
+}
+
+/// How long a connector has to exit after its last event. The loop ends
+/// on end of file long before this; the bound exists so that a
+/// connector which says `error` and then hangs cannot hold a person's
+/// terminal for the rest of the code's life.
+const AFTER_THE_LAST_WORD: std::time::Duration = std::time::Duration::from_secs(5);
+
+impl LoginProgress {
+    /// Wipe the progress line, if one is standing.
+    fn clear(&mut self) {
+        if self.standing == 0 {
+            return;
+        }
+        eprint!("\r{:width$}\r", "", width = self.standing);
+        let _ = std::io::stderr().flush();
+        self.standing = 0;
+    }
+
+    /// One progress line, in place of the last one.
+    fn say(&mut self, line: &str) {
+        if !std::io::stderr().is_terminal() {
+            return;
+        }
+        let pad = self.standing.saturating_sub(line.chars().count());
+        eprint!("\r{line}{:pad$}", "", pad = pad);
+        let _ = std::io::stderr().flush();
+        self.standing = line.chars().count();
+    }
+
+    /// The sentence for a sign in joy itself stopped: it names which
+    /// sign in it was and how much of the code's life was left, because
+    /// "the forge plugin did not answer in time and was stopped" tells
+    /// a person who was standing at the forge's page nothing they can
+    /// act on. The next step is the help line under it, which is this
+    /// command's own door.
+    fn stopped_sentence(&self, host: &str) -> String {
+        match self.left_now() {
+            Some(left) if left > 0 => format!(
+                "joy stopped the sign in to {host} while it was still waiting for you; \
+                 the code had {} left.",
+                minutes(left)
+            ),
+            _ => format!("joy stopped the sign in to {host} before it finished."),
+        }
+    }
+
+    /// What is left of the code NOW, counted from the last number the
+    /// connector reported. `None` when the connector never named one.
+    fn left_now(&self) -> Option<u64> {
+        self.seconds_left
+            .map(|(left, seen)| left.saturating_sub(seen.elapsed().as_secs()))
+    }
 }
 
 impl forge_plugins::EventSink for LoginProgress {
@@ -703,9 +790,11 @@ impl forge_plugins::EventSink for LoginProgress {
                     .and_then(|c| c.as_str())
                     .unwrap_or_default();
                 let seconds = event.get("expires_in").and_then(|e| e.as_u64());
+                self.clear();
                 eprintln!("Open {url}");
                 eprintln!("Enter the code {code}");
                 if let Some(seconds) = seconds {
+                    self.seconds_left = Some((seconds, std::time::Instant::now()));
                     eprintln!(
                         "Waiting for you; the code is good for {}.",
                         minutes(seconds)
@@ -715,11 +804,22 @@ impl forge_plugins::EventSink for LoginProgress {
                 // call's deadline, capped by the runner (D2.3).
                 seconds.map(std::time::Duration::from_secs)
             }
-            "waiting" => {
-                if std::io::stderr().is_terminal() {
-                    if let Some(left) = event.get("seconds_left").and_then(|s| s.as_u64()) {
-                        eprint!("\rStill waiting, {} left.   ", minutes(left));
-                    }
+            // A wait AFTER the connector's last word is not a wait: the
+            // stream is over and a countdown printed under a refusal is
+            // noise on top of the sentence that matters.
+            "waiting" if !self.finished => {
+                if let Some(left) = event.get("seconds_left").and_then(|s| s.as_u64()) {
+                    self.seconds_left = Some((left, std::time::Instant::now()));
+                    // The reason of D2.4, where the connector named
+                    // one: a poll that is waiting out a name that does
+                    // not resolve says so instead of counting silently.
+                    let line = match event.get("reason").and_then(|r| r.as_str()) {
+                        Some(reason) if !reason.trim().is_empty() => {
+                            format!("Still waiting, {} left ({}).", minutes(left), reason.trim())
+                        }
+                        _ => format!("Still waiting, {} left.", minutes(left)),
+                    };
+                    self.say(&line);
                 }
                 None
             }
@@ -735,7 +835,15 @@ impl forge_plugins::EventSink for LoginProgress {
                     .unwrap_or("the sign in did not finish")
                     .to_string();
                 self.failure = Some((code, message));
-                None
+                self.finished = true;
+                self.clear();
+                // The connector has spoken; what is left is its exit.
+                Some(AFTER_THE_LAST_WORD)
+            }
+            "result" => {
+                self.finished = true;
+                self.clear();
+                Some(AFTER_THE_LAST_WORD)
             }
             _ => None,
         }
@@ -746,6 +854,7 @@ impl forge_plugins::EventSink for LoginProgress {
 /// at the end.
 fn minutes(seconds: u64) -> String {
     match seconds {
+        1 => "1 second".to_string(),
         0..=90 => format!("{seconds} seconds"),
         _ => format!("{} minutes", seconds / 60),
     }
@@ -1175,6 +1284,12 @@ fn logout_one(door: &Door) -> Result<LogoutPayload, Refusal> {
     if let Some(refusal) = refused_removal(door, &outcome) {
         return Err(refusal);
     }
+    if outcome.removed {
+        // The credential is gone, so what it achieved on this host goes
+        // with it: a 404 after this is a 404 again and not "your
+        // organisation must approve Joy" (D1.8b, JOY-02A9-48).
+        joy_core::vcs::contact::forget_token_worked(&door.host);
+    }
     let command = outcome
         .command
         .clone()
@@ -1362,6 +1477,45 @@ fn plugins() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The sentence a stopped sign in ends with names what was left
+    /// WHEN JOY STOPPED, not the last number the connector wrote
+    /// (JOY-02A9-48). joy waits on after that event, so the number
+    /// ages, and a code with ten minutes on it when the connector last
+    /// spoke has ten minutes less thirty seconds a half minute later.
+    #[test]
+    fn the_stopped_sentence_counts_the_code_down_to_now() {
+        let mut progress = LoginProgress {
+            seconds_left: Some((
+                600,
+                std::time::Instant::now() - std::time::Duration::from_secs(120),
+            )),
+            ..LoginProgress::default()
+        };
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test while it was still waiting for you; \
+             the code had 8 minutes left."
+        );
+
+        // A code that ran out while joy waited gets no number at all,
+        // because there is none to give.
+        progress.seconds_left = Some((
+            1,
+            std::time::Instant::now() - std::time::Duration::from_secs(20),
+        ));
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test before it finished."
+        );
+
+        // And a connector that never named one says so too.
+        progress.seconds_left = None;
+        assert_eq!(
+            progress.stopped_sentence("github.test"),
+            "joy stopped the sign in to github.test before it finished."
+        );
+    }
 
     /// The one sentence every "sign in" text in this CLI ends with.
     #[test]

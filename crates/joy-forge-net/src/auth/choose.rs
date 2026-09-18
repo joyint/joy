@@ -90,6 +90,41 @@ pub fn no_login_for_repo(
     answer
 }
 
+/// The answer of D2.7c when no login can reach the repository because
+/// the OWNER organisation has not approved Joy.
+///
+/// This is not step 5 and must never be dressed as one: "None of your
+/// logins can reach acme/widgets. Sign in with the login that can."
+/// sends a person to sign in again with an account that will be refused
+/// for exactly the same reason, while the one action that helps belongs
+/// to somebody else, the organisation's owner, on one page
+/// (JOY-02A9-48).
+pub fn needs_org_approval(owner: &str, repo_path: &str, url: Option<&str>) -> serde_json::Value {
+    let mut answer = serde_json::json!({
+        "known": false,
+        "reason": "needs_org_approval",
+        "message": format!(
+            "Your organisation must approve Joy for this repository. \
+             {owner} has OAuth app access restrictions switched on, so no login of yours \
+             reaches {repo_path} until an owner of {owner} approves Joy."
+        ),
+    });
+    if let Some(url) = url.map(str::trim).filter(|url| !url.is_empty()) {
+        answer["action"] = serde_json::Value::String(url.to_string());
+    }
+    answer
+}
+
+/// The `owner` of an `owner/repo` path, which is the organisation an
+/// approval is asked of.
+pub fn owner_of(repo_path: &str) -> &str {
+    repo_path
+        .trim_matches('/')
+        .split('/')
+        .next()
+        .unwrap_or_default()
+}
+
 fn non_empty(value: Option<&str>) -> Option<String> {
     value
         .map(str::trim)

@@ -264,7 +264,7 @@ This is a correctness fix, not a refactor. `http.c` is compiled under `#ifndef G
 | Status 403, direction Fetch, `token_worked_before`, GitHub host | ask the oracle (D2.10): `rate_limited`, `needs_org_approval` or `denied` |
 | Status 403, direction Fetch, `token_worked_before`, GitLab host | `rate_limited` with the documented wait per instance kind of D2.10 (gitlab.com 15 minutes, self managed default 1 hour), without asking the plugin (the failed authentication ban). There is one such rule and it lives in D2.10 |
 | Status 403 or 404, direction Push, after a read on the same host succeeded | `no_push_rights` |
-| Status 404, direction Fetch, GitHub, token otherwise valid | `needs_org_approval` |
+| Status 401, 403 or 404 on a repository the CONNECTOR reported walled (D2.7c) | `needs_org_approval`, the organisation's settings page is the action |
 | Status 404, direction Fetch, otherwise | `error`, "github.com does not have this repository (renamed, deleted or not visible to this login)". Never `offline` |
 | Status 502, 503, 504 | `offline`, "github.com is not answering right now" |
 | Status 5xx other | `error` |
@@ -789,6 +789,8 @@ The plumbing exists and is unused on the device: `CallerFacts{login, user_id, to
 5. otherwise `{"known":false,"reason":"no-login-for-repo"}`, and the banner reads "None of your GitHub logins (work, scotty) can reach acme/widgets. Sign in with the login that can."
 
 The winner is cached per normalized remote (the same key as the ownership join) in the device state and thrown away on a 401, 403 or 404 from that remote and on logout. The probe is one request per remote, allowed on a `Background` host because it raises no prompt, and never per contact.
+
+**What the chosen login still costs, and why (JOY-02A9-48).** Steps 1 to 3 choose the LOGIN and know nothing about the repository, so where the call names a remote the chosen login is still asked once whether it reaches that repository. That keeps the budget of D1.9 at the one request per remote this section already allows, and it is what makes the answer the same whichever step chose the login: without it, whether a person was told about an organisation wall depended on a memory row. Step 5 may add exactly one more request, `GET /orgs/{owner}` for the owner's own record, and only on the path where no login reached the repository at all, which is the path that would otherwise print "Sign in with the login that can." at a person no sign in can help. Two requests is therefore the worst case for one remote, and one is the case every reachable remote takes. The wall question is never asked per contact, never for a remote a login reaches, and never twice in a call.
 
 **This is not academic.** gh keeps several accounts per host and documents the trap: "Without the --user flag, the active account for the host is chosen." (https://cli.github.com/manual/gh_auth_token). A plugin that calls `gh auth token --hostname H` and nothing else hands back whichever account the person last switched to, which is how a private repository gets pushed under a work login. tea is multi login per host too; glab holds one token per host block, so there the rule collapses to step 3.
 

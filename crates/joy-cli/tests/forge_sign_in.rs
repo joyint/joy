@@ -883,8 +883,17 @@ fn a_host_with_two_gh_accounts_probes_for_the_one_that_reaches_the_repository() 
         "one request per candidate, never per contact"
     );
 
-    // The winner is remembered per remote, so the second call spends
-    // nothing (D4.1c).
+    // The winner is remembered per remote, so the second call picks the
+    // login without asking any candidate (D4.1c): ONE request, not two,
+    // and it is the reach of the remembered login alone.
+    //
+    // That one request is deliberate (JOY-02A9-48). The memory decides
+    // which LOGIN answers and knows nothing about reachability, and an
+    // answer that skipped the question entirely made the organisation
+    // wall of D2.7c depend on a memory row: the same machine said
+    // "no login of yours can reach this" one minute and
+    // "your organisation must approve Joy" the next.
+    let before = fake.calls().len();
     let again = sandbox
         .connector_with_gh("scotty")
         .args([
@@ -898,5 +907,12 @@ fn a_host_with_two_gh_accounts_probes_for_the_one_that_reaches_the_repository() 
     let again = answer_of(&again);
     assert_eq!(again["login"], "work");
     assert_eq!(again["chose_by"], "memory");
-    assert_eq!(fake.calls().len(), 2, "the memory spends no request");
+    let spent = &fake.calls()[before..];
+    assert_eq!(
+        spent.len(),
+        1,
+        "the memory asks about the repository once and about no candidate: {spent:#?}"
+    );
+    assert_eq!(spent[0].path, "/api/v3/repos/acme/widgets");
+    assert_eq!(spent[0].authorization(), Some("Bearer gh-token-of-work"));
 }

@@ -875,6 +875,9 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
     Some(Reach {
         read: true,
         push: level >= DEVELOPER,
+        // GitLab has no OAuth application approval per group: a member
+        // either has the role or does not (D2.7c).
+        wall: false,
     })
 }
 

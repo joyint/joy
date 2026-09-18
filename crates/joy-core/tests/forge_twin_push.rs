@@ -447,7 +447,15 @@ verb="$1"
 case "$verb" in
   claims) echo '{{"claims":true}}' ;;
   web-url) echo '{{"known":true,"https_url":"{twin}"}}' ;;
-  token) echo '{{"known":true,"host":"127.0.0.1","login":"scotty-work","token":"{token}","username":"x-access-token","source":"keychain","chose_by":"only"}}' ;;
+  token)
+    # A case that needs another token answer says so; the default is the
+    # one a signed in machine gives.
+    if [ -n "$JOY_STUB_TOKEN_JSON" ]; then
+      echo "$JOY_STUB_TOKEN_JSON"
+    else
+      echo '{{"known":true,"host":"127.0.0.1","login":"scotty-work","token":"{token}","username":"x-access-token","source":"keychain","chose_by":"only"}}'
+    fi
+    ;;
   *) echo '{{"known":false}}' ;;
 esac
 "#
@@ -478,6 +486,12 @@ impl Drop for Machine {
         contact::clear_host_families();
         contact::clear_oracle();
         std::env::remove_var("JOY_STUB_ARGV");
+        std::env::remove_var("JOY_STUB_TOKEN_JSON");
+        // What a credential achieved on this host is process state and
+        // a row in the state file, exactly like the throttle's gaps and
+        // the transport memory: a case that taught it puts it back, or
+        // the next case in this binary inherits a token that worked.
+        contact::forget_token_worked("127.0.0.1");
         match self.path.take() {
             Some(path) => std::env::set_var("PATH", path),
             None => std::env::remove_var("PATH"),
@@ -1169,6 +1183,266 @@ fn a_configured_https_remote_uses_the_connector_s_token_in_one_contact() {
     assert!(
         resolver::recall("127.0.0.1").is_none(),
         "an https remote has no ssh story to remember"
+    );
+    drop(machine);
+}
+
+// ---------------------------------------------------------------------
+// "This token authenticated" outlives the process (JOY-02A9-48, D1.8b)
+// ---------------------------------------------------------------------
+
+/// The token answer of a connector that reads a FOREIGN CLI's
+/// credential: joy never validated it, so it proves nothing on its own
+/// and the state file has to carry the fact.
+const FOREIGN_TOKEN: &str = r#"{"known":true,"host":"127.0.0.1","login":"scotty-work","token":"a-token","username":"x-access-token","source":"gh","chose_by":"only"}"#;
+
+/// Write the row another joy process left behind: a credential
+/// authenticated on this host, minutes ago, in a command that has long
+/// since exited.
+fn another_process_signed_in(home: &Path, host: &str) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("a clock after 1970")
+        .as_secs();
+    std::fs::write(
+        home.join("forge-state.json"),
+        format!(
+            r#"{{"version":1,"hosts":{{}},"tokens":{{"{host}":{{"at":{now},"proof":"contact"}}}}}}"#
+        ),
+    )
+    .expect("the state another process left");
+}
+
+/// JOY-02A9-48, finding 1: a one shot CLI command makes exactly ONE
+/// contact, so "a credentialed contact to this host has already
+/// succeeded" can never be true in it as long as the fact lives in a
+/// process local map. The rows of D1.8b that need it then never fire.
+/// The fact lives in joy's own state file now, beside the transport
+/// memory of D1.2, so the row fires on the FIRST contact of a process.
+/// The connector here answers a credential it read out of `gh`, which
+/// joy never validated: the state file is the only thing that can
+/// answer, which is what makes this test about the state file.
+///
+/// The row it feeds is the PUSH row: a push refused where the read
+/// worked is "you can read this and not write it". A fetch 404 is NOT
+/// one of them (the review of JOY-02A9-48): this remote is
+/// `ssh://git@127.0.0.1/forge.git`, not an organisation repository at
+/// all, and calling it an organisation wall would send a person to a
+/// settings page that does not exist.
+#[test]
+fn a_token_that_authenticated_in_another_process_feeds_the_push_row() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+    std::env::set_var("JOY_STUB_TOKEN_JSON", FOREIGN_TOKEN);
+    another_process_signed_in(&machine.root, "127.0.0.1");
+    contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+    server.refuse.store(404, Ordering::SeqCst);
+
+    let missing = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge answered 404");
+
+    // The fetch reads as what it is, on every machine, signed in or not.
+    assert_eq!(
+        contact::failure_of(&missing),
+        contact::Failure::Error,
+        "no connector named a wall here: {missing}"
+    );
+    assert!(
+        missing
+            .to_string()
+            .contains("does not have this repository"),
+        "{missing}"
+    );
+    assert!(
+        server.requests.load(Ordering::SeqCst) >= 2,
+        "the 401 and its replay: the token really went over the wire"
+    );
+
+    // The same fact, on the row it belongs to: a push the forge refuses
+    // where the read worked is "you can read this and not write it".
+    assert!(contact::token_worked_before("127.0.0.1"));
+    let refused = contact::classify(&contact::ContactEvidence {
+        error: git2::Error::new(
+            git2::ErrorCode::GenericError,
+            git2::ErrorClass::Http,
+            "unexpected http status code: 404",
+        ),
+        transport: contact::Transport::Https,
+        direction: contact::ContactDirection::Push,
+        credential: contact::CredentialSource::TokenPresented,
+        token_worked_before: contact::token_worked_before("127.0.0.1"),
+        host: "127.0.0.1".to_string(),
+        proxy: None,
+        org_wall: None,
+    });
+    assert_eq!(refused, contact::Failure::NoPushRights);
+    drop(machine);
+}
+
+/// The other half, and the reason the row is written only where a
+/// credential really authenticated: a machine that has never got in
+/// anywhere reads a 404 as a 404. joy invents no wall.
+#[test]
+fn a_404_stays_a_missing_repository_where_no_token_ever_authenticated() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+    std::env::set_var("JOY_STUB_TOKEN_JSON", FOREIGN_TOKEN);
+    contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+    server.refuse.store(404, Ordering::SeqCst);
+
+    let missing = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge answered 404");
+
+    assert_eq!(
+        contact::failure_of(&missing),
+        contact::Failure::Error,
+        "no credential has ever authenticated here, so this is a missing repository: {missing}"
+    );
+    assert!(
+        missing
+            .to_string()
+            .contains("does not have this repository"),
+        "{missing}"
+    );
+    drop(machine);
+}
+
+/// D1.7 and D2.4: the connector's own answer says when it validated the
+/// token. An entry of its own vault was checked with `identity` before
+/// it went in, so the first contact of a fresh process already knows
+/// that a token for this host is good, and the state file carries it on
+/// to the next process.
+#[test]
+fn a_token_the_connector_validated_counts_at_once_and_is_written_down() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+    contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, "ssh://git@127.0.0.1/forge.git", base);
+    server.refuse.store(404, Ordering::SeqCst);
+
+    let missing = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge answered 404");
+
+    assert_eq!(
+        contact::failure_of(&missing),
+        contact::Failure::Error,
+        "the fetch is a missing repository; the fact is what is written down: {missing}"
+    );
+    let written = std::fs::read_to_string(machine.root.join("forge-state.json"))
+        .expect("joy's own state file");
+    assert!(
+        written.contains("\"tokens\"") && written.contains("127.0.0.1"),
+        "and the next process reads it from here: {written}"
+    );
+    assert!(
+        !written.contains("a-token"),
+        "the fact is written down, never the credential: {written}"
+    );
+    drop(machine);
+}
+
+/// JOY-02A9-48, finding 2, engine half: where the CONNECTOR found an
+/// organisation wall, the forge's own refusal of that repository is
+/// that wall, and the approval page travels with it (D2.7c, D1.8b).
+///
+/// Both numbers are proved, because both are what GitHub really
+/// answers: 404 for a private repository a token may not see, and the
+/// 401 the unauthenticated twin gets when there is no credential to
+/// present at all. Neither may read as "sign in", because the person IS
+/// signed in and no sign in of theirs can help.
+#[test]
+fn a_wall_the_connector_named_is_the_verdict_for_this_repository() {
+    let _serial = lock();
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let forge_dir = tmp.path().join("forge.git");
+    let base = forge_repository(&forge_dir);
+    let server = serve(forge_dir.clone(), Answer::Ok);
+    let machine = machine(&server.url("forge.git"), "a-token");
+    let approval = "https://github.com/organizations/acme/settings/oauth_application_policy";
+    std::env::set_var(
+        "JOY_STUB_TOKEN_JSON",
+        format!(
+            r#"{{"known":false,"reason":"needs_org_approval","message":"Your organisation must approve Joy for this repository.","action":"{approval}"}}"#
+        ),
+    );
+    contact::set_host_family("127.0.0.1", contact::HostFamily::GitHub);
+
+    let checkout = tmp.path().join("checkout");
+    checkout_ahead(&checkout, &forge_dir, &server.url("forge.git"), base);
+    server.refuse.store(404, Ordering::SeqCst);
+
+    let walled = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge answered 404");
+    assert_eq!(
+        contact::failure_of(&walled),
+        contact::Failure::NeedsOrgApproval,
+        "{walled}"
+    );
+    assert_eq!(
+        contact::action_of(&walled).as_deref(),
+        Some(approval),
+        "the page an owner acts on travels with the state: {walled}"
+    );
+    assert_eq!(
+        contact::Failure::NeedsOrgApproval.sentence("127.0.0.1"),
+        "Your organisation must approve Joy for this repository."
+    );
+
+    // The same wall behind the 401 a private repository answers when
+    // there is no credential to present.
+    resolver::invalidate_all_facts();
+    server.refuse.store(0, Ordering::SeqCst);
+    let challenged = forge::fetch_ref(
+        &checkout,
+        &Auth::local(HostKind::Background),
+        "refs/joy/chats",
+        "refs/joy/chats-tracking",
+    )
+    .expect_err("the forge asked for a credential joy does not have");
+    assert_eq!(
+        contact::failure_of(&challenged),
+        contact::Failure::NeedsOrgApproval,
+        "a person behind the wall is signed in already: {challenged}"
     );
     drop(machine);
 }

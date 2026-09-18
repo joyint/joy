@@ -188,6 +188,52 @@ struct StateFile {
     version: u32,
     #[serde(default)]
     hosts: BTreeMap<String, HostMemory>,
+    /// What a credential has already achieved on a host (D1.8b), beside
+    /// the transport memory and with a life of its own: the transport
+    /// rows are dropped when an agent appears or a key file changes,
+    /// and none of that says anything about a token.
+    #[serde(default)]
+    tokens: BTreeMap<String, TokenMemory>,
+}
+
+/// Who proved that a token for this host is good for something.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TokenProof {
+    /// A credentialed contact to the host succeeded: the forge served
+    /// joy something with the credential joy presented.
+    Contact,
+    /// The connector answered a token it had validated itself: an entry
+    /// of its own vault, which nothing enters without `identity`, or a
+    /// login the probe of D4.1c chose by asking the forge with it.
+    Connector,
+}
+
+impl TokenProof {
+    /// The word the state file carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TokenProof::Contact => "contact",
+            TokenProof::Connector => "connector",
+        }
+    }
+}
+
+/// One host's answer to "has a credential ever authenticated here".
+///
+/// It is the difference between a 404 that means "no such repository"
+/// and a 404 that means "your organisation has not approved Joy"
+/// (D1.8b), and it has to survive the process: a one shot CLI command
+/// makes exactly ONE contact, so a fact that only a second contact of
+/// the same process can establish is never established at all
+/// (JOY-02A9-48).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenMemory {
+    /// When it was written, in seconds since the epoch.
+    #[serde(default)]
+    pub at: u64,
+    /// `contact` or `connector`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proof: Option<String>,
 }
 
 static STATE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -311,6 +357,56 @@ pub fn forget(host: &str) {
     let host = host.to_ascii_lowercase();
     with_state(|path, state| {
         if state.hosts.remove(&host).is_some() {
+            write_state(path, state);
+        }
+    });
+}
+
+/// Remember that a credential authenticated on this host (D1.8b, the
+/// 403 and 404 rows).
+///
+/// Best effort, exactly like every other row here: a state directory
+/// that cannot be written costs the memory and never the operation.
+/// Nothing about the credential itself is written, only that one
+/// worked: no token, no login, no scope.
+pub fn note_token_worked(host: &str, proof: TokenProof) {
+    if host.is_empty() {
+        return;
+    }
+    let host = host.to_ascii_lowercase();
+    with_state(|path, state| {
+        state.version = 1;
+        state.tokens.insert(
+            host,
+            TokenMemory {
+                at: unix_now(),
+                proof: Some(proof.as_str().to_string()),
+            },
+        );
+        write_state(path, state);
+    });
+}
+
+/// Whether a credential has authenticated on this host inside the TTL,
+/// as recorded by THIS process or by any other one on this machine.
+pub fn token_worked(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    let Some(path) = state_file() else {
+        return false;
+    };
+    let now = unix_now();
+    read_state(&path)
+        .tokens
+        .get(&host)
+        .is_some_and(|memory| now.saturating_sub(memory.at) < MEMORY_TTL.as_secs())
+}
+
+/// Take that fact back: a logout, and the tests, which must leave no
+/// row behind for the next case.
+pub fn forget_token(host: &str) {
+    let host = host.to_ascii_lowercase();
+    with_state(|path, state| {
+        if state.tokens.remove(&host).is_some() {
             write_state(path, state);
         }
     });
@@ -651,9 +747,104 @@ pub fn invalidate_facts(host: &str) {
         .retain(|key, _| !key.starts_with(&format!("{host}\u{1}")));
 }
 
+// ---------------------------------------------------------------------
+// The organisation wall a connector named (D2.7c, D1.8b)
+// ---------------------------------------------------------------------
+
+/// What the connector answered when it found an organisation wall in
+/// front of a repository: the token is good, the login is the right
+/// one, and the organisation has not approved Joy (D2.7c).
+///
+/// It is kept per host AND repository, because it is a fact about ONE
+/// repository: another repository of the same host, owned by another
+/// organisation, is not walled by it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrgWall {
+    /// `owner/repo`, lowercased and without the `.git` tail.
+    pub repo: String,
+    /// The organisation's own settings page, which is the action of
+    /// D1.8b: a person told that their organisation must approve Joy
+    /// and not told where cannot act on the sentence.
+    pub url: Option<String>,
+}
+
+static WALLS: Mutex<Option<BTreeMap<String, OrgWall>>> = Mutex::new(None);
+
+/// `owner/repo` of a remote, lowercased and without the `.git` tail, so
+/// the ssh remote and its https twin give the same key.
+fn repo_key(url: &str) -> String {
+    let path = super::remote_url::RemoteUrl::parse(url)
+        .map(|parsed| parsed.path)
+        .unwrap_or_default();
+    let path = path.trim_matches('/');
+    // ONE `.git` tail, not every one of them: `trim_end_matches` strips
+    // repeatedly, so a repository genuinely called `thing.git` keyed as
+    // `thing` and collided with its neighbour (JOY-02A9-48).
+    path.strip_suffix(".git")
+        .unwrap_or(path)
+        .to_ascii_lowercase()
+}
+
+/// The key one wall is remembered under: the host and the repository,
+/// the same shape the connector answer was about.
+fn wall_key(host: &str, repo: &str) -> String {
+    format!("{}\u{1}{repo}", host.to_ascii_lowercase())
+}
+
+/// Remember the wall the connector named for this remote.
+pub fn note_org_wall(host: &str, remote: &str, url: Option<String>) {
+    if host.is_empty() {
+        return;
+    }
+    let repo = repo_key(remote);
+    WALLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(BTreeMap::new)
+        .insert(wall_key(host, &repo), OrgWall { repo, url });
+}
+
+/// The wall a connector named for THIS remote, if it named one.
+pub fn org_wall(host: &str, remote: &str) -> Option<OrgWall> {
+    let repo = repo_key(remote);
+    WALLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(BTreeMap::new)
+        .get(&wall_key(host, &repo))
+        .cloned()
+}
+
+/// Take back the wall around ONE remote: the connector answered
+/// something else about it, so whatever was remembered is over.
+fn note_no_org_wall(host: &str, remote: &str) {
+    let repo = repo_key(remote);
+    WALLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(BTreeMap::new)
+        .remove(&wall_key(host, &repo));
+}
+
+/// Forget every wall of this host: the connector is asked again and may
+/// answer differently once an owner has approved Joy.
+pub fn forget_org_wall(host: &str) {
+    let prefix = format!("{}\u{1}", host.to_ascii_lowercase());
+    WALLS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(BTreeMap::new)
+        .retain(|key, _| !key.starts_with(&prefix));
+}
+
 /// Drop every cached connector answer (the tests, and a logout).
 pub fn invalidate_all_facts() {
     FACTS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(BTreeMap::new)
+        .clear();
+    WALLS
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(BTreeMap::new)
@@ -785,9 +976,23 @@ pub fn host_facts(
     };
     let answer = crate::forge_plugins::token_for(spec, &target, access, &context);
     let mut ttl = FACTS_TTL;
+    let mut walled = false;
     let token = match answer {
         Ok(answer) if answer.known => {
             ttl = token_ttl(answer.expires_at.as_deref());
+            // The connector validated this token where it says so
+            // (D2.4): a token out of its own vault was checked with
+            // `identity` before it went in, and a login the probe of
+            // D4.1c chose was chosen by asking the forge with it. That
+            // is "this token authenticated", and the 403 and 404 rows
+            // of D1.8b need it on the FIRST contact of a process
+            // (JOY-02A9-48).
+            if validated_by_connector(answer.source.as_deref(), answer.chose_by.as_deref()) {
+                note_token_worked(&host, TokenProof::Connector);
+            }
+            // A token for this remote is the opposite of a wall around
+            // it, whatever was remembered a moment ago.
+            note_no_org_wall(&host, remote);
             answer
                 .token
                 .filter(|t| !t.is_empty())
@@ -798,7 +1003,27 @@ pub fn host_facts(
                     source: answer.source.clone(),
                 })
         }
-        Ok(_) => None,
+        Ok(answer) => {
+            // "Not this login" and "this organisation has not approved
+            // Joy" are two different answers, and only the connector
+            // can tell them apart (D2.7c). The wall it named travels to
+            // the classifier, which would otherwise read the forge's
+            // 404 as "github.com does not have this repository".
+            if answer.reason.as_deref() == Some("needs_org_approval") {
+                note_org_wall(&host, remote, answer.action.clone());
+                note_token_worked(&host, TokenProof::Connector);
+                // A wall is not "nobody is signed in": it ends when an
+                // owner of the organisation acts, which is minutes away
+                // at best, so this answer keeps the full TTL instead of
+                // the five second window below. Re-asking every five
+                // seconds would spend the connector's REST budget on a
+                // question whose answer cannot change that fast.
+                walled = true;
+            } else {
+                note_no_org_wall(&host, remote);
+            }
+            None
+        }
         Err(e) => {
             tracing::debug!(forge = %host, error = %e, "the forge connector answered no token");
             None
@@ -807,7 +1032,7 @@ pub fn host_facts(
     // A token that is not there is not a token: it is remembered for
     // the short window above and re-asked, so a sign in that happened
     // in another process is seen within seconds (D1.7).
-    if token.is_none() {
+    if token.is_none() && !walled {
         ttl = NO_TOKEN_TTL;
     }
     let facts = HostFacts {
@@ -818,6 +1043,21 @@ pub fn host_facts(
     };
     cache_facts(&key, &facts, ttl.max(Duration::from_secs(1)));
     facts
+}
+
+/// Whether a `token` answer implies a token the CONNECTOR validated.
+///
+/// Two sources are joy's own vault, and nothing enters it that
+/// `identity` did not accept first (D2.4's `token-store`, and the
+/// `login` that finishes with an account call). `probe` is the step of
+/// D4.1c that asks the forge for `owner/repo` with the token in hand,
+/// so a login it chose answered the forge a moment ago.
+///
+/// A credential from `gh`, `glab`, `tea` or an environment variable is
+/// none of that: joy never validated it, and a token nobody checked
+/// must not decide what a 404 means.
+fn validated_by_connector(source: Option<&str>, chose_by: Option<&str>) -> bool {
+    matches!(source, Some("keychain") | Some("file")) || chose_by == Some("probe")
 }
 
 /// The forge kind whose shape the twin should present (D1.6).

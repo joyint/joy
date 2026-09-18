@@ -38,6 +38,7 @@ fn evidence(
         token_worked_before,
         host: host.to_string(),
         proxy: None,
+        org_wall: None,
     }
 }
 
@@ -331,6 +332,7 @@ fn a_proxy_407_names_the_proxy_and_the_two_texts_differ() {
             token_worked_before: true,
             host: "github.com".to_string(),
             proxy: None,
+            org_wall: None,
         }
         .through_proxy("proxy.acme.example:8080")
     };
@@ -608,6 +610,12 @@ fn the_winhttp_corpus_reads_the_same_in_english_and_in_german() {
 
 /// A 404 on a fetch is never "offline": either the organisation has not
 /// approved Joy, or the repository is not there for this login (D1.8b).
+///
+/// Which of the two it is comes from the CONNECTOR and never from "a
+/// token authenticated here once" (JOY-02A9-48). On a signed-in machine
+/// that older reading turned every renamed repository under your own
+/// account into "Your organisation must approve Joy for this
+/// repository", with no page to go to.
 #[test]
 fn a_404_is_never_offline() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -618,10 +626,38 @@ fn a_404_is_never_offline() {
         "unexpected http status code: 404",
     );
     let github = https_fetch(not_found, "github.com");
+    let v = verdict(&github);
     assert_eq!(
-        classify(&github),
-        Failure::NeedsOrgApproval,
-        "a token that works elsewhere plus a 404 on GitHub is the approval wall"
+        v.failure,
+        Failure::Error,
+        "a signed-in machine plus a 404 on GitHub is still a missing repository"
+    );
+    assert!(
+        v.sentence.contains("does not have this repository"),
+        "{}",
+        v.sentence
+    );
+
+    // Where the connector found the wall, the same 404 is the wall, and
+    // the page an owner acts on travels with it.
+    let mut walled = https_fetch(
+        error(
+            Code::GenericError,
+            Class::Http,
+            "unexpected http status code: 404",
+        ),
+        "github.com",
+    );
+    walled.org_wall = Some(super::super::resolver::OrgWall {
+        repo: "acme/widgets".to_string(),
+        url: Some(
+            "https://github.com/organizations/acme/settings/oauth_application_policy".to_string(),
+        ),
+    });
+    assert_eq!(classify(&walled), Failure::NeedsOrgApproval);
+    assert_eq!(
+        verdict(&walled).action.as_deref(),
+        Some("https://github.com/organizations/acme/settings/oauth_application_policy")
     );
 
     let elsewhere = evidence(
@@ -1678,6 +1714,11 @@ fn a_documented_ban_sets_its_own_next_try() {
 #[test]
 fn a_credential_that_worked_is_remembered_for_the_host() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    // The fact outlives the process, so it is written to joy's own
+    // state file (D1.2, JOY-02A9-48) - and a test writes it HERE and
+    // never into the person's own state directory.
+    let home = tempfile::tempdir().expect("tempdir");
+    crate::vcs::resolver::set_state_file(Some(home.path().join("forge-state.json")));
     reset_limits();
     reset_throttle();
     reset_token_memory();
@@ -1704,6 +1745,7 @@ fn a_credential_that_worked_is_remembered_for_the_host() {
     assert!(!token_worked_before("worked.test"));
     reset_token_memory();
     set_gaps("");
+    crate::vcs::resolver::set_state_file(None);
 }
 
 /// D1.7's one re-ask: only a token that has already worked here and is

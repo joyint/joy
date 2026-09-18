@@ -755,6 +755,9 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
             .pointer("/permissions/push")
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
+        // The Gitea family has no application approval per
+        // organisation, so there is no wall of D2.7c to find here.
+        wall: false,
     })
 }
 

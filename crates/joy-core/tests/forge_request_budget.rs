@@ -32,12 +32,21 @@ use std::sync::Arc;
 
 use joy_core::vcs::contact;
 use joy_core::vcs::forge::{fetch_ref, Auth};
+use joy_core::vcs::resolver;
 
 const CHATS_REF: &str = "refs/joy/chats";
 
 /// The gap table joy-core keeps is process-wide: the tests that set it
 /// run one at a time.
 static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// joy's own state file, inside this case's temporary directory. A
+/// contact that authenticates writes down that a credential worked on
+/// the host (D1.8b, JOY-02A9-48), and a test must never write that into
+/// the person's own state directory.
+fn state_file_in(tmp: &std::path::Path) {
+    resolver::set_state_file(Some(tmp.join("forge-state.json")));
+}
 
 /// One HTTP request the server answered.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -250,6 +259,7 @@ fn forge_repository(dir: &std::path::Path) -> (Vec<(String, git2::Oid)>, git2::O
 fn one_fetch_of_a_private_remote_costs_three_requests() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
+    state_file_in(tmp.path());
     let forge = tmp.path().join("forge.git");
     let (refs, tip) = forge_repository(&forge);
     let server = serve(forge.clone(), refs, tip);
@@ -326,6 +336,7 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
     );
 
     contact::set_gaps("");
+    resolver::set_state_file(None);
 }
 
 /// One `ls_remote_refs` for two refs is ONE contact and two requests:
@@ -335,6 +346,7 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
 fn one_poll_tick_makes_one_contact_for_two_refs() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
+    state_file_in(tmp.path());
     let forge = tmp.path().join("forge.git");
     let (refs, tip) = forge_repository(&forge);
     let server = serve(forge.clone(), refs, tip);
@@ -366,6 +378,7 @@ fn one_poll_tick_makes_one_contact_for_two_refs() {
         "the 401 and its replay, and nothing else: {seen:#?}"
     );
     contact::set_gaps("");
+    resolver::set_state_file(None);
 }
 
 /// J5's acceptance, measured from OUTSIDE the crate with the public
@@ -409,6 +422,7 @@ fn after_a_429_the_next_contact_to_that_host_waits_twice_the_gap() {
     );
 
     contact::set_gaps("");
+    resolver::set_state_file(None);
 }
 
 /// D1.9, no anonymous polling, on the desktop's own shape: `Auth::Local`
@@ -420,6 +434,7 @@ fn after_a_429_the_next_contact_to_that_host_waits_twice_the_gap() {
 fn a_public_remote_nobody_is_signed_in_for_is_polled_every_fifteen_minutes() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let tmp = tempfile::tempdir().expect("tempdir");
+    state_file_in(tmp.path());
     let forge = tmp.path().join("forge.git");
     let (refs, tip) = forge_repository(&forge);
     let server = serve_public(forge.clone(), refs, tip);
@@ -484,4 +499,5 @@ fn a_public_remote_nobody_is_signed_in_for_is_polled_every_fifteen_minutes() {
     assert_eq!(server.requests.load(Ordering::SeqCst), 2);
 
     contact::set_gaps("");
+    resolver::set_state_file(None);
 }

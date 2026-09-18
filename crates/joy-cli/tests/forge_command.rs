@@ -1198,3 +1198,174 @@ fn a_live_session(machine: &Machine) -> String {
         .trim()
         .to_string()
 }
+
+// ---------------------------------------------------------------------
+// What the person sees while a sign in runs (JOY-02A9-48, D3.10)
+// ---------------------------------------------------------------------
+
+/// A connector whose sign in waits twice and then fails: the shape of
+/// the run that produced this item. The second wait carries the reason
+/// of D2.4, which is what a poll that is riding out a transport fault
+/// reports.
+const FAILING_LOGIN: &str = r#"#!/bin/sh
+if [ "$1" = "version" ]; then
+  echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}'
+  exit 0
+fi
+forge="$1"
+shift
+verb="$1"
+shift
+host=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) host="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$verb" in
+  claims) echo '{"claims":true}' ;;
+  login)
+    printf '{"event":"verification","host":"%s","url":"https://github.test/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":900,"interval":5}\n' "$host"
+    echo '{"event":"waiting","seconds_left":895}'
+    echo '{"event":"waiting","seconds_left":890,"reason":"github.test could not be reached: Temporary failure in name resolution"}'
+    echo '{"event":"error","code":"network","message":"the sign in to github.test could not be finished: Temporary failure in name resolution"}'
+    ;;
+  *) echo '{"known":false}' ;;
+esac
+"#;
+
+/// A connector that says the code is good for one second and then stops
+/// answering: the "did not answer in time" path, with nothing of its
+/// own to say about it.
+const SILENT_AFTER_THE_CODE: &str = r#"#!/bin/sh
+if [ "$1" = "version" ]; then
+  echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}'
+  exit 0
+fi
+forge="$1"
+shift
+verb="$1"
+shift
+host=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --host) host="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$verb" in
+  claims) echo '{"claims":true}' ;;
+  login)
+    printf '{"event":"verification","host":"%s","url":"https://github.test/login/device","url_complete":null,"code":"WDJB-MJHT","expires_in":1,"interval":5}\n' "$host"
+    if [ -x /bin/sleep ]; then /bin/sleep 60
+    elif [ -x /usr/bin/sleep ]; then /usr/bin/sleep 60
+    else i=0; while [ $i -lt 100000000 ]; do i=$((i+1)); done
+    fi
+    ;;
+  *) echo '{"known":false}' ;;
+esac
+"#;
+
+/// The last thing written on the terminal line that carries `text`:
+/// everything after the carriage return or newline before it. It is
+/// what a person really READS there, which is the whole point of
+/// wiping a progress line before printing over it.
+fn line_showing<'a>(seen: &'a str, text: &str) -> &'a str {
+    seen.split(['\r', '\n'])
+        .find(|part| part.contains(text))
+        .unwrap_or_default()
+}
+
+/// JOY-02A9-48, finding 4: after the connector's `error` event the CLI
+/// prints that error and stops.
+///
+/// Two things went wrong in the run that found this, and both are here:
+/// the countdown was left standing on the terminal, so the refusal was
+/// printed INTO "Still waiting, 14 minutes left." and the person read
+/// both at once; and the run had to be waited out rather than ending
+/// when the connector did.
+#[test]
+fn a_login_that_fails_prints_the_error_and_stops() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", FAILING_LOGIN);
+
+    let started = std::time::Instant::now();
+    let (ok, seen) = on_a_terminal(&machine, &["forge", "login", "--host", "github.test"], "");
+    let took = started.elapsed();
+
+    assert!(!ok, "a sign in that failed exits 1: {seen}");
+    assert!(
+        seen.contains("the sign in to github.test could not be finished"),
+        "the connector's own sentence reaches the person: {seen}"
+    );
+    assert!(
+        seen.contains("= note: state offline"),
+        "under the state its code names: {seen}"
+    );
+    // The wait was shown while it ran, with the reason the connector
+    // gave for it.
+    assert!(seen.contains("Still waiting"), "{seen}");
+    assert!(
+        seen.contains("Temporary failure in name resolution"),
+        "the reason of D2.4 is shown, not swallowed: {seen}"
+    );
+    // And it is not standing under the refusal any more.
+    let line = line_showing(&seen, "could not be finished");
+    assert!(
+        !line.contains("Still waiting"),
+        "the refusal is printed over a wiped line, not into the countdown: {line:?}"
+    );
+    assert!(
+        took < std::time::Duration::from_secs(30),
+        "the connector's exit ends the loop; the code's expiry is not waited out: {took:?}"
+    );
+}
+
+/// The other half of finding 4: where joy itself stops the call, the
+/// sentence says which sign in it stopped and how much of the code was
+/// left. "the forge plugin did not answer in time and was stopped"
+/// tells a person standing at the forge's page nothing they can act on.
+#[test]
+fn a_login_joy_stopped_names_the_sign_in_and_what_was_left_of_the_code() {
+    let machine = Machine::new();
+    machine.connector("joy-forge", SILENT_AFTER_THE_CODE);
+
+    let started = std::time::Instant::now();
+    let (ok, seen) = on_a_terminal(&machine, &["forge", "login", "--host", "github.test"], "");
+    let took = started.elapsed();
+
+    assert!(!ok, "{seen}");
+    assert!(
+        seen.contains("joy stopped the sign in to github.test"),
+        "the sentence names the sign in: {seen}"
+    );
+    // And what the code had left when joy stopped, which after joy's
+    // own wait on a one second code is nothing. Reporting the last
+    // number the connector wrote would read "the code had 1 second
+    // left" twenty seconds after that second ran out (the review of
+    // JOY-02A9-48).
+    assert!(
+        seen.contains("joy stopped the sign in to github.test before it finished."),
+        "the code was long gone, so no number is invented: {seen}"
+    );
+    assert!(
+        !seen.contains("1 second left"),
+        "the stale countdown is not the sentence: {seen}"
+    );
+    assert!(
+        seen.contains("= note: state expired"),
+        "under a state an agent reads: {seen}"
+    );
+    assert!(
+        seen.contains("= help: run `joy forge login --host github.test`"),
+        "with the one next step, which is this command's own door: {seen}"
+    );
+    // The bound is the code's own life plus the moment the connector
+    // needs to say its last word, and it starts when the code is
+    // issued, not when the process was spawned.
+    assert!(
+        took < std::time::Duration::from_secs(60),
+        "the call is bounded by the code, not by the fifteen minute cap: {took:?}"
+    );
+}

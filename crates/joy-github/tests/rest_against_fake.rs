@@ -520,3 +520,98 @@ fn a_stored_public_only_set_refuses_a_private_repository_without_a_request() {
         "the pre check spends no request at all"
     );
 }
+
+/// D2.7c and JOY-02A9-48: the GitHub connector tells the ORGANISATION's
+/// wall from "this login is not the one", and it does it on the forge's
+/// own evidence.
+///
+/// The cheap reading first: GitHub names the restriction in the body of
+/// its 403, so the probe answers the wall without spending a second
+/// request.
+#[test]
+fn a_403_naming_the_restriction_is_read_as_the_organisations_wall() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/repos/acme/demo" => Reply::json(
+            403,
+            r#"{"message":"Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions."}"#,
+        ),
+        _ => Reply::not_found(),
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+
+    let reach = joy_github::github::reaches_repo(host, "acme/demo", TOKEN, &ctx)
+        .expect("the forge answered");
+
+    assert!(reach.wall, "the restriction is named in the body");
+    assert!(!reach.read && !reach.push);
+    assert_eq!(fake.calls().len(), 1, "and nothing else is asked");
+}
+
+/// The paid reading, asked only where no login reached the repository:
+/// the OWNER's own organisation record is refused with the restriction
+/// named. That is the forge saying the wall exists, and it is the only
+/// thing that may name one.
+#[test]
+fn the_wall_is_the_owner_record_refused_with_the_restriction() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/orgs/acme" => Reply::json(
+            403,
+            r#"{"message":"Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions."}"#,
+        ),
+        _ => Reply::not_found(),
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+
+    // The repository answers 404 and says nothing about a wall.
+    let reach = joy_github::github::reaches_repo(host, "acme/demo", TOKEN, &ctx)
+        .expect("the forge answered");
+    assert!(!reach.wall && !reach.read);
+
+    // The second question does.
+    assert!(joy_github::github::organisation_wall(
+        host,
+        "acme/demo",
+        TOKEN,
+        &ctx
+    ));
+    // An owner whose record says nothing about a restriction is no
+    // wall: the repository was renamed, deleted or never visible to
+    // this login.
+    assert!(!joy_github::github::organisation_wall(
+        host,
+        "someone-else/demo",
+        TOKEN,
+        &ctx
+    ));
+}
+
+/// And the reading joy will NOT make (JOY-02A9-48): a person who
+/// belongs to `acme` and asks for a repository of `acme` that does not
+/// exist, was renamed, or is private beyond this token's scope, gets a
+/// 404 and no wall. Membership says nothing about a restriction, and
+/// sending that person to an owner with nothing to approve is the one
+/// thing this question exists to prevent.
+#[test]
+fn belonging_to_the_owner_organisation_is_not_a_wall() {
+    let fake = FakeForge::start(|call| match call.path.as_str() {
+        "/user/orgs" => Reply::json(200, r#"[{"login":"acme"},{"login":"other"}]"#),
+        _ => Reply::not_found(),
+    });
+    let host = "ghe.acme.test";
+    let ctx = ctx(&fake, host, true);
+
+    assert!(!joy_github::github::organisation_wall(
+        host,
+        "acme/widgts",
+        TOKEN,
+        &ctx
+    ));
+    let asked: Vec<String> = fake.calls().iter().map(|call| call.path.clone()).collect();
+    assert_eq!(
+        asked,
+        vec!["/orgs/acme"],
+        "and the organisation list is not even asked for: {asked:#?}"
+    );
+}

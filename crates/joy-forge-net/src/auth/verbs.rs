@@ -247,7 +247,7 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
     let mut expired: Option<String> = None;
     match chosen {
         Some((login, chose_by)) => match named_login(forge, &host, &login, chose_by, ctx) {
-            Own::Found(resolved) => return answer(forge, &host, &resolved),
+            Own::Found(resolved) => return answer_or_wall(forge, &host, target, &resolved, ctx),
             Own::Busy => return lock::busy_answer(),
             Own::Expired(message) => expired = Some(message),
             // A login this machine no longer holds: fall through and
@@ -257,7 +257,7 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
         // Nobody is named and no login is known by name either: the
         // `<host>` form of D2.6's entry addressing is what is left.
         None if candidates.is_empty() => match own_token_full(ctx, &host) {
-            Own::Found(resolved) => return answer(forge, &host, &resolved),
+            Own::Found(resolved) => return answer_or_wall(forge, &host, target, &resolved, ctx),
             Own::Busy => return lock::busy_answer(),
             Own::Expired(message) => expired = Some(message),
             Own::Nothing => {}
@@ -277,6 +277,11 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
                     pin::remember(ctx.state_dir(), remote, name);
                 }
                 return answer(forge, &host, &login);
+            }
+            // Every login was refused for the ORGANISATION's reason,
+            // which no other login of this machine can mend (D2.7c).
+            Probed::Walled { owner, url } => {
+                return choose::needs_org_approval(&owner, &path, url.as_deref())
             }
             Probed::NoneReach(tried) => {
                 // Whatever the memory said, it is wrong: no login this
@@ -361,7 +366,10 @@ pub fn token_for_remote(forge: &dyn Forge, host: &str, ctx: &Ctx) -> Option<Reso
             pin::forget_remote(ctx.state_dir(), remote);
             None
         }
-        Probed::Unreachable | Probed::NotAsked => None,
+        // A wall is not a wrong login, so nothing is thrown away: the
+        // memory of this remote is still the right answer once an owner
+        // has approved Joy.
+        Probed::Walled { .. } | Probed::Unreachable | Probed::NotAsked => None,
     }
 }
 
@@ -433,6 +441,10 @@ impl Need {
 }
 
 enum Probed {
+    /// The forge refused every candidate for the OWNER organisation's
+    /// reason (D2.7c): the application is not approved for it. The
+    /// owner and the page an owner acts on travel with it.
+    Walled { owner: String, url: Option<String> },
     /// The login that won, and whether it may push. D4.1c's memory is
     /// "the login the transport memory recorded as the LAST ONE THAT
     /// PUSHED SUCCESSFULLY to this remote", so a login that only reads
@@ -473,6 +485,13 @@ fn probe(
     // only where no direction asked for more.
     let mut reader: Option<Resolved> = None;
     let mut silent = false;
+    let mut walled = false;
+    // The token of the first candidate the forge really answered for.
+    // Where no login reaches the repository, it is what the second
+    // question of D2.7c is asked with: whose organisations the token's
+    // user belongs to is a fact about the person, not about the login
+    // that lost the race.
+    let mut answered_with: Option<String> = None;
     for login in candidates {
         let candidate = match named_login(forge, host, login, ChoseBy::Probe, ctx) {
             Own::Found(resolved) => *resolved,
@@ -485,6 +504,14 @@ fn probe(
             silent = true;
             continue;
         };
+        // A wall around the owner organisation is not this login's
+        // fault, and the next candidate meets the same wall. The loop
+        // still finishes, because ONE of the logins may be a member the
+        // organisation approved Joy for.
+        walled |= reach.wall;
+        if answered_with.is_none() {
+            answered_with = Some(candidate.token.clone());
+        }
         if !reach.read {
             continue;
         }
@@ -507,7 +534,91 @@ fn probe(
     if silent {
         return Probed::Unreachable;
     }
+    // Nothing reached it. Before joy says "sign in with the login that
+    // can", it asks the one question that decides whether ANY login
+    // could: is the owner organisation walling this application out
+    // (D2.7c)? One request, and only here.
+    if let Some((owner, url)) = walled_repo(
+        forge,
+        host,
+        repo_path,
+        walled,
+        answered_with.as_deref(),
+        ctx,
+    ) {
+        return Probed::Walled { owner, url };
+    }
     Probed::NoneReach(candidates.to_vec())
+}
+
+/// The owner organisation and its approval page where a repository no
+/// login reached is walled off, and `None` where it is not. `named` is
+/// the cheap reading (the forge named the restriction in its refusal),
+/// `token` the credential the paid one is asked with.
+fn walled_repo(
+    forge: &dyn Forge,
+    host: &str,
+    repo_path: &str,
+    named: bool,
+    token: Option<&str>,
+    ctx: &Ctx,
+) -> Option<(String, Option<String>)> {
+    let owner = choose::owner_of(repo_path);
+    // A forge with no approval page has no such wall and is not asked.
+    let url = forge.org_approval_url(host, owner)?;
+    let walled = named || token.is_some_and(|token| forge.org_wall(host, repo_path, token, ctx));
+    walled.then(|| (owner.to_string(), Some(url)))
+}
+
+/// The `token` answer of D2.4, unless the forge says the OWNER
+/// organisation walls this repository off (D2.7c).
+///
+/// This is the step that makes the answer independent of `chose_by`: a
+/// pin and a memory choose the LOGIN without spending a request, which
+/// is what D4.1c asks of them, and neither of them knows anything about
+/// reachability. Without this, whether a person was told about the wall
+/// depended on a memory row, and the same machine answered
+/// `no-login-for-repo` one minute and `needs_org_approval` the next
+/// (JOY-02A9-48).
+///
+/// It costs the one request D4.1c already allows per remote, and the
+/// call's own `first_probe` gate keeps it at one.
+fn answer_or_wall(
+    forge: &dyn Forge,
+    host: &str,
+    target: &Target,
+    resolved: &Resolved,
+    ctx: &Ctx,
+) -> Value {
+    match wall_for(forge, host, target, resolved, ctx) {
+        Some(walled) => walled,
+        None => answer(forge, host, resolved),
+    }
+}
+
+fn wall_for(
+    forge: &dyn Forge,
+    host: &str,
+    target: &Target,
+    resolved: &Resolved,
+    ctx: &Ctx,
+) -> Option<Value> {
+    let path = target.repo_path()?;
+    let owner = choose::owner_of(&path).to_string();
+    // A forge with no approval page has no such wall and is not asked:
+    // the Gitea family would be charged a request for nothing.
+    forge.org_approval_url(host, &owner)?;
+    if !ctx.first_probe(host, &path) {
+        return None;
+    }
+    let reach = forge.reaches(host, &path, &resolved.token, ctx)?;
+    if reach.read {
+        // The login the pin or the memory chose reaches the repository,
+        // which is the whole question. Nothing more is asked.
+        return None;
+    }
+    let (owner, url) = walled_repo(forge, host, &path, reach.wall, Some(&resolved.token), ctx)?;
+    Some(choose::needs_org_approval(&owner, &path, url.as_deref()))
 }
 
 /// A foreign CLI's token for one named login, by spawning it.
@@ -744,7 +855,7 @@ pub fn login(
     };
     let grant = match config.flow {
         Flow::Device => device_login(&http, &config, &host, events, clock),
-        Flow::Pkce => pkce_login(&http, &config, &host, events),
+        Flow::Pkce => pkce_login(&http, &config, &host, events, clock),
     };
     let grant = match grant {
         Ok(grant) => grant,
@@ -763,6 +874,22 @@ pub fn login(
     finish(forge, &host, &config, grant, ctx, events)
 }
 
+/// The device grant's poll loop (D2.4, D2.7).
+///
+/// Two rules the first version did not keep, both paid for by a person
+/// who was standing at GitHub's page while joy gave up (JOY-02A9-48):
+///
+/// - **A transport failure is a wait, not an end.** A DNS hiccup, a
+///   refused connection or a timeout says nothing about the code or
+///   about the person: the forge was not reached, so it refused
+///   nothing. The poll is tried again until the code expires, each
+///   attempt saying what it is waiting out, and `network` is reported
+///   only where the code ran out without ONE answer from the forge.
+/// - **The countdown is real time.** Subtracting the interval per
+///   iteration assumes a poll costs nothing; a poll that waits fifteen
+///   seconds for a name that does not resolve costs four intervals. The
+///   clock decides, so the seconds the events carry are the seconds the
+///   code really has, and the host's own bound agrees with them.
 fn device_login(
     http: &crate::http::Http,
     config: &oauth::OAuth,
@@ -780,36 +907,89 @@ fn device_login(
         start.interval,
     ));
     let mut interval = start.interval.max(1);
-    let mut left = start.expires_in;
-    while left > 0 {
-        clock.sleep(std::time::Duration::from_secs(interval as u64));
-        left -= interval;
+    let deadline = clock.now() + std::time::Duration::from_secs(start.expires_in.max(0) as u64);
+    // Whether the forge ever answered this poll at all. It is what
+    // tells "your code ran out" from "this machine never reached the
+    // forge", and the two need different sentences.
+    let mut answered = false;
+    let mut unreachable: Option<String> = None;
+    while clock.now() < deadline {
+        // Never sleep past the code's own life: a poll started after it
+        // has expired spends the caller's grace on a request whose
+        // answer can only be `expired_token`.
+        let gap = std::time::Duration::from_secs(interval as u64)
+            .min(deadline.saturating_duration_since(clock.now()));
+        clock.sleep(gap);
+        let left = seconds_left(clock, deadline);
         match oauth::poll_device(http, config, &start.device_code) {
             Poll::Granted(grant) => return Ok(grant),
-            Poll::Pending => events.emit(json!({
-                "event": "waiting",
-                "seconds_left": left.max(0),
-            })),
+            Poll::Pending => {
+                answered = true;
+                events.emit(oauth::waiting_event(left, None));
+            }
             Poll::SlowDown => {
                 // D2.7: plus five seconds, and the new interval is
                 // announced so the host can say what it is waiting for.
+                answered = true;
                 interval += 5;
                 events.emit(json!({ "event": "slow_down", "interval": interval }));
+            }
+            ref failed if oauth::is_transport_failure(failed) => {
+                let reason = message_of(failed);
+                events.emit(oauth::waiting_event(left, Some(&reason)));
+                unreachable = Some(reason);
             }
             failed => return Err(failed),
         }
     }
-    Err(Poll::Failed {
-        code: "expired_token".to_string(),
-        message: "the verification code expired before the sign in finished".to_string(),
-    })
+    match (answered, unreachable) {
+        // The forge was never reached, so nothing is known about the
+        // code: this machine's connection is the story.
+        (false, Some(reason)) => Err(Poll::Failed {
+            code: "network".to_string(),
+            message: format!(
+                "{host} could not be reached while joy waited for the sign in ({reason})"
+            ),
+        }),
+        _ => Err(Poll::Failed {
+            code: "expired_token".to_string(),
+            message: "the verification code expired before the sign in finished".to_string(),
+        }),
+    }
 }
+
+/// How many seconds are left of a span, never negative.
+fn seconds_left(clock: &dyn Clock, deadline: std::time::Instant) -> i64 {
+    deadline.saturating_duration_since(clock.now()).as_secs() as i64
+}
+
+/// A failed poll's own sentence, for the `reason` of a waiting event.
+fn message_of(poll: &Poll) -> String {
+    match poll {
+        Poll::Failed { message, .. } => message.clone(),
+        _ => String::new(),
+    }
+}
+
+/// How long joy waits between two attempts at the same exchange.
+const EXCHANGE_RETRY_GAP: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// The room one more attempt needs: the gap before it plus what the
+/// attempt itself may cost. An exchange against a black hole runs to
+/// the per request bound of [`crate::http::DEFAULT_TIMEOUT`], so a
+/// retry started with six seconds left overran its own deadline by
+/// fifteen and the host stopped the connector before it could say how
+/// the sign in ended (JOY-02A9-48).
+const ONE_MORE_EXCHANGE: std::time::Duration = std::time::Duration::from_secs(
+    EXCHANGE_RETRY_GAP.as_secs() + crate::http::DEFAULT_TIMEOUT.as_secs(),
+);
 
 fn pkce_login(
     http: &crate::http::Http,
     config: &oauth::OAuth,
     host: &str,
     events: &mut dyn Events,
+    clock: &dyn Clock,
 ) -> Result<oauth::Grant, Poll> {
     let pkce = oauth::Pkce::start().map_err(|e| Poll::Failed {
         code: "network".to_string(),
@@ -831,12 +1011,32 @@ fn pkce_login(
     // sign in; collecting them and replaying the lot afterwards would
     // leave a Gitea, Forgejo or Codeberg login silent for up to fifteen
     // minutes and then print nine hundred stale lines at once.
+    let began = clock.now();
+    let deadline = began + PKCE_WAIT;
     let code = pkce.wait(PKCE_WAIT, |seconds_left| {
-        events.emit(json!({ "event": "waiting", "seconds_left": seconds_left }));
+        events.emit(oauth::waiting_event(seconds_left, None));
     })?;
-    match oauth::exchange_code(http, config, &code, pkce.verifier(), &pkce.redirect_uri()) {
-        Poll::Granted(grant) => Ok(grant),
-        other => Err(other),
+    // The same rule the device poll follows: a transport failure at the
+    // exchange is a wait, not an end. The person has already approved
+    // joy in their browser at this point, and throwing the code away
+    // for a DNS hiccup makes them do the whole flow again
+    // (JOY-02A9-48).
+    loop {
+        let poll = oauth::exchange_code(http, config, &code, pkce.verifier(), &pkce.redirect_uri());
+        if let Poll::Granted(grant) = poll {
+            return Ok(grant);
+        }
+        if !oauth::is_transport_failure(&poll) {
+            return Err(poll);
+        }
+        let left = seconds_left(clock, deadline);
+        if left <= ONE_MORE_EXCHANGE.as_secs() as i64 {
+            // No room for an attempt that could finish: starting one
+            // here would spend the deadline and then some.
+            return Err(poll);
+        }
+        events.emit(oauth::waiting_event(left, Some(&message_of(&poll))));
+        clock.sleep(EXCHANGE_RETRY_GAP);
     }
 }
 

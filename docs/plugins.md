@@ -391,6 +391,13 @@ otherwise `{"known": false, "reason": "no-login-for-repo"}`. The same
 order runs inside every verb that needs a credential, not only inside
 `token`, and one remote is probed at most once per call.
 
+The steps that spend no request choose the LOGIN, and nothing else: a
+pin and a memory know which account answers and nothing about the
+repository. Where the call names a remote, the chosen login is still
+asked once whether it reaches that repository, so the answer is the
+same whichever step chose it. Without that, whether a person was told
+about an organisation wall depended on a memory row.
+
 Two rules keep that order honest. The memory records only a login the
 forge reported as able to PUSH, because that is what the memory means
 and because a later push must not take a read-only login from it for
@@ -612,7 +619,27 @@ it hung). Each one carries the file that answered.
   `{"known":true,"host":"github.com","login":"scotty","token":"gho_...",`
   `"username":"x-access-token","source":"keychain|file|gh|glab|tea|env",`
   `"scopes":"repo user:email","expires_at":null,"chose_by":"pin|memory|only|probe"}`,
-  or `{"known":false,"reason":"no-login|no-keychain|unsupported-host|no-login-for-repo|busy"}`.
+  or `{"known":false,"reason":"no-login|no-keychain|unsupported-host|no-login-for-repo|needs_org_approval|busy"}`.
+  `needs_org_approval` is the ORGANISATION's wall and not a wrong
+  login: the owner has OAuth app access restrictions switched on and
+  has not approved this application, so no login of this machine gets
+  in and no sign in helps. It carries `message` and `action`, the
+  organisation's own settings page
+  (`https://github.com/organizations/<owner>/settings/oauth_application_policy`),
+  because a person told that their organisation must approve Joy and
+  not told where cannot act on the sentence. The connector reads it off
+  the forge and nowhere else: a 403 whose body names the restriction,
+  or, where the refusal carried no such body, the OWNER's own
+  organisation record refused with the restriction named. Membership is
+  NOT a reading. "The token's user belongs to the owner and the
+  repository answers 404" is equally true of a mistyped, renamed,
+  deleted or out of scope repository, and it would send that person to
+  an owner with nothing to approve. The question is asked once, and
+  only where no login reached the repository at all, so one `token`
+  call for a walled remote costs at most two requests: the repository,
+  and the owner. That is the one request per remote of D4.1c plus the
+  one the wall costs, spent only on the path that would otherwise print
+  the wrong sentence, and never on a remote a login reaches.
   `--for` is the DIRECTION the credential is wanted for, and it decides
   what the probe accepts: `write`, `create` and `release` take only a
   login the forge reports as able to push, `read` takes the first that
@@ -632,12 +659,23 @@ it hung). Each one carries the file that answered.
   Sign in. Newline delimited JSON on stdout, one object per line, each
   flushed as it happens:
   `{"event":"verification","host":...,"url":...,"url_complete":...,"code":...,"expires_in":...,"interval":...}`,
-  then `{"event":"waiting","seconds_left":...}`,
+  then `{"event":"waiting","seconds_left":...[,"reason":"..."]}`,
   `{"event":"slow_down","interval":...}`, and finally one
   `{"event":"result","known":true,"login":...,"user_id":...,"emails":[...],"scopes":...,"stored":"keychain|file","expires_at":...}`
   or
   `{"event":"error","code":"access_denied|expired_token|unsupported|network|device_flow_disabled|invalid_scope","message":"..."}`.
   **The connector never opens a browser and never prints the token.**
+  A transport failure while polling (a name that does not resolve, a
+  refused connection, a timeout) is a WAIT and not an end: the forge
+  refused nothing, so the poll is repeated until the code expires, each
+  attempt emitting a `waiting` event whose `reason` says what is being
+  waited out. `network` is reported only where the code ran out without
+  one answer from the forge; where the forge answered at least once,
+  the end of a code is `expired_token`. The same holds for the PKCE
+  exchange, which a person has already approved in their browser.
+  `seconds_left` is the code's real remaining life, read off the clock,
+  not a count of intervals: a poll that waits fifteen seconds for a
+  name costs the code fifteen seconds.
   The host decides: the desktop opens the URL, the CLI prints it, and a
   `--host-kind background` or `delegated` call is refused at once with
   the sentence that names `--token-stdin`.

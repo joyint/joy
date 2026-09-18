@@ -165,6 +165,47 @@ pub fn login(
             error,
         });
     }
+    // The last event that parsed is the `result` or the `error` of the
+    // stream (D2.3). It is read BEFORE the deadline is reported,
+    // because a connector that said its last word and then took a
+    // moment to exit has answered: reporting "did not answer in time"
+    // over a finished sign in, or over the connector's own reason for a
+    // refusal, throws away the only sentence the person can act on
+    // (JOY-02A9-48).
+    let last = outcome.stdout_json;
+    let event = last
+        .as_ref()
+        .and_then(|last| last.get("event"))
+        .and_then(|event| event.as_str())
+        .unwrap_or_default();
+    let refused = |last: &serde_json::Value| PluginError::Failed {
+        display: spec.display,
+        path: spec.resolved_path.clone(),
+        verb: "login".to_string(),
+        exit_code: outcome.exit_code,
+        stderr: last
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("the sign in did not finish")
+            .to_string(),
+    };
+    match (event, &last) {
+        // A finished sign in is a finished sign in, whatever the call
+        // did afterwards.
+        ("result", Some(last)) => {
+            return serde_json::from_value(last.clone()).map_err(|e| PluginError::Unparsable {
+                display: spec.display,
+                path: spec.resolved_path.clone(),
+                verb: "login".to_string(),
+                answer: e.to_string(),
+            })
+        }
+        // And the connector's own reason beats joy's deadline: a
+        // connector that said why it failed and then took a moment to
+        // exit has answered.
+        ("error", Some(last)) => return Err(refused(last)),
+        _ => {}
+    }
     if outcome.timed_out {
         return Err(PluginError::TimedOut {
             display: spec.display,
@@ -174,33 +215,15 @@ pub fn login(
             stderr: outcome.stderr_text,
         });
     }
-    // The last event that parsed is the `result` or the `error` of the
-    // stream (D2.3).
-    let last = outcome.stdout_json.ok_or_else(|| PluginError::Unparsable {
+    // Neither a result nor an error, and the call was not stopped: the
+    // connector ended without saying how it ended.
+    let last = last.ok_or_else(|| PluginError::Unparsable {
         display: spec.display,
         path: spec.resolved_path.clone(),
         verb: "login".to_string(),
         answer: outcome.stdout_text.clone(),
     })?;
-    match last.get("event").and_then(|event| event.as_str()) {
-        Some("result") => serde_json::from_value(last).map_err(|e| PluginError::Unparsable {
-            display: spec.display,
-            path: spec.resolved_path.clone(),
-            verb: "login".to_string(),
-            answer: e.to_string(),
-        }),
-        _ => Err(PluginError::Failed {
-            display: spec.display,
-            path: spec.resolved_path.clone(),
-            verb: "login".to_string(),
-            exit_code: outcome.exit_code,
-            stderr: last
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("the sign in did not finish")
-                .to_string(),
-        }),
-    }
+    Err(refused(&last))
 }
 
 /// Remove the credential the connector holds for a host, and revoke it
