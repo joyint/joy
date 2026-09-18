@@ -23,7 +23,7 @@ carries every forge.
 `~/.cargo/bin/joy-github` beside a fresh `joy-forge` is simply not
 asked. `joy forge plugins` names it anyway, with the line to run:
 
-    github  /home/s/.local/bin/joy-forge  protocol 2  PATH  joy-forge 0.21.0
+    github  /home/s/.local/bin/joy-forge  protocol 2  PATH  joy-forge 0.20.0
       problem: shadowed-legacy
       another binary for this forge is installed and unused; rm /home/s/.cargo/bin/joy-github
 
@@ -40,9 +40,13 @@ is never touched. `joy update` re-runs the installer, so joy and the
 connector stay in lockstep.
 
 **A machine with only an old connector still works, partly.** A
-protocol 1 binary answers the six original verbs (`claims`, `identity`,
-`resolve`, `store`, `files`, `release`) with `--remote`, so publishing a
-release keeps working on a machine nobody has upgraded. Asked anything
+protocol 1 binary is still asked the six original verbs (`claims`,
+`identity`, `resolve`, `store`, `files`, `release`) about a REMOTE
+target, so publishing a release keeps working on a machine nobody has
+upgraded. Only three of the six are handed a `--remote` argument with
+it, the three whose protocol 1 parser knows one: `claims`, `store` and
+`files`. Giving `release` one is exactly what would end the publish,
+because its old parser exits 2 on an argument it does not know. Asked anything
 newer it produces the state `plugin_outdated`, which names the file that
 answered and the fix in one sentence. The detection needs no cooperation
 from the old binary: its argument parser exits 2 with usage on stderr
@@ -115,12 +119,18 @@ migration.
 
 One case changes for the worse and is named rather than hidden. A Linux
 session with no Secret Service at all, or with a collection nobody
-unlocked, cannot store the entry now: the write fails, and the app
-reports a keystore error instead of pretending it worked. Before, the
-write would have succeeded into keyutils and the seed would have been
-gone at the next reboot without a word. An honest refusal is the better
-of the two, and the way out is the same as it always was: unlock the
-login keyring, or do not ask the app to remember the seed.
+unlocked, cannot store the entry now, and the refusal is not confined to
+the remembering. The app writes the seed AFTER it has already opened the
+crypt and passes the keystore's error straight on, so an unlock with
+"remember" ticked returns a keystore error for an unlock that succeeded:
+the zones are open in this process, and the caller is told the unlock
+failed (the `remember` branch of `joy_unlock`, `crypt_ops.rs`). Before,
+the write would have succeeded into keyutils and the seed would have
+been gone at the next reboot without a word. A refusal a person can see
+is the better of the two, and the way out is the same as it always was:
+unlock the login keyring, or do not ask the app to remember the seed.
+Reporting the failed remembering beside the successful unlock, instead
+of in place of it, is the open end of this.
 
 The connector does have a fallback the app does not, because a headless
 machine is where it has to work: it writes `forge-tokens.json`, mode
@@ -163,7 +173,7 @@ command that does:
     the token for github.com comes from gh; run `gh auth logout --hostname github.com` to remove it
 
     The credential for github.com was stored by another program, so joy
-    did not remove it. Remove it there with gh auth logout --hostname github.com
+    did not remove it. Remove it there with gh auth logout --hostname github.com.
 
 Again the CLI first, the app second. This is the reason joy treats a
 foreign CLI's store as read only: joy never writes it, never refreshes

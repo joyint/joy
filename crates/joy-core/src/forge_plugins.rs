@@ -1523,8 +1523,10 @@ fn call_args(
 }
 
 /// Whether this connector may be asked this verb at all (D2.2a): a
-/// protocol 1 binary answers the six old verbs with `--remote`, and
-/// nothing else.
+/// protocol 1 binary answers the six old verbs about a REMOTE target,
+/// and nothing else. What the gate reads is the target, not the
+/// argument: only three of the six carry a `--remote` on the command
+/// line ([`LEGACY_TARGET_VERBS`]), and `release` is not one of them.
 fn refuse_outdated(
     resolved: &ResolvedPlugin,
     verb: &str,
@@ -2434,9 +2436,9 @@ mod tests {
         );
     }
 
-    /// D2.2a: the six old verbs with `--remote` are all a protocol 1
-    /// connector may be asked; everything else is `plugin_outdated`
-    /// with the resolved path and the `rm` line.
+    /// D2.2a: the six old verbs about a remote target are all a
+    /// protocol 1 connector may be asked; everything else is
+    /// `plugin_outdated` with the resolved path and the `rm` line.
     #[test]
     fn a_protocol_one_connector_is_outdated_for_everything_new() {
         let resolved = resolved_stub("/home/s/.cargo/bin/joy-github", 1);

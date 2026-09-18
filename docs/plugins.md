@@ -85,9 +85,13 @@ subcommand and exits **2 with usage on stderr and nothing on stdout**.
 The rule is therefore: exit code 2 with empty stdout, or any answer that
 does not parse as the object above, means protocol 1.
 
-A protocol 1 connector still answers the six original verbs (`claims`,
-`identity`, `resolve`, `store`, `files`, `release`) with `--remote`, so
-an old machine keeps publishing releases. Asked anything else, joy does
+A protocol 1 connector is still asked the six original verbs (`claims`,
+`identity`, `resolve`, `store`, `files`, `release`) about a REMOTE
+target, so an old machine keeps publishing releases. A `--remote`
+argument travels with three of the six, the three whose protocol 1
+parser knows one: `claims`, `store` and `files`. `release` never gets
+one, because its old parser would exit 2 on it and the publish would
+end there. Asked anything else, joy does
 not call it at all and reports the state `plugin_outdated` with the file
 that answered and the fix in one sentence:
 
