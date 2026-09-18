@@ -280,21 +280,19 @@ guard-interactive manifest="../platform/Cargo.toml":
     exit $bad
 
 # Take the pinned host keys off the three public forges again and check
-# them against crates/joy-core/data/host-keys.published.json and
-# against the fingerprints the forges publish (design D1.4a: the
-# Codeberg pin is a blob taken once and checked against a page that
-# publishes fingerprints only). This is the build step of D1.4a, and CI
-# runs it every night (.github/workflows/ci.yaml, job host-key-pins),
-# so a rotation or a hand-edited pin is noticed by a job and not by a
-# person whose contact failed. Needs the network; the offline half of
-# the same check is the unit test pins_match_the_published_fingerprints.
-# The file it checks is the one parked BESIDE the release: the pin file
-# a release ships is empty while decision 23 is open.
+# them against crates/joy-core/data/host-keys.json, the pin file a
+# release ships (design D1.4a: the Codeberg pin is a blob taken once
+# and checked against a page that publishes fingerprints only). This is
+# the build step of D1.4a, and CI runs it every night
+# (.github/workflows/ci.yaml, job host-key-pins), so a rotation or a
+# hand-edited pin is noticed by a job and not by a person whose contact
+# failed. Needs the network; the offline half of the same check is the
+# unit test pins_match_the_published_fingerprints.
 check-host-key-pins:
     #!/usr/bin/env bash
     set -euo pipefail
     cd "{{justfile_directory()}}"
-    pins=crates/joy-core/data/host-keys.published.json
+    pins=crates/joy-core/data/host-keys.json
     bad=0
     # 1. every recorded blob is the key its recorded fingerprint names
     while read -r host type key fingerprint; do
@@ -333,7 +331,17 @@ check-host-key-pins:
                 grep -qF "$bare" <<<"$pages" || { echo "pin $host: $fingerprint is not on the forge's page"; bad=1; } ;;
         esac
     done < <(jq -r '.hosts[] | .host as $h | .keys[] | "\($h) \(.fingerprint)"' "$pins")
-    if [ "$bad" = "0" ]; then echo "host key pins: all blobs, hosts and published fingerprints agree"; fi
+    # 4. the page a refusal sends a person to still answers. A pinned
+    # host whose key rotated is refused with that URL in the sentence,
+    # so a moved page turns joy's one next step into a 404.
+    for page in $(jq -r '.hosts[].published_at' "$pins" | sort -u); do
+        code=$(curl -sSL -o /dev/null -w '%{http_code}' --max-time 30 "$page")
+        if [ "$code" != "200" ]; then
+            echo "pin page $page: answers $code"
+            bad=1
+        fi
+    done
+    if [ "$bad" = "0" ]; then echo "host key pins: all blobs, hosts, published fingerprints and pages agree"; fi
     exit $bad
 
 # Everything, for the nightly run and before a release.

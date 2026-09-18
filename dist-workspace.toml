@@ -45,7 +45,9 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 # `<dir of the running binary>/host-keys.json` and then
 # `<prefix>/share/joy/host-keys.json`. An archive that lost the file
 # still runs; the loader then falls back to the copy compiled into the
-# binary, which ships empty while decision 23 is open.
+# binary, which carries the same pins the archive would have carried.
+# That copy is the one thing a rotation cannot reach, which is why the
+# file in the archive wins wherever it is there.
 #
 # This key fills the archive and nothing else. An install has a prefix,
 # and writing the file to `<prefix>/share/joy/host-keys.json` belongs to

@@ -8,8 +8,15 @@ use super::*;
 /// github.com's ed25519 host key and the fingerprint GitHub publishes.
 const GITHUB_ED25519: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
 const GITHUB_ED25519_FINGERPRINT: &str = "SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU";
-/// Another ed25519 key (codeberg.org's), for the changed-key cases.
+/// Another ed25519 key (codeberg.org's), for the changed-key cases and
+/// for the host below.
 const OTHER_ED25519: &str = "AAAAC3NzaC1lZDI1NTE5AAAAIIVIC02vnjFyL+I4RHfvIGNtOgJMe769VTF1VR4EB3ZB";
+const OTHER_ED25519_FINGERPRINT: &str = "SHA256:mIlxA9k46MmM6qdJOdMnAQpzGxF4WIVVL+fj+wZbw0g";
+/// A host no pin file names, for every case that is about an UNKNOWN
+/// host rather than about a pinned one. github.com is pinned now, so a
+/// test that wants "this machine has never seen it and nothing else
+/// speaks for it" has to name a host the pins say nothing about.
+const UNPINNED: &str = "forge.example.com";
 
 /// The trust question is process-wide, like the passphrase question, so
 /// the tests that install one run one at a time.
@@ -99,23 +106,23 @@ fn a_background_host_refuses_an_unknown_host_and_prints_the_line_to_paste() {
     for kind in [HostKind::Background, HostKind::Delegated] {
         let mut trust = Trust::at(
             kind,
-            "github.com",
+            UNPINNED,
             settings(vec![file.clone()], StrictHostKeys::Ask, true),
             22,
         );
         let (code, sentence) = refusal(trust.host_key(
-            "github.com",
+            UNPINNED,
             Some(SshHostKeyType::Ed255219),
-            Some(&key(GITHUB_ED25519)),
+            Some(&key(OTHER_ED25519)),
         ));
         assert_eq!(code, git2::ErrorCode::Certificate, "{kind}");
         for part in [
-            "github.com",
+            UNPINNED,
             "port 22",
             "ssh-ed25519",
-            GITHUB_ED25519_FINGERPRINT,
+            OTHER_ED25519_FINGERPRINT,
             &file.display().to_string(),
-            &format!("github.com ssh-ed25519 {GITHUB_ED25519}"),
+            &format!("{UNPINNED} ssh-ed25519 {OTHER_ED25519}"),
         ] {
             assert!(
                 sentence.contains(part),
@@ -137,14 +144,14 @@ fn the_refusal_reaches_the_person_as_needs_host_trust_with_joys_own_sentence() {
     let file = wrote(dir.path(), "");
     let mut trust = Trust::at(
         HostKind::Background,
-        "github.com",
+        UNPINNED,
         settings(vec![file], StrictHostKeys::Ask, true),
         22,
     );
     let refused = refused(trust.host_key(
-        "github.com",
+        UNPINNED,
         Some(SshHostKeyType::Ed255219),
-        Some(&key(GITHUB_ED25519)),
+        Some(&key(OTHER_ED25519)),
     ));
     // what libgit2 hands back: joy's code, libgit2's own message
     // (ssh_libssh2.c:765) and its own class
@@ -155,14 +162,14 @@ fn the_refusal_reaches_the_person_as_needs_host_trust_with_joys_own_sentence() {
     );
     let evidence = ContactEvidence::new(
         libgit2,
-        "git@github.com:joyint/joy.git",
+        &format!("git@{UNPINNED}:joyint/joy.git"),
         ContactDirection::Fetch,
         crate::vcs::contact::CredentialSource::AgentPresented,
     );
     let verdict = crate::vcs::contact::verdict(&evidence);
     assert_eq!(verdict.failure, Failure::NeedsHostTrust);
     assert!(
-        verdict.sentence.contains(GITHUB_ED25519_FINGERPRINT),
+        verdict.sentence.contains(OTHER_ED25519_FINGERPRINT),
         "the fingerprint is in the sentence: {}",
         verdict.sentence
     );
@@ -257,7 +264,18 @@ fn an_interactive_host_is_offered_the_fingerprint_and_the_yes_is_written_once() 
     assert_eq!(request.port, 22);
     assert_eq!(request.key_type, "ssh-ed25519");
     assert_eq!(request.fingerprint, GITHUB_ED25519_FINGERPRINT);
-    assert!(request.published.is_none(), "no pin is consulted yet");
+    // D1.4a: an `Interactive` host is still asked, and because this
+    // host is pinned the question adds where the forge publishes the
+    // key the person is looking at.
+    let published = request
+        .published
+        .as_deref()
+        .expect("the pin names the page");
+    assert!(published.contains("GitHub"), "{published}");
+    assert!(
+        published.contains("https://docs.github.com/"),
+        "{published}"
+    );
     // one hashed line, because the person's config says so
     let written = std::fs::read_to_string(&file).unwrap();
     assert_eq!(written.lines().count(), 1);
@@ -323,11 +341,14 @@ fn strict_host_key_checking_decides_whether_the_person_is_asked() {
         std::fs::read_to_string(&new_file).unwrap(),
         format!("github.com ssh-ed25519 {GITHUB_ED25519}\n")
     );
-    // `accept-new` still writes nothing where nobody is watching
+    // `accept-new` still writes nothing where nobody is watching. The
+    // host is an unpinned one, because a pinned key is the one thing a
+    // `Background` host accepts without a file, and that is the case
+    // next door.
     let background_file = dir.path().join("background").join("known_hosts");
     let mut background = Trust::at(
         HostKind::Background,
-        "github.com",
+        UNPINNED,
         settings(
             vec![background_file.clone()],
             StrictHostKeys::AcceptNew,
@@ -336,9 +357,9 @@ fn strict_host_key_checking_decides_whether_the_person_is_asked() {
         22,
     );
     refused(background.host_key(
-        "github.com",
+        UNPINNED,
         Some(SshHostKeyType::Ed255219),
-        Some(&key(GITHUB_ED25519)),
+        Some(&key(OTHER_ED25519)),
     ));
     let _ = take_refusal();
     assert!(!background_file.exists());
@@ -514,9 +535,11 @@ fn a_certificate_host_key_is_refused_by_name() {
     );
 }
 
-/// The pin file is data nobody consults yet (decision 23), so the
-/// branch is driven with the recorded pins to prove it is right before
-/// the decision switches it on.
+/// D1.4a: the pin is consulted ONLY where no known_hosts file holds a
+/// line for the host. A `Background` host accepts the pinned key and
+/// writes nothing, an `Interactive` host is still asked and the
+/// question names the page, and a file that knows the host decides on
+/// its own, pin or no pin.
 #[test]
 fn a_pin_answers_only_where_no_file_knows_the_host() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -534,8 +557,7 @@ fn a_pin_answers_only_where_no_file_knows_the_host() {
         "github.com",
         settings(vec![empty.clone()], StrictHostKeys::Ask, true),
         22,
-    )
-    .reading_pins();
+    );
     assert!(matches!(
         background.host_key(
             "github.com",
@@ -551,8 +573,7 @@ fn a_pin_answers_only_where_no_file_knows_the_host() {
         "github.com",
         settings(vec![empty.clone()], StrictHostKeys::Ask, true),
         22,
-    )
-    .reading_pins();
+    );
     refused(interactive.host_key(
         "github.com",
         Some(SshHostKeyType::Ed255219),
@@ -581,8 +602,7 @@ fn a_pin_answers_only_where_no_file_knows_the_host() {
         "github.com",
         settings(vec![known], StrictHostKeys::Ask, true),
         22,
-    )
-    .reading_pins();
+    );
     let (_, sentence) = refusal(beaten.host_key(
         "github.com",
         Some(SshHostKeyType::Ed255219),
@@ -592,6 +612,10 @@ fn a_pin_answers_only_where_no_file_knows_the_host() {
     clear_trust_prompt();
 }
 
+/// The other half of the pin, and the cost the operator took on with
+/// decision 23: a key that is not the pinned one is refused in every
+/// host kind, and the sentence says which joy pinned what, so a real
+/// rotation is told apart from an interception by reading it.
 #[test]
 fn a_pinned_host_that_presents_another_key_names_the_joy_version_and_the_page() {
     let dir = tempfile::tempdir().unwrap();
@@ -606,8 +630,7 @@ fn a_pinned_host_that_presents_another_key_names_the_joy_version_and_the_page() 
             "github.com",
             settings(vec![empty.clone()], StrictHostKeys::AcceptNew, false),
             22,
-        )
-        .reading_pins();
+        );
         let (code, sentence) = refusal(trust.host_key(
             "github.com",
             Some(SshHostKeyType::Ed255219),
@@ -627,6 +650,61 @@ fn a_pinned_host_that_presents_another_key_names_the_joy_version_and_the_page() 
         }
         assert_eq!(std::fs::read_to_string(&empty).unwrap(), "");
     }
+}
+
+/// The acceptance of the pin file itself, through the loader every
+/// contact uses and not through a fixture: a `Background` host on a
+/// fresh machine, with an empty known_hosts and no way to ask anybody,
+/// accepts the github.com key GitHub publishes and refuses a different
+/// one. This is the row of section 3 that decision 23 turned from
+/// partly into yes.
+#[test]
+fn a_background_host_on_a_fresh_machine_accepts_the_pinned_github_key() {
+    // the key under test is the one the shipped file records, read the
+    // way a contact reads it
+    let pin = known_hosts::pins::consulted_for("github.com").expect("github.com is pinned");
+    let pinned = pin
+        .keys
+        .iter()
+        .find(|key| key.key_type == "ssh-ed25519")
+        .expect("GitHub publishes an ed25519 key");
+    assert_eq!(pinned.key, GITHUB_ED25519);
+    assert_eq!(pinned.fingerprint, GITHUB_ED25519_FINGERPRINT);
+
+    let dir = tempfile::tempdir().unwrap();
+    let fresh = wrote(dir.path(), "");
+    let site = || {
+        Trust::at(
+            HostKind::Background,
+            "github.com",
+            settings(vec![fresh.clone()], StrictHostKeys::Ask, true),
+            22,
+        )
+    };
+    assert!(
+        matches!(
+            site().host_key(
+                "github.com",
+                Some(SshHostKeyType::Ed255219),
+                Some(&key(GITHUB_ED25519))
+            ),
+            Ok(Status::CertificateOk)
+        ),
+        "the pinned key is accepted with no file and no person"
+    );
+    // nothing was recorded, so a replaced pin file takes effect at once
+    assert_eq!(std::fs::read_to_string(&fresh).unwrap(), "");
+    // and any other key on the same host is refused, with the page
+    let (code, sentence) = refusal(site().host_key(
+        "github.com",
+        Some(SshHostKeyType::Ed255219),
+        Some(&key(OTHER_ED25519)),
+    ));
+    assert_eq!(code, git2::ErrorCode::Certificate);
+    assert!(sentence.contains(OTHER_ED25519_FINGERPRINT), "{sentence}");
+    assert!(sentence.contains(GITHUB_ED25519_FINGERPRINT), "{sentence}");
+    assert!(sentence.contains(&pin.published_at), "{sentence}");
+    assert_eq!(std::fs::read_to_string(&fresh).unwrap(), "");
 }
 
 // ---- the https branch -------------------------------------------------
@@ -877,7 +955,7 @@ fn a_fresh_machine_is_offered_the_fingerprint_github_publishes() {
     assert_eq!(request.port, 22);
     // whichever type libssh2 negotiated, the fingerprint is one GitHub
     // publishes
-    let published = pins::published_for("github.com").expect("github.com is parked");
+    let published = pins::recorded_for("github.com").expect("github.com is parked");
     assert!(
         published
             .keys

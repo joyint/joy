@@ -1096,7 +1096,7 @@ fn git_bool(value: &str) -> bool {
     matches!(value.as_str(), "true" | "yes" | "on") || value.parse::<i64>().is_ok_and(|n| n != 0)
 }
 
-/// Open the repository that holds `dir` — `discover`, not `open`: the
+/// Open the repository that holds `dir` (`discover`, not `open`): the
 /// desktop opens project roots that may sit inside a larger repo, and
 /// for an exact root (every platform checkout) discover is the same
 /// thing.

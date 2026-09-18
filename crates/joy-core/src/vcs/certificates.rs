@@ -200,11 +200,6 @@ struct Trust {
     /// port joy resolved for it. Resolved once per host and kept, so a
     /// contact that re-enters the callback reads no config twice.
     site: Option<(String, HostSettings, u16)>,
-    /// Where a pin comes from. Production reads the pins decision 23
-    /// allows, which is none of them yet; the tests read the recorded
-    /// ones, so the branch is exercised before the decision flips it
-    /// on.
-    pins: fn(&str) -> Option<&'static pins::PinnedHost>,
 }
 
 impl Trust {
@@ -213,7 +208,6 @@ impl Trust {
             kind,
             configured,
             site: None,
-            pins: pins::consulted_for,
         }
     }
 
@@ -360,7 +354,7 @@ impl Trust {
     /// key. Consulted only where no file holds a line for the host
     /// (D1.4a), and only for the hosts the pin file names.
     fn pin_says(&self, host: &str, key_type: &str, key: &[u8]) -> Pin {
-        let Some(pin) = (self.pins)(host) else {
+        let Some(pin) = pins::consulted_for(host) else {
             return Pin::Published(None);
         };
         let Some(pinned) = pin
@@ -520,16 +514,7 @@ impl Trust {
             kind,
             configured: None,
             site: Some((host.to_string(), settings, port)),
-            pins: pins::consulted_for,
         }
-    }
-
-    /// Read the blobs parked beside the release, so the branch that
-    /// will use a pin once decision 23 is answered is exercised before
-    /// it is.
-    fn reading_pins(mut self) -> Trust {
-        self.pins = pins::published_for;
-        self
     }
 
     /// The same closure [`check`] installs, around a site a test chose.

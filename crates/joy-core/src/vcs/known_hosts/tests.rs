@@ -406,16 +406,15 @@ fn a_certificate_host_key_is_named_by_its_own_blob() {
     assert_eq!(key_type_in_blob(&[]), None);
 }
 
-/// Decision 23's data half: every blob parked beside the release
-/// really is the key whose fingerprint the forge publishes, so
-/// answering the decision needs no second key hunt. The published
-/// fingerprints are the ones recorded in the parked file from the
-/// forges' own pages; `just check-host-key-pins` takes the keys off the
-/// forges again and checks the same equality against the live pages,
-/// and the nightly CI job runs it.
+/// The data half of the pin file: every blob it records really is the
+/// key whose fingerprint the forge publishes, so a pin can never turn
+/// into "joy refuses the forge's own key". The fingerprints are the
+/// ones the forges' own pages carry; `just check-host-key-pins` takes
+/// the keys off the forges again and checks the same equality against
+/// the live pages, and the nightly CI job runs it.
 #[test]
 fn pins_match_the_published_fingerprints() {
-    let hosts = pins::published();
+    let hosts = pins::recorded();
     let names: Vec<&str> = hosts.iter().map(|pin| pin.host.as_str()).collect();
     assert_eq!(
         names,
@@ -434,9 +433,17 @@ fn pins_match_the_published_fingerprints() {
             pin.host
         );
         assert!(
-            !pin.source.is_empty(),
-            "{}: the source is recorded",
+            pin.source.starts_with("https://"),
+            "{}: the URL the blobs came from is recorded",
             pin.host
+        );
+        // A pin carries the day it was taken, because that is the first
+        // thing to look at when a pinned host starts refusing.
+        assert!(
+            chrono::NaiveDate::parse_from_str(&pin.taken, "%Y-%m-%d").is_ok(),
+            "{}: the day the blobs were taken is recorded, and {:?} is not one",
+            pin.host,
+            pin.taken
         );
         assert!(
             pin.keys.len() >= 3,
@@ -462,7 +469,7 @@ fn pins_match_the_published_fingerprints() {
         }
     }
     // github.com's ed25519 fingerprint, as GitHub publishes it
-    let github = pins::published_for("github.com").expect("github.com is parked");
+    let github = pins::recorded_for("github.com").expect("github.com is pinned");
     assert_eq!(
         github
             .keys
@@ -476,13 +483,13 @@ fn pins_match_the_published_fingerprints() {
         ("github.com", "ssh.github.com"),
         ("gitlab.com", "altssh.gitlab.com"),
     ] {
-        let main: Vec<&str> = pins::published_for(main)
+        let main: Vec<&str> = pins::recorded_for(main)
             .unwrap()
             .keys
             .iter()
             .map(|k| k.key.as_str())
             .collect();
-        let alternate: Vec<&str> = pins::published_for(alternate)
+        let alternate: Vec<&str> = pins::recorded_for(alternate)
             .unwrap()
             .keys
             .iter()
@@ -492,16 +499,28 @@ fn pins_match_the_published_fingerprints() {
     }
 }
 
-/// Decision 23 is open, so the pin file a release ships is EMPTY and no
-/// contact can consult anything: an unknown host stays unknown, which
-/// is what J4h's acceptance asks for. The blobs the answer would ship
-/// are parked beside the release and reach no binary.
+/// The operator answered decision 23, so the pin file a release ships
+/// carries the three public forges and a contact may consult them.
+/// `shipped` reads the release the running binary belongs to and
+/// `recorded` reads the file in this source tree; in a test binary,
+/// which belongs to no release, the two are the same file, and this is
+/// the test that would notice if they stopped being.
 #[test]
-fn the_pin_file_a_release_ships_is_empty_while_decision_23_is_open() {
-    assert!(pins::shipped().is_empty(), "{:?}", pins::shipped());
-    assert!(pins::consulted_for("github.com").is_none());
-    // and the material for the answer is there, unshipped
-    assert!(pins::published_for("github.com").is_some());
+fn the_pin_file_a_release_ships_carries_the_three_public_forges() {
+    let shipped: Vec<&str> = pins::shipped()
+        .iter()
+        .map(|pin| pin.host.as_str())
+        .collect();
+    let recorded: Vec<&str> = pins::recorded()
+        .iter()
+        .map(|pin| pin.host.as_str())
+        .collect();
+    assert_eq!(shipped, recorded);
+    let github = pins::consulted_for("github.com").expect("github.com is pinned");
+    assert_eq!(github.forge, "GitHub");
+    assert!(github.keys.iter().any(|key| key.key_type == "ssh-ed25519"));
+    // and a host nobody pinned is still a host with no pin
+    assert!(pins::consulted_for("forge.example.com").is_none());
 }
 
 /// D1.4a asks for the pins as DATA in the release: a key rotation at a
@@ -533,7 +552,8 @@ fn the_pin_file_is_read_from_the_release_and_not_only_from_the_binary() {
     let share = release.path().join("share").join("joy");
     std::fs::create_dir_all(&share).unwrap();
     let one = r#"{"hosts": [{"host": "forge.example.com", "port": 22, "forge": "Example",
-        "source": "a test", "published_at": "https://example.com/keys", "keys": []}]}"#;
+        "source": "https://example.com/meta", "published_at": "https://example.com/keys",
+        "taken": "2026-09-18", "keys": []}]}"#;
     std::fs::write(share.join("host-keys.json"), one).unwrap();
     let (path, text) = pins::file_beside(&bin).expect("the release carries a pin file");
     assert_eq!(path, share.join("host-keys.json"));
