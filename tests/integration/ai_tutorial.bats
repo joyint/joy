@@ -23,6 +23,16 @@ load setup
     [[ "$output" == *"accepted"* ]]
     # Authoring validity is documented (JOY-01B8-FA).
     [[ "$output" == *"--replaced-by"* ]]
+    # What a delegation session may do at a forge (JOY-029D-3E).
+    [[ "$output" == *"Forge contacts"* ]]
+    [[ "$output" == *"joy forge login"* ]]
+    [[ "$output" == *"delegation session"* ]]
+    # The stable state words an agent reads off a failed contact.
+    [[ "$output" == *"needs_sign_in"* ]]
+    [[ "$output" == *"needs_host_trust"* ]]
+    [[ "$output" == *"rate_limited"* ]]
+    [[ "$output" == *"offline"* ]]
+    [[ "$output" == *"plugin_missing"* ]]
 }
 
 @test "joy --help footer points AI tools at joy ai tutorial" {

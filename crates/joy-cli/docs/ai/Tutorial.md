@@ -86,7 +86,7 @@ After session start:
 
 ## Authentication
 
-A session is only needed for writes. Read-only commands work without one: `joy ls`, `joy show`, `joy find`, `joy log`, `joy roadmap`, `joy config get`, `joy project`, `joy auth status`, `joy ai tutorial`.
+A session is only needed for writes. Read-only commands work without one: `joy ls`, `joy show`, `joy find`, `joy log`, `joy roadmap`, `joy config get`, `joy project`, `joy auth status`, `joy ai tutorial`, `joy forge status`, `joy forge plugins`.
 
 ### Get a session
 
@@ -173,6 +173,46 @@ encrypted, no access # an old token without crypt scope; ask the operator for a 
 ```
 
 Most joy commands accept `--json` for structured output. Use it to extract specific fields; the human-readable default works well for general reading.
+
+## Forge contacts
+
+A delegation session runs on the person's own machine, so every forge contact you make travels with the credentials that machine already holds: its ssh keys, its `known_hosts` entries, its credential helpers, the token joy stored for a host, and the token `gh`, `glab` or `tea` holds for it. joy reads a stored token for you; it never changes one. A delegation session may USE a credential and may never store, remove or renew one.
+
+Your session is what decides this. `--session <session_env>` sets `JOY_SESSION` for that run, and a live session there makes the whole process a delegation session, terminal or not.
+
+Read where the machine stands before you promise anything:
+
+```
+joy forge status --json
+```
+
+It lists each known host with its login, its state (`signed-in`, `expired` or `none`), the source the credential came from, the granted access and the expiry, and it exits 1 when no host is signed in. It needs no joy session, and under a delegation session it changes no credential.
+
+### The three commands a delegation session cannot run
+
+- `joy forge login` is refused before any connector is started: "joy forge login needs a person at this machine; this process runs under a delegation session. Sign in on the machine that owns the session, or store a token there with joy forge login --token-stdin". The state is `needs_sign_in`.
+
+- `joy forge login --token-stdin` reaches the connector, which refuses to store the token: "this process runs under a delegation session, which may use the credential this machine holds and may never store one. Store the token on the machine that owns the session with joy forge login --token-stdin". The state is `unsupported`.
+
+- `joy forge logout` removes nothing and revokes nothing. The answer says `removed: false`.
+
+Do not retry any of the three and do not look for another way in. Name the host to your person and ask them to run the command in their own terminal, on the machine that owns the session. The flags they have are `--host <host>`, `--token-stdin`, `--for read|write|create|release` and `--login <name>`; there is no `--remote`.
+
+### No question is put to you
+
+joy raises no question of its own at a `Background` host (a hook, a worker, a server) or at a `Delegated` one: only an interactive host may be asked. Its host key question is not installed for the other two, so a host key this machine has never seen is refused instead of asked about, and the refusal names the fingerprint, the `known_hosts` file and the line to add. The published host keys of the public forges are accepted without a file.
+
+### When a contact fails
+
+Every joy command that contacts a forge reports the failure in one vocabulary: a stable `state` word, one plain sentence, and an action sentence where the state has one. With `--json`, a contact that IS the command's answer (`joy release publish`) prints it as the command's one envelope on stdout and exits 1; a contact that is not the answer (the push joy makes beside a write, the chat delivery after a send) goes to stderr as one JSON object with the same fields. Without `--json` the same three parts are the message, the `= note: state <word>` line and the `= help: <action>` line.
+
+The words you will meet, and what to say about each:
+
+- `needs_sign_in`: nobody is signed in for this host, or the credential is spent. The action sentence is "run `joy forge login --host <host>`". Tell your person that, and stop; you cannot run it.
+- `needs_host_trust`: this machine has never seen the host key of that host. There is no action sentence; the message carries the fingerprint, the `known_hosts` file and the line to add. Give your person both, and let them compare the fingerprint with what the forge publishes before they add it.
+- `rate_limited`: the forge is throttling joy and will serve it again. There is no action sentence and nothing to fix. Say that it is a wait, not a fault, and do not repeat the call.
+- `offline`: nobody answered: DNS, the connection, a timeout, or the forge is down. There is no action sentence. Say that the contact did not reach the host, and let your person decide whether to retry.
+- `plugin_missing`: the forge connector binary is not on this machine. The action sentence is "run `joy forge plugins` to see which binary answered". Pass it on; installing a binary is not your work.
 
 ## Capabilities and gates
 
