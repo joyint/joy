@@ -1395,10 +1395,20 @@ mod tests {
         let sentence = log_all_ref_updates_sentence(&store);
         assert!(sentence.contains("core.logAllRefUpdates=always"));
         // The path the machine writes, not the one libgit2 answers:
-        // `commondir` is all forward slashes, on Windows too.
+        // `commondir` is all forward slashes, on Windows too. The
+        // directory's own name is what is compared, because on the
+        // Windows runner the temp root is spelled RUNNER~1 by the
+        // environment and runneradmin by libgit2, and both are right.
+        let name = dir
+            .path()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        assert!(sentence.contains(&name), "{sentence}");
         assert!(
-            sentence.contains(&dir.path().to_string_lossy().to_string()),
-            "{sentence}"
+            !sentence.contains('/') || cfg!(not(windows)),
+            "the machine's own separators are expected: {sentence}"
         );
     }
 
