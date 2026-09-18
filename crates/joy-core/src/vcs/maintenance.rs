@@ -1012,6 +1012,11 @@ fn unlink_best_effort(path: &Path) -> Unlink {
     }
 }
 
+// The lint warns that clearing the read only bit makes a file world
+// writable ON UNIX. This is the windows branch, where the bit is
+// `FILE_ATTRIBUTE_READONLY` and clearing it is the only way to unlink
+// the object git wrote.
+#[allow(clippy::permissions_set_readonly_false)]
 #[cfg(windows)]
 fn clear_readonly(path: &Path) -> bool {
     let Ok(metadata) = fs::metadata(path) else {
@@ -1111,6 +1116,9 @@ fn git(e: git2::Error) -> JoyError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The one case that needs them holds an object open from a second
+    // process, which takes a POSIX shell: unix only, and so are they.
+    #[cfg(unix)]
     use std::io::{BufRead, BufReader, Write};
 
     fn repo() -> (tempfile::TempDir, Repository) {
@@ -1167,6 +1175,7 @@ mod tests {
     /// finding 7). The attribute is cleared for the one call and put
     /// back, so the case still runs against the store git would have
     /// left behind.
+    #[allow(clippy::permissions_set_readonly_false)]
     fn set_mtime(path: &Path, when: SystemTime) {
         #[cfg(windows)]
         let was_readonly = {

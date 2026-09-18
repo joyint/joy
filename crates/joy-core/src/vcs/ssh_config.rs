@@ -521,7 +521,7 @@ fn dirs_home() -> Option<PathBuf> {
         .or_else(|| {
             let drive = std::env::var_os("HOMEDRIVE")?;
             let path = std::env::var_os("HOMEPATH")?;
-            let mut home = std::ffi::OsString::from(drive);
+            let mut home = drive;
             home.push(path);
             Some(PathBuf::from(home))
         })
