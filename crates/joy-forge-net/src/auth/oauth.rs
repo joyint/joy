@@ -84,11 +84,12 @@ pub mod clients {
     /// design; the client secret GitHub generates is never used.
     pub const GITHUB_COM: &str = "Ov23liNJt50pUmo28YPy";
 
-    /// PLACEHOLDER, replace when the gitlab.com application is
-    /// registered. It must be registered with Confidential OFF and with
-    /// the UNION of every scope set joy may request: since the fix for
-    /// issue 543138 a device request may narrow but never widen (D2.7).
-    pub const GITLAB_COM: &str = "REPLACE-ME-gitlab-com-client-id";
+    /// The public application the operator registered on gitlab.com on
+    /// 2026-09-18: Confidential off, redirect `http://127.0.0.1`, scopes
+    /// registered as the union `api write_repository` so a device request
+    /// may narrow (D2.7, decision 28). A GitLab application id is public
+    /// by design.
+    pub const GITLAB_COM: &str = "299407d616bd7e050092e60b512a5e8e6c2d35bde91ae612f8e68e9b0dcef1dc";
 
     /// PLACEHOLDER, replace when the codeberg.org application is
     /// registered. Its redirect URI must be exactly `http://127.0.0.1`,
@@ -736,10 +737,9 @@ mod tests {
 
     #[test]
     fn the_placeholder_client_ids_are_marked_as_placeholders() {
-        for id in [clients::GITLAB_COM, clients::CODEBERG_ORG] {
-            assert!(clients::is_placeholder(id), "{id}");
-        }
+        assert!(clients::is_placeholder(clients::CODEBERG_ORG));
         assert!(!clients::is_placeholder(clients::GITHUB_COM));
+        assert!(!clients::is_placeholder(clients::GITLAB_COM));
         assert!(!clients::is_placeholder("Ov23liRealLookingId"));
         let sentence = unregistered_sentence("github.com");
         assert!(sentence.contains("--token-stdin"));
