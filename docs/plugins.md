@@ -91,9 +91,9 @@ target, so an old machine keeps publishing releases. A `--remote`
 argument travels with three of the six, the three whose protocol 1
 parser knows one: `claims`, `store` and `files`. `release` never gets
 one, because its old parser would exit 2 on it and the publish would
-end there. Asked anything else, joy does
-not call it at all and reports the state `plugin_outdated` with the file
-that answered and the fix in one sentence:
+end there. Asked anything else, joy does not call it at all and reports
+the state `plugin_outdated` with the file that answered and the fix in
+one sentence:
 
     the GitHub connector at /home/s/.cargo/bin/joy-github speaks protocol 1,
     this joy needs protocol 2. Install the new connector (`cargo install

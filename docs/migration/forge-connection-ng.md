@@ -46,11 +46,12 @@ target, so publishing a release keeps working on a machine nobody has
 upgraded. Only three of the six are handed a `--remote` argument with
 it, the three whose protocol 1 parser knows one: `claims`, `store` and
 `files`. Giving `release` one is exactly what would end the publish,
-because its old parser exits 2 on an argument it does not know. Asked anything
-newer it produces the state `plugin_outdated`, which names the file that
-answered and the fix in one sentence. The detection needs no cooperation
-from the old binary: its argument parser exits 2 with usage on stderr
-and nothing on stdout, and that is the rule joy reads.
+because its old parser exits 2 on an argument it does not know. Asked
+anything newer, the connector produces the state `plugin_outdated`,
+which names the file that answered and the fix in one sentence. The
+detection needs no cooperation from the old binary: its argument parser
+exits 2 with usage on stderr and nothing on stdout, and that is the rule
+joy reads.
 
 ## The server and agent images
 
