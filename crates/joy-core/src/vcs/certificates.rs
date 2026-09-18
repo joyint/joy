@@ -122,6 +122,9 @@ fn ask_to_trust(request: &TrustRequest) -> Answer {
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .cloned();
+    // The person's own answer, in their own time: joy's contact bound
+    // is held open while the question stands (`super::bound`).
+    let _hold = ask.is_some().then(super::bound::hold);
     match ask {
         Some(ask) if ask(request) => Answer::Yes,
         Some(_) => Answer::No,

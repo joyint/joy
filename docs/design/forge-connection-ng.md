@@ -326,6 +326,18 @@ Changes:
 - `ls_remote_refs(root, auth, &[...])` replaces two contacts by one, because `connection.list()` already downloads the full advertisement (forge.rs:608-638).
 - The acceptance criterion is written in HTTP requests per minute per host, derived from the budget table above and measured with a counting proxy or `GIT_TRACE`, not in contacts. J5's and A5's acceptance criteria are stated in those units and in no other.
 
+##### D1.9a The bound on one contact, and why joy has to set it itself
+
+`git_libgit2_opts(GIT_OPT_SET_SERVER_CONNECT_TIMEOUT)` and `GIT_OPT_SET_SERVER_TIMEOUT` (10 s and 15 s, forge.rs `bound_forge_waits`) are stored in `git_socket_stream__connect_timeout` and `git_socket_stream__timeout` (settings.c:435-465) and read in exactly two places: `streams/socket.c:380-381` and `transports/ssh_libssh2.c:551-552`. **On Windows the https transport opens no socket stream at all.** `winhttp.c` is compiled instead of `http.c` (`#ifdef GIT_WINHTTP`, winhttp.c:10, http.c:10; libgit2-sys build.rs selects it for every windows target) and it sets its own timeouts from two local variables: `WinHttpSetTimeouts(handle, TIMEOUT_INFINITE, DEFAULT_CONNECT_TIMEOUT, TIMEOUT_INFINITE, TIMEOUT_INFINITE)` with `TIMEOUT_INFINITE -1` and `DEFAULT_CONNECT_TIMEOUT 60000` (winhttp.c:36-37, :381-382, :423, :785-786, :856). A forge that accepts the connection and then says nothing therefore held a joy contact on Windows for ever, and no callback could end it: libgit2 calls none of them while it waits for the first byte, so a watchdog inside `transfer_progress` or `sideband_progress` never runs.
+
+joy bounds the contact from the outside instead (`joy_core::vcs::bound`, JOY-02A7-A2). The contact runs on a thread of its own and the caller waits for it with a **silence** bound of 20 s, wider than libgit2's own 15 s so that the socket bound still decides wherever it works. Three rules make that a silence bound and not a cap on the operation, which a clone of a large repository would not survive:
+
+- every callback joy installs beats a heartbeat (`transfer_progress`, `sideband_progress`, `pack_progress`, `push_transfer_progress`, `update_tips`, and the credential callback), and while the heartbeat moves the bound does not run out;
+- a wait for a PERSON holds the bound open explicitly (`bound::hold`): the credential helper's own prompt deadline of D1.3, joy's host key question of D1.4a and joy's passphrase question of D1.4 have bounds of their own and are not silence. joy's own throttle wait of D1.9 holds it open for the same reason;
+- the clone's progress callback is not moved to that thread: every count crosses back to the caller's thread and the transfer waits for the verdict, so "stop" still stops the download at the callback that said it (D4.3).
+
+A call that runs out is `offline` with joy's own words in the detail line, because libgit2 said nothing at all. The thread stays inside the operating system call it cannot be pulled out of, so it is counted: one key (a forge host, or the ssh agent) may leave at most two such threads behind, and the next call for that key answers "nobody answered" at once rather than adding a third. A poll loop against a black hole costs two threads, not one per tick. The same primitive bounds the Windows ssh agent probe, whose named pipe is a `std::fs::File` and takes no read timeout (D1.4).
+
 #### D1.10 Prompt rule, narrowed to its mechanism
 
 `Background` and `Delegated` hosts raise no prompt that joy controls. The mechanisms, each of which is verified:

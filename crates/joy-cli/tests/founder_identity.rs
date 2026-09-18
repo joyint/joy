@@ -14,11 +14,20 @@ use std::process::Output;
 /// Run `joy` in `root` on a machine with no git identity anywhere: its own
 /// HOME, its own state and config directories, and git's own switch for
 /// the system-wide config.
+///
+/// `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` move with `HOME`, because
+/// on Windows libgit2 looks for the global config in EVERY one of those
+/// that exists (`git_win32__find_global_dirs`), so moving `HOME` alone
+/// still found the machine's own `.gitconfig` - and the windows-latest
+/// CI job writes an identity into it on purpose.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
     joy_process::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
+        .env("USERPROFILE", home)
+        .env("HOMEDRIVE", "")
+        .env("HOMEPATH", "")
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -144,6 +153,9 @@ fn init_with_a_stale_session_value_refuses_like_a_background_host() {
         .args(["init", "--name", "Delegated"])
         .current_dir(&root)
         .env("HOME", &home)
+        .env("USERPROFILE", &home)
+        .env("HOMEDRIVE", "")
+        .env("HOMEPATH", "")
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")

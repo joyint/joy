@@ -82,6 +82,41 @@ pub fn probe_agent() -> Agent {
     else {
         return Agent::Missing;
     };
+    bounded_probe(socket)
+}
+
+/// The probe with [`AGENT_TIMEOUT`] around the whole of it, because on
+/// Windows nothing inside it has a bound of its own.
+///
+/// A unix domain socket takes `set_read_timeout` and
+/// `set_write_timeout`, so the probe there is bounded where it blocks
+/// ([`connect`]). A Windows agent is a named pipe, which opens and reads
+/// like a file, and `std::fs::File` has no timeout at all: a pipe whose
+/// server accepted the open and then never answers held the probe for
+/// ever, inside libgit2's credentials callback, and with it the whole
+/// contact (JOY-02A7-A2 finding 4). `super::bound` gives it the bound
+/// the file API does not.
+#[cfg(windows)]
+fn bounded_probe(socket: String) -> Agent {
+    let named = socket.clone();
+    super::bound::within_silence("ssh-agent", "agent-probe", AGENT_TIMEOUT, move || {
+        probe_socket(named)
+    })
+    .unwrap_or(Agent::Unreachable {
+        socket,
+        detail: format!(
+            "it did not answer within {} seconds",
+            AGENT_TIMEOUT.as_secs()
+        ),
+    })
+}
+
+#[cfg(not(windows))]
+fn bounded_probe(socket: String) -> Agent {
+    probe_socket(socket)
+}
+
+fn probe_socket(socket: String) -> Agent {
     match connect(&socket) {
         Ok(mut stream) => match identity_count(&mut stream) {
             Ok(0) => Agent::Empty { socket },
@@ -258,6 +293,11 @@ pub struct SshChain {
     pub candidates: Vec<SshCandidate>,
     /// Why a candidate is not in the list, in the person's words.
     pub notes: Vec<String>,
+    /// The agent is in the chain although joy's own probe found none:
+    /// the Windows carve out below. Nothing is known about what it
+    /// holds, so a refusal of it may not be reported as "the agent's
+    /// identities were refused" (JOY-02A7-A2 finding 6).
+    pub agent_blind: bool,
 }
 
 /// Build the chain for `host`.
@@ -292,10 +332,12 @@ pub fn chain_for(
     // whole chain on the very machines where the key file step is
     // empty too, because WinCNG reads no openssh-key-v1 file
     // (design D1.2 rule 5, D1.4).
+    let mut agent_blind = false;
     if agent.usable() {
         candidates.push(SshCandidate::Agent);
     } else if windows && *agent == Agent::Missing {
         candidates.push(SshCandidate::Agent);
+        agent_blind = true;
         notes.push(format!(
             "no SSH_AUTH_SOCK is set, so joy offered {host} whatever Windows' own agent holds (the OpenSSH agent service or Pageant)"
         ));
@@ -340,6 +382,7 @@ pub fn chain_for(
         user,
         candidates,
         notes,
+        agent_blind,
     }
 }
 
@@ -488,6 +531,9 @@ fn ask_passphrase(path: &Path, kind: HostKind) -> Option<String> {
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .cloned();
+    // The person types a passphrase in their own time, and joy's own
+    // contact bound is held open while they do (`super::bound`).
+    let _hold = ask.is_some().then(super::bound::hold);
     let answer = ask.and_then(|ask| ask(path)).filter(|s| !s.is_empty());
     answers.insert(path.to_path_buf(), answer.clone());
     answer
