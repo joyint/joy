@@ -48,6 +48,15 @@
 //!   ever sees half of it. A truncate-then-write would make a crash mid
 //!   write lose every stored credential at once, because a file that
 //!   does not parse reads as "nothing is stored".
+//!
+//! One more rule comes from outside this module. A `Delegated` host is
+//! an agent the person lent their machine to, and G2 says it inherits
+//! everything through the joy CLI: it may READ the credential the
+//! person stored and it may never change it. Its vault is therefore
+//! built read only ([`Vault::read_only`]), which is a refusal in
+//! [`Vault::put`] and [`Vault::remove`] and a "do not renew" in the
+//! refresh of D2.6a. Nothing about that decision is per call: the flag
+//! is set once, where the host kind is known (`Ctx::new`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -68,6 +77,13 @@ pub const INDEX_SERVICE: &str = "joy-forge.logins";
 
 /// The file joy writes when the credential store cannot answer (D2.6).
 pub const FALLBACK_FILE: &str = "forge-tokens.json";
+
+/// Why a read only vault refused a write. It reaches a person only
+/// through a caller that says so in its own words; the verbs of D2.4
+/// refuse before they get this far.
+pub const READ_ONLY: &str =
+    "this process runs under a delegation session, which may use the credential this machine \
+     holds and may never change it";
 
 /// One stored credential. Everything the refresh and the answers of
 /// D2.4 need is here, so a refresh needs no forge knowledge at all:
@@ -163,6 +179,10 @@ pub struct Vault {
     keys: Keys,
     /// The 0600 file, used when the store cannot answer.
     file: PathBuf,
+    /// Whether this vault may only be read. A `Delegated` host gets
+    /// one that may not: it uses what the person stored and changes
+    /// nothing of it (D1.10, D3.8).
+    read_only: bool,
 }
 
 /// The credential store behind a vault.
@@ -284,7 +304,25 @@ impl Vault {
         Vault {
             keys: Keys::Os,
             file: default_file(),
+            read_only: false,
         }
+    }
+
+    /// The same vault, allowed to read and nothing else.
+    ///
+    /// This is what a `Delegated` host gets. The agent runs on the
+    /// person's own machine and inherits their credentials through the
+    /// joy CLI (G2, D3.8), so refusing it the store would refuse it
+    /// every ssh and https contact the person can make. What it may
+    /// never do is CHANGE what it inherited: no `token-store`, no
+    /// `logout`, and no refresh, because a refresh at a forge that
+    /// rotates refresh tokens retires the one the person holds and
+    /// signs them out of their own machine. Where a refresh would be
+    /// needed the answer is `known:false` with the sentence that names
+    /// who has to sign in (D1.10: a delegated host never prompts).
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
+        self
     }
 
     /// A vault that only ever uses the file under `dir`. This is the
@@ -295,6 +333,7 @@ impl Vault {
         Vault {
             keys: Keys::None,
             file: dir.as_ref().join(FALLBACK_FILE),
+            read_only: false,
         }
     }
 
@@ -307,6 +346,7 @@ impl Vault {
         Vault {
             keys: Keys::Fake(std::sync::Arc::new(std::sync::Mutex::new(BTreeMap::new()))),
             file: dir.as_ref().join(FALLBACK_FILE),
+            read_only: false,
         }
     }
 
@@ -320,6 +360,7 @@ impl Vault {
         Vault {
             keys: Keys::Os,
             file: dir.as_ref().join(FALLBACK_FILE),
+            read_only: false,
         }
     }
 
@@ -330,12 +371,18 @@ impl Vault {
         Vault {
             keys: Keys::None,
             file: PathBuf::new(),
+            read_only: false,
         }
     }
 
     /// Whether this vault can hold anything at all.
     pub fn is_none(&self) -> bool {
         matches!(self.keys, Keys::None) && self.file.as_os_str().is_empty()
+    }
+
+    /// Whether this vault may be read and not written.
+    pub fn is_read_only(&self) -> bool {
+        self.read_only
     }
 
     /// The file this vault falls back to.
@@ -385,6 +432,9 @@ impl Vault {
         if self.is_none() {
             return Err("this connector call keeps no credentials".to_string());
         }
+        if self.read_only {
+            return Err(READ_ONLY.to_string());
+        }
         let login = record.login.as_deref();
         let text = serde_json::to_string(record).map_err(|e| e.to_string())?;
         if self
@@ -411,6 +461,9 @@ impl Vault {
     pub fn remove(&self, host: &str, login: Option<&str>) -> Result<Option<Source>, String> {
         if self.is_none() {
             return Ok(None);
+        }
+        if self.read_only {
+            return Err(READ_ONLY.to_string());
         }
         let mut removed = None;
         if self.keys.delete(SERVICE, &user_key(host, login)) {

@@ -331,7 +331,7 @@ Changes:
 `Background` and `Delegated` hosts raise no prompt that joy controls. The mechanisms, each of which is verified:
 
 1. The host kind is a parameter set once at the entry point (D1.1), not a TTY guess. `joy_process::headless()` is not the test, because it answers false on every unix host.
-2. joy's own ssh passphrase prompt and joy's own host key question are gated on `Interactive` (D1.4, D1.4a).
+2. joy's own ssh passphrase prompt and joy's own host key question are gated on `Interactive` (D1.4, D1.4a). A `Delegated` host's credential vault is read only on top of that (D2.6), so the verbs that could reach an operating system store with a WRITE, and the refresh that could rotate the person's token under them, are gone rather than bounded.
 3. The credential helper runner passes `GCM_INTERACTIVE=never`, `GCM_GUI_PROMPT=0` and `GIT_TERMINAL_PROMPT=0` per spawn for those host kinds (D1.3).
 4. The interactive plugin verbs (`login`, `logout`, the token paste) are compiled out of the platform binary and refused at runtime on `Background` and `Delegated` hosts (D3.11).
 5. Every plugin call carries the host kind as a protocol field, and the plugin uses it to skip any step that can raise an operating system dialog.
@@ -481,6 +481,7 @@ The keychain entry is owned by the plugin binary alone. The app never reads or w
 - **Entry addressing, decided.** `Entry::new(service, user)` only, never `new_with_target`, and **joy does not read a foreign CLI's store at all**. This resolves the v2 contradiction: reading `glab:<host>:token` or gh's item would need `new_with_target` on Windows, and on macOS a direct read from a different binary risks an allow or deny dialog (cli/cli docs/macos-keyring.md). Instead the plugin **spawns the CLI** (`gh auth token --hostname H --user U`, `glab auth credential-helper`, `tea login helper get`), which is also the only way the CLI's own refresh runs. A foreign CLI credential is therefore read only for joy: joy never refreshes it, never writes it and never revokes it, and `logout` names the foreign command instead. The service is the plugin's own name, the user is `<host>` or `<host>|<login>`.
 - Fallback file, written by joy because the crate has none: `~/.config/joy/forge-tokens.json`, mode 0600, directory 0700, used on `NoStorageAccess`, on `PlatformFailure` and on any target where the crate would degrade to its in process mock. The UI and the docs say so, with gh's sentence as the model ("If a credential store is not found or there is an issue using it gh will fallback to writing the token to a plain text file").
 - The platform does not link keyring at all. The default Docker seccomp profile blocks `add_key`, `keyctl` and `request_key`, and a container has no session bus.
+- **A `Delegated` host reads and never writes.** The agent runs on the person's own machine and inherits everything through the joy CLI (G2, D3.8), so it gets the same vault the person has, read only: the store first, the 0600 file behind it. What it may never do is change what it inherited. `token-store` and `logout` are refused by name (`logout` revokes at the forge, so reaching it would sign the person out of their own machine), and a credential that expired under it is NOT refreshed, because a forge that rotates refresh tokens retires the one the person holds. That case answers `{"known":false,"reason":"expired"}` with the sentence that the person who owns the machine has to sign in again, and it answers it only where no source below the entry answers either, so `--token-env`, the forge's own variables and a signed in forge CLI all keep the precedence D2.4 gives them.
 
 #### D2.6a The refresh lock
 
@@ -642,6 +643,7 @@ Packing alone is not maintenance. On the measured store, 6140 loose objects and 
 
 - Non interactive is decided by the host kind of D1.1 and by `JOY_SESSION`, not by a TTY.
 - `GIT_TERMINAL_PROMPT=0`, pinned into the agent environment today (agent_ops.rs:594-624), stops steering joy's own contacts and keeps steering the agent tool's own git calls. The same holds for `GIT_AUTHOR_*` and `GIT_COMMITTER_*`.
+- The agent inherits credentials rather than holding any: its vault is the person's own, read only (D2.6). It may use what the person stored, and it may not write one, sign one out or renew one. That is what makes "the agent never prompts" (D1.10) true without also making the agent useless on a machine whose person is signed in.
 - The CLI gets one failure vocabulary an agent can read: the `contact::Failure` words plus the new states of D1.8, available as `--json` on every command that contacts a forge. The private classifier in joy-cli commands/chat.rs (`classify_sync_error`) is retired.
 - A CLI command may now wait for the throttle of D1.9 before it contacts a forge (up to 2.2 s on Codeberg for an authenticated ls-remote). That is a visible latency change for a terminal user and is stated in the docs.
 

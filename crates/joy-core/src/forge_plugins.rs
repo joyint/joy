@@ -1356,7 +1356,7 @@ pub struct CallerFacts {
     /// on every protocol 2 call.
     pub login: Option<String>,
     pub user_id: Option<String>,
-    /// Name of an environment variable holding a forge token — the token
+    /// Name of an environment variable holding a forge token: the token
     /// itself must never appear in a process list. When `token_value` is
     /// set too, the variable is injected into the PLUGIN's environment
     /// only (a multi-account host must never widen its own process env).

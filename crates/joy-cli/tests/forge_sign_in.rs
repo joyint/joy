@@ -579,14 +579,18 @@ fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
 /// protocol field, and the plugin uses it to skip any step that can
 /// raise an operating system dialog".
 ///
-/// A DELEGATED session is not this machine's person. D3.11 already
-/// refuses `login`, `logout` and the token paste there, its credential
-/// travels in the variable the caller named, and the person's own
-/// credential store is none of its business: it is never opened at all.
-/// A BACKGROUND host is this person's own machine and keeps its entry,
-/// because the desktop's sync poll is a background host and needs it.
+/// A DELEGATED session is an agent the person lent this machine to. G2
+/// and D3.8 say it inherits everything through the joy CLI, so it READS
+/// the credential the person stored and it changes nothing of it: no
+/// `token-store`, no `logout`, no refresh. D3.11 refuses `login` on top
+/// of that, and D1.10's promise holds because a read is the one access
+/// that raises no question of joy's own.
+///
+/// This runs through the shipped binary, so the wiring from
+/// `--host-kind delegated` to the read only vault is what is under
+/// test and not a flag a test set itself.
 #[test]
-fn a_delegated_session_never_opens_this_persons_credential_store() {
+fn a_delegated_session_reads_this_persons_credential_and_changes_nothing() {
     let fake = FakeForge::start(|_| Reply::not_found());
     let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
     sandbox.seed(
@@ -594,27 +598,69 @@ fn a_delegated_session_never_opens_this_persons_credential_store() {
         "scotty",
         serde_json::json!({ "token": "gho_of_this_person", "login": "scotty" }),
     );
-
-    let delegated = sandbox
-        .connector()
-        .args([
+    let before = std::fs::read_to_string(sandbox.tokens_file()).unwrap();
+    let delegated = |verb: &str| {
+        let mut command = sandbox.connector();
+        command.args([
             "github",
-            "token",
+            verb,
             "--host",
             "forge.test",
             "--host-kind",
             "delegated",
-        ])
-        .output()
-        .expect("the connector");
-    let answer = answer_of(&delegated);
-    assert_eq!(answer["known"], false, "{answer}");
-    assert_eq!(answer["reason"], "no-keychain");
+        ]);
+        command
+    };
+
+    // it READS what the person stored: the agent runs on their machine
+    // and refusing this would refuse it every contact they can make
+    let answer = answer_of(&delegated("token").output().expect("the connector"));
+    assert_eq!(answer["known"], true, "{answer}");
+    assert_eq!(answer["token"], "gho_of_this_person");
+    assert_eq!(answer["login"], "scotty");
+    assert_eq!(answer["source"], "file");
+
+    // it signs nothing out. This verb revokes at the forge before it
+    // removes anything, so reaching it would sign the PERSON out.
+    let out = answer_of(&delegated("logout").output().expect("the connector"));
+    assert_eq!(out["removed"], false, "{out}");
+    assert_eq!(out["revoked"], false, "{out}");
     assert!(
-        !String::from_utf8_lossy(&delegated.stdout).contains("gho_of_this_person"),
-        "a delegated session never reads this person's entry"
+        out["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("delegation session"),
+        "{out}"
     );
 
+    // and it stores nothing of its own
+    let mut child = delegated("token-store")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("the connector");
+    child
+        .stdin
+        .take()
+        .expect("stdin")
+        .write_all(b"ghp_a_token_of_its_own\n")
+        .unwrap();
+    let stored = answer_of(&child.wait_with_output().expect("the connector"));
+    assert_eq!(stored["known"], false, "{stored}");
+    assert_eq!(stored["reason"], "unsupported", "{stored}");
+
+    // the person's own file is byte for byte what it was, after all
+    // three, and the fake was never contacted by any of them
+    assert_eq!(
+        std::fs::read_to_string(sandbox.tokens_file()).unwrap(),
+        before
+    );
+    assert!(fake.calls().is_empty(), "{:?}", fake.calls());
+
+    // A BACKGROUND host is this person's own machine and keeps the
+    // whole vault, because the desktop's sync poll is a background host
+    // and has to be able to store a token as well.
     for kind in ["background", "interactive"] {
         let output = sandbox
             .connector()
@@ -632,6 +678,103 @@ fn a_delegated_session_never_opens_this_persons_credential_store() {
         assert_eq!(answer["token"], "gho_of_this_person", "{kind}: {answer}");
         assert_eq!(answer["source"], "file");
     }
+}
+
+/// The other half of the same rule (D2.6, D2.6a): a credential that
+/// expired under a delegated session is NOT renewed, because a forge
+/// that rotates refresh tokens would retire the one the person holds
+/// and sign them out of their own machine. The answer says who has to
+/// sign in instead, and it never asks anybody itself (D1.10).
+#[test]
+fn a_delegated_session_never_refreshes_the_credential_it_inherited() {
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let counter = refreshes.clone();
+    let fake = FakeForge::start(move |_| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        Reply::json(200, r#"{"access_token":"renewed","expires_in":3600}"#)
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    let expired = (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339();
+    sandbox.seed(
+        "forge.test",
+        "scotty",
+        serde_json::json!({
+            "token": "gho_of_this_person",
+            "login": "scotty",
+            "expires_at": expired,
+            "refresh_token": "rt-the-persons",
+            "token_endpoint": format!("{}/login/oauth/access_token", fake.base()),
+            "client_id": "test-client",
+        }),
+    );
+    let before = std::fs::read_to_string(sandbox.tokens_file()).unwrap();
+
+    let output = sandbox
+        .connector()
+        .args([
+            "github",
+            "token",
+            "--host",
+            "forge.test",
+            "--host-kind",
+            "delegated",
+        ])
+        .output()
+        .expect("the connector");
+    let answer = answer_of(&output);
+    assert_eq!(answer["known"], false, "{answer}");
+    assert_eq!(answer["reason"], "expired", "{answer}");
+    let message = answer["message"].as_str().unwrap_or_default();
+    assert!(
+        message.contains("joy forge login --host forge.test"),
+        "{message}"
+    );
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0, "no refresh was spent");
+    assert_eq!(
+        std::fs::read_to_string(sandbox.tokens_file()).unwrap(),
+        before
+    );
+
+    // the platform's own hand over is untouched by all of this: the
+    // variable the CALLER named is the whole answer where it is given
+    // (D2.4), expired entry or not, and it costs no request
+    let handed = sandbox
+        .connector()
+        .env("JOY_TEST_DELEGATED_TOKEN", "gho_handed_to_the_agent")
+        .args([
+            "github",
+            "token",
+            "--host",
+            "forge.test",
+            "--host-kind",
+            "delegated",
+            "--token-env",
+            "JOY_TEST_DELEGATED_TOKEN",
+        ])
+        .output()
+        .expect("the connector");
+    let handed = answer_of(&handed);
+    assert_eq!(handed["known"], true, "{handed}");
+    assert_eq!(handed["token"], "gho_handed_to_the_agent");
+    assert_eq!(handed["source"], "env");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0, "no refresh was spent");
+
+    // the person's own session still renews it, so this is the
+    // delegated host's rule and not everybody's
+    let own = sandbox
+        .connector()
+        .args([
+            "github",
+            "token",
+            "--host",
+            "forge.test",
+            "--host-kind",
+            "interactive",
+        ])
+        .output()
+        .expect("the connector");
+    assert_eq!(answer_of(&own)["token"], "renewed");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
 }
 
 /// D4.1c, step 4, through the shipped binary: `--for` is the direction

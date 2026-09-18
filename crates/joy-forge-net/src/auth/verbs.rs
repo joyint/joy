@@ -30,6 +30,11 @@ pub enum Own {
     /// Another process holds the refresh lock and the entry is past its
     /// lifetime: D2.6a says report busy, never refresh anyway.
     Busy,
+    /// The entry is past its lifetime and this call may not renew it,
+    /// because a delegated session reads the person's credential and
+    /// changes nothing of it (D1.10, D3.8). The sentence names who has
+    /// to sign in.
+    Expired(String),
 }
 
 /// The connector's own credential for this host, chosen by the steps of
@@ -70,8 +75,35 @@ pub fn own_token_full(ctx: &Ctx, host: &str) -> Own {
     };
     match fresh(ctx, host, record, source) {
         Ok((record, source)) => Own::Found(Box::new(resolved_of(record, source, chose_by))),
-        Err(()) => Own::Busy,
+        Err(Stale::Busy) => Own::Busy,
+        Err(Stale::Expired(message)) => Own::Expired(message),
     }
+}
+
+/// Why [`fresh`] gave no usable record back.
+enum Stale {
+    /// Another process holds the refresh lock (D2.6a).
+    Busy,
+    /// A refresh was needed and this call may not run one.
+    Expired(String),
+}
+
+/// The sentence a delegated session gets for a credential that expired
+/// under it. It names the machine's own person, because that is who can
+/// answer it, and the one command that does.
+fn delegated_expired(host: &str) -> String {
+    format!(
+        "The stored credential for {host} has expired, and this process runs under a \
+         delegation session, which may use the credential this machine holds and may never \
+         renew it. The person who owns this machine has to sign in again with \
+         joy forge login --host {host}."
+    )
+}
+
+/// The answer of D2.4 for a credential a delegated session found,
+/// cannot use and may not renew.
+fn expired_answer(message: String) -> Value {
+    json!({ "known": false, "reason": "expired", "message": message })
 }
 
 /// The record, refreshed under the lock of D2.6a where it is past its
@@ -81,9 +113,17 @@ pub fn own_token_full(ctx: &Ctx, host: &str) -> Own {
 /// BEFORE the lock is taken and never while it is held, because flock
 /// belongs to the open file description and a child that unlocks takes
 /// the parent's lock with it. Nothing here spawns anything.
-fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Record, Source), ()> {
+fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Record, Source), Stale> {
     if !record.is_expired() {
         return Ok((record, source));
+    }
+    // A delegated session may READ what the person stored and may
+    // never change it (G2, D3.8). A refresh is a change, and at a forge
+    // that rotates refresh tokens it is the change that signs the
+    // person out of their own machine, so this call stops here and says
+    // who has to sign in (D1.10: it never asks anybody itself).
+    if ctx.vault().is_read_only() {
+        return Err(Stale::Expired(delegated_expired(host)));
     }
     if !record.can_refresh() {
         // An expired token with no way to renew it is still what this
@@ -103,7 +143,7 @@ fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Recor
             let again = ctx.vault().get(host, login.as_deref());
             return match again {
                 Some((record, source)) if !record.is_expired() => Ok((record, source)),
-                _ => Err(()),
+                _ => Err(Stale::Busy),
             };
         }
     };
@@ -199,10 +239,17 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
         memory.as_deref(),
         &candidates,
     );
+    // A credential this call found, cannot use and may not renew: the
+    // sentence is held rather than answered with, because the sources
+    // BELOW this one may still have a usable token, and the variable
+    // the caller named (`--token-env`) is one of them. It becomes the
+    // answer only where nothing else answers at all.
+    let mut expired: Option<String> = None;
     match chosen {
         Some((login, chose_by)) => match named_login(forge, &host, &login, chose_by, ctx) {
             Own::Found(resolved) => return answer(forge, &host, &resolved),
             Own::Busy => return lock::busy_answer(),
+            Own::Expired(message) => expired = Some(message),
             // A login this machine no longer holds: fall through and
             // let the probe and the remaining sources decide.
             Own::Nothing => {}
@@ -212,6 +259,7 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
         None if candidates.is_empty() => match own_token_full(ctx, &host) {
             Own::Found(resolved) => return answer(forge, &host, &resolved),
             Own::Busy => return lock::busy_answer(),
+            Own::Expired(message) => expired = Some(message),
             Own::Nothing => {}
         },
         None => {}
@@ -254,6 +302,9 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
     // the forge CLI, spawned.
     match ctx.resolved_token(forge.id(), &host) {
         Some(resolved) => answer(forge, &host, &resolved),
+        // Nothing below the entry answered either, so the credential
+        // this call did find, and may not renew, is the whole story.
+        None if expired.is_some() => expired_answer(expired.expect("the sentence was held")),
         None if ctx.vault().is_none() => json!({ "known": false, "reason": "no-keychain" }),
         None => {
             let mut answer = json!({ "known": false, "reason": "no-login" });
@@ -322,7 +373,8 @@ fn named_login(forge: &dyn Forge, host: &str, login: &str, chose_by: ChoseBy, ct
             Ok((record, source)) => {
                 Own::Found(Box::new(resolved_of(record, source, Some(chose_by))))
             }
-            Err(()) => Own::Busy,
+            Err(Stale::Busy) => Own::Busy,
+            Err(Stale::Expired(message)) => Own::Expired(message),
         };
     }
     match foreign_token(forge, host, login, chose_by) {
@@ -509,6 +561,15 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
     let Some(host) = target.host() else {
         return json!({ "known": false, "reason": "unsupported-host" });
     };
+    // A delegated session reads what the person stored and writes
+    // nothing (G2, D3.8). It is refused here and not by the vault, so
+    // that the answer names the reason instead of reading as a broken
+    // credential store, and refused BEFORE the token is validated, so
+    // that a token nobody may keep is never spent on a request.
+    if ctx.vault().is_read_only() {
+        eprintln!("joy: {NO_STORE_HERE}");
+        return json!({ "known": false, "reason": "unsupported", "message": NO_STORE_HERE });
+    }
     let token = raw.trim();
     if token.is_empty() {
         eprintln!("joy: no token arrived on stdin");
@@ -575,6 +636,21 @@ fn read_stdin() -> Option<String> {
 }
 
 // -- the login verb (D2.4, D2.7, D3.11) ---------------------------------------
+
+/// The sentence a delegated session gets when it tries to STORE a
+/// credential. It may use what the person stored and may never add to
+/// it (G2, D3.8, D1.10).
+pub const NO_STORE_HERE: &str =
+    "this process runs under a delegation session, which may use the credential this machine \
+     holds and may never store one. Store the token on the machine that owns the session with \
+     joy forge login --token-stdin";
+
+/// The same sentence for `logout`, which would revoke the person's own
+/// credential at the forge.
+pub const NO_LOGOUT_HERE: &str =
+    "this process runs under a delegation session, which may use the credential this machine \
+     holds and may never sign it out. Sign out on the machine that owns the session with \
+     joy forge logout";
 
 /// The sentence of D3.11 for a host that has no person at it.
 pub const NO_PERSON_HERE: &str =
@@ -823,6 +899,19 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     let Some(host) = target.host() else {
         return json!({ "removed": false, "revoked": false, "source": null });
     };
+    // The same rule as `token-store`, and here it is the one that
+    // matters most: this verb REVOKES at the forge before it removes
+    // anything locally, so a delegated session that reached it would
+    // sign the person out of their own machine (G2, D3.8).
+    if ctx.vault().is_read_only() {
+        return json!({
+            "removed": false,
+            "revoked": false,
+            "source": null,
+            "reason": "unsupported",
+            "message": NO_LOGOUT_HERE,
+        });
+    }
     let vault = ctx.vault();
     let known = vault.logins(&host);
     let login = ctx

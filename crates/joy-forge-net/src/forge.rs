@@ -307,16 +307,21 @@ impl Ctx {
             remote: None,
             // Mechanism 5 of D1.10: every plugin call carries the host
             // kind, and the plugin uses it to skip a step that can
-            // raise an operating system dialog. A DELEGATED session is
-            // not this machine's person: D3.11 already refuses `login`,
-            // `logout` and the token paste there, its credential
-            // travels in the variable the caller named
-            // (`--token-env`), and the person's own credential store is
-            // none of its business. It is therefore never opened, which
-            // is also the one keychain prompt joy can rule out rather
-            // than bound.
+            // raise an operating system dialog.
+            //
+            // A DELEGATED session gets the same vault READ ONLY. G2 and
+            // D3.8 say the agent inherits everything through the joy
+            // CLI, and it runs on the person's own machine, so denying
+            // it the store would deny it every contact the person can
+            // make; `--token-env` is the caller's hand over and not the
+            // only way in. What it may never do is change what it
+            // inherited: no write, no `logout`, and no refresh, because
+            // a refresh where the forge rotates refresh tokens retires
+            // the one the person holds. D1.10 adds that it never
+            // prompts, and a read is the one access that cannot raise
+            // joy's own question.
             vault: match host_kind {
-                HostKind::Delegated => crate::auth::store::Vault::none(),
+                HostKind::Delegated => crate::auth::store::Vault::real().read_only(),
                 _ => crate::auth::store::Vault::real(),
             },
             state_dir: None,
@@ -671,6 +676,30 @@ mod tests {
         assert_eq!(named.token("github", "github.com"), None);
         std::env::remove_var("GH_TOKEN");
         std::env::remove_var("JOY_TEST_EMPTY_TOKEN");
+    }
+
+    /// G2 and D3.8: the agent inherits everything through the joy CLI,
+    /// so a `Delegated` call reads the person's credential store and
+    /// their 0600 file, and D1.10's "never prompts" is kept by never
+    /// writing, never renewing and never asking. Every other host kind
+    /// gets the same vault with the writes.
+    #[test]
+    fn a_delegated_call_gets_the_persons_vault_read_only() {
+        let root = std::env::temp_dir();
+        let of = |kind| Ctx::new(kind, None, None, None, root.clone());
+        let delegated = of(HostKind::Delegated);
+        assert!(
+            !delegated.vault().is_none(),
+            "a delegated call reads what the person stored"
+        );
+        assert!(delegated.vault().is_read_only());
+        for kind in [HostKind::Interactive, HostKind::Background] {
+            let ctx = of(kind);
+            assert!(!ctx.vault().is_none(), "{kind:?}");
+            assert!(!ctx.vault().is_read_only(), "{kind:?}");
+        }
+        // and a library caller still touches nothing at all
+        assert!(Ctx::bare(&root).vault().is_none());
     }
 
     #[test]

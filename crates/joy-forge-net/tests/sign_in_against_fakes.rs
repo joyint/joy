@@ -1270,3 +1270,133 @@ fn web_url_answers_the_https_twin_of_a_remote() {
     assert_eq!(answer["https_url"], "https://forge.test/team/sub/repo.git");
     assert!(fake.calls().is_empty(), "the twin costs no request");
 }
+
+/// G2 and D3.8: a delegated agent inherits everything through the joy
+/// CLI, so it READS the credential the person stored and it changes
+/// nothing of it. It stores nothing, it signs nothing out, and where a
+/// refresh would be needed it answers with the sentence that names who
+/// has to sign in (D1.10: a delegated host never prompts).
+///
+/// The vault here is the person's own file with the flag `Ctx::new`
+/// sets for a `Delegated` host; the wiring from the host kind to the
+/// flag is `a_delegated_call_gets_the_persons_vault_read_only` in the
+/// crate's own tests, because it needs the real store.
+#[test]
+fn a_delegated_session_reads_the_stored_credential_and_never_changes_it() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        counter.fetch_add(1, Ordering::SeqCst);
+        match call.path.as_str() {
+            "/user" => user_reply(),
+            _ => Reply::json(200, r#"{"access_token":"renewed","expires_in":3600}"#),
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let host = Target::Host("forge.test".into());
+
+    // what the person stored on this machine, on their own session
+    let person = sandbox(dir.path());
+    person
+        .vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "gho_the_persons_token".into(),
+                login: Some("scotty".into()),
+                scopes: "repo".into(),
+                refresh_token: Some("rt-the-persons".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    let mut agent = sandbox(dir.path());
+    agent.host_kind = HostKind::Delegated;
+    let agent = agent.with_vault(Vault::file_at(dir.path().join("config")).read_only());
+
+    // it READS: this is the whole point, and refusing it here would
+    // refuse the agent every contact the person can make
+    let answer = verbs::token(&forge, &host, None, &agent);
+    assert_eq!(answer["known"], true, "{answer}");
+    assert_eq!(answer["token"], "gho_the_persons_token");
+    assert_eq!(answer["login"], "scotty");
+
+    // it stores nothing, and the token it was handed is never spent on
+    // a request either
+    let before = std::fs::read_to_string(person.vault().file()).unwrap();
+    let stored = verbs::store_token(&forge, &host, &agent, "gho_a_token_of_its_own");
+    assert_eq!(stored["known"], false, "{stored}");
+    assert!(
+        stored["message"]
+            .as_str()
+            .unwrap()
+            .contains("delegation session"),
+        "{stored}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(person.vault().file()).unwrap(),
+        before
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing was contacted");
+
+    // it signs nothing out: this verb revokes at the forge first, so a
+    // delegated session that reached it would sign the person out of
+    // their own machine
+    let out = verbs::logout(&forge, &host, &agent);
+    assert_eq!(out["removed"], false, "{out}");
+    assert_eq!(out["revoked"], false, "{out}");
+    assert!(
+        out["message"]
+            .as_str()
+            .unwrap()
+            .contains("joy forge logout"),
+        "{out}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(person.vault().file()).unwrap(),
+        before
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "nothing was contacted");
+
+    // and it never refreshes: the person's refresh token is rotated by
+    // the forge on use, so renewing it here would retire the one the
+    // person holds. The answer says so instead.
+    let expired = Record {
+        token: "gho_the_persons_token".into(),
+        login: Some("scotty".into()),
+        scopes: "repo".into(),
+        expires_at: Some((chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339()),
+        refresh_token: Some("rt-the-persons".into()),
+        token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+        client_id: Some("test-client".into()),
+        ..Record::default()
+    };
+    person.vault().put("forge.test", &expired).unwrap();
+    let stale = verbs::token(&forge, &host, None, &agent);
+    assert_eq!(stale["known"], false, "{stale}");
+    assert_eq!(stale["reason"], "expired", "{stale}");
+    let message = stale["message"].as_str().unwrap();
+    assert!(
+        message.contains("joy forge login --host forge.test"),
+        "{message}"
+    );
+    assert!(message.contains("sign in again"), "{message}");
+    assert_eq!(calls.load(Ordering::SeqCst), 0, "no refresh was spent");
+    // the record the person holds is untouched, refresh token included
+    let (still, _) = person.vault().get("forge.test", Some("scotty")).unwrap();
+    assert_eq!(still.token, "gho_the_persons_token");
+    assert_eq!(still.refresh_token.as_deref(), Some("rt-the-persons"));
+
+    // the person's own session still refreshes, so the rule is the
+    // delegated host's and not everybody's
+    assert_eq!(
+        verbs::token(&forge, &host, None, &person)["token"],
+        "renewed",
+        "the person's own session renews what it holds"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
