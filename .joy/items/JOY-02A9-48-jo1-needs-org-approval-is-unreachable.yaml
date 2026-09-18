@@ -1,7 +1,7 @@
 id: JOY-02A9-48
 title: 'JO1: needs_org_approval is unreachable from a one shot CLI process, and the login probe reads an organisation wall as no login for repo'
 type: task
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,10 +10,13 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-18T12:11:14.721997511Z
-updated: 2026-09-18T13:41:01.314264950Z
+updated: 2026-09-18T15:12:32.963241919Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Found by the organisation probe on 2026-09-18 (checklist section 6, joyint-test with the third party access policy restricted). (1) crates/joy-core/src/vcs/contact.rs:907 and :950 gate the 403 and 404 rows of D1.8b on token_worked_before, a process local map (contact.rs:1750-1765, filled only at :1860 after a successful credentialed contact in the same process). A one shot CLI command makes exactly one contact, so a real 404 to a fetch that carried a valid GitHub token produced state error (''github.com does not have this repository'') instead of needs_org_approval. Make ''this token authenticated'' a fact that survives the process (per host in joy''s own state file, written when a credentialed contact succeeds, or taken from the connector, which validated the token when it answered) so the row fires on the first contact of a process too. (2) crates/joy-github/src/github.rs:897-913 reaches_repo treats 403 and 404 from GET /repos/{owner}/{repo} as ''this login is not the one'', so crates/joy-forge-net/src/auth/choose.rs:72-89 answers no-login-for-repo and the person reads ''None of your GitHub logins can reach <repo>. Sign in with the login that can.'' Under an organisation wall no login can: distinguish the 403 that names OAuth App access restrictions (and a 404 on a repository under an organisation the token''s user belongs to per GET /user/orgs) from ''not the login'', and answer needs_org_approval with the organisation''s settings URL (D2.7c). Also record that chose_by memory or pin skips the probe, so whether the token is presented under a wall depends on a memory row: make the behaviour the same both ways. (3) Note for the checklist: gh''s own OAuth app is owned by GitHub and is not subject to the organisation policy, so the gh login is no stand in for this test; a device flow token of the Joyint Desktop app is needed. JI epic JI-0190-3A.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-18T13:41:01.254320358Z
   text: 'Addition from the direct connector run on 2026-09-18: the device poll loop in crates/joy-forge-net/src/auth/verbs.rs device_login gives up on the first transient transport error (a DNS hiccup produced {"event":"error","code":"network","message":"https://github.com/login/oauth/access_token could not be reached: ... Temporary failure in name resolution"} after 16 polls while the person was still on GitHub''s page). A transient transport error during polling must be retried until the code expires, and only then reported; the same for pkce_login''s exchange. Also check why the CLI kept printing ''Still waiting'' with a wrong countdown after the connector had ended, and why the first attempt ended with ''the forge plugin did not answer in time and was stopped'' after eight minutes although the login bound is the code''s expiry.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-18T15:12:32.889551525Z
+  text: 'Result: commits 9eef7a3 and 25dc40a merged at 8aa2418. A token that authenticated is remembered per host in forge-state.json (0600) and taken from a connector answer that validated it, so needs_org_approval fires on the first contact of a one shot CLI process; the connector names an organisation wall only on the forge''s own evidence (a 403 naming OAuth App access restrictions, or GET /orgs/{owner} refused with it), with the approval page as the action, independent of how the login was chosen (the review''s false positive for a plain 404 is fixed); the device poll and the PKCE exchange ride out transient transport failures until the code expires; the CLI stops on the connector''s error event and the login bound counts from the verification event. 1407 workspace tests, clippy and the guards green. Open: credentials from --token-env or a forge CLI''s active login are not asked the wall question (no extra request on CI), the desktop rendering of the action URL is A5''s, and GitHub''s real answer for a walled organisation is recorded by the checklist run.'
