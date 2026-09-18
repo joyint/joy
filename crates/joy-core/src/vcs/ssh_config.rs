@@ -270,7 +270,10 @@ fn splice_includes(text: &str, base: &Path, depth: u32) -> String {
     for line in text.lines() {
         let (keyword, args) = split_directive(line);
         if !keyword.eq_ignore_ascii_case("include") {
-            out.push_str(line);
+            match with_joys_own_home(keyword, args) {
+                Some(rewritten) => out.push_str(&format!("{keyword} {rewritten}")),
+                None => out.push_str(line),
+            }
             out.push('\n');
             continue;
         }
@@ -291,6 +294,45 @@ fn splice_includes(text: &str, base: &Path, depth: u32) -> String {
         }
     }
     out
+}
+
+/// A leading `~` in a directive that names a file, expanded with the
+/// home JOY reads, before ssh2-config expands it with the home the
+/// `dirs` crate reads.
+///
+/// `None` when there is nothing to change, which is the normal line.
+///
+/// The two homes are the same on unix, where both read `HOME`. On
+/// Windows they are not: joy reads `USERPROFILE` everywhere (store.rs,
+/// [`home_dir`]), and `dirs::home_dir` asks the shell for the profile
+/// folder and reads no environment variable at all, so an
+/// `IdentityFile ~/.ssh/id_ed25519` came back under a different home
+/// than every other path in the same run. One run reads one home.
+fn with_joys_own_home(keyword: &str, args: &str) -> Option<String> {
+    const NAMES_A_FILE: [&str; 5] = [
+        "identityfile",
+        "certificatefile",
+        "identityagent",
+        "userknownhostsfile",
+        "globalknownhostsfile",
+    ];
+    if !NAMES_A_FILE
+        .iter()
+        .any(|name| keyword.eq_ignore_ascii_case(name))
+    {
+        return None;
+    }
+    let (quote, rest) = match args.strip_prefix('"') {
+        Some(rest) => ("\"", rest),
+        None => ("", args),
+    };
+    // `~/` and `~\` only: `~user` is not something ssh expands either.
+    let rest = rest.strip_prefix('~')?;
+    if !rest.starts_with('/') && !rest.starts_with('\\') {
+        return None;
+    }
+    let home = home_dir()?;
+    Some(format!("{quote}{}{rest}", home.display()))
 }
 
 /// The files one `Include` line names, in ssh's own order: every
@@ -1065,5 +1107,29 @@ Host h
         assert_eq!(inside.user.as_deref(), Some("deploy"));
         assert_eq!(inside.port, Some(2200));
         assert_eq!(config.settings("github.com").user, None);
+    }
+
+    /// The home joy reads is the home a `~` in the config expands with.
+    ///
+    /// ssh2-config expands it with the `dirs` crate, which on Windows
+    /// reads no environment variable, so the path came back under the
+    /// machine's profile while every other path in the same run
+    /// followed `USERPROFILE` (JOY-02A7-A2, found on the Windows
+    /// runner).
+    #[test]
+    fn a_tilde_is_expanded_with_the_home_joy_reads() {
+        let home = home_dir().expect("a home");
+        assert_eq!(
+            with_joys_own_home("IdentityFile", "~/.ssh/work_ed25519"),
+            Some(format!("{}/.ssh/work_ed25519", home.display()))
+        );
+        assert_eq!(
+            with_joys_own_home("identityfile", "\"~/my keys/id\""),
+            Some(format!("\"{}/my keys/id\"", home.display()))
+        );
+        // Not every directive, and not a path that names no home.
+        assert_eq!(with_joys_own_home("HostName", "~/nonsense"), None);
+        assert_eq!(with_joys_own_home("IdentityFile", "/etc/ssh/id"), None);
+        assert_eq!(with_joys_own_home("IdentityFile", "~someone/id"), None);
     }
 }
