@@ -343,9 +343,13 @@ that trusts the creating application alone.
 never the whole truth: the operating system's store IS a file, with the
 operating system's rules on it. What those rules are is worth knowing
 before a token is put there, so they are written out rather than
-implied. The connector asks the `keyring` crate for exactly four
-features, `apple-native`, `windows-native`, `linux-native-sync-persistent`
-and `crypto-rust`, and that choice is what each line below describes.
+implied. The connector asks the `keyring` crate for four store
+features, with the crate's own defaults off: `apple-native`,
+`windows-native`, `linux-native-sync-persistent` and `crypto-rust`. That
+choice is what each line below describes. A fifth feature, `vendored`,
+is asked for on top and names no store at all; it decides how the Linux
+one is reached, by linking libdbus into the binary so that a minimal
+container has no `libdbus-1.so` to install first.
 
 | Operating system | Where the token lies | Who can read it | What it survives |
 | --- | --- | --- | --- |
@@ -368,8 +372,10 @@ The `linux-native` feature alone would be the kernel keyutils store,
 which is "completely in-memory and will not persist across reboots"
 (keyring 3.6.3, `src/keyutils.rs`). That is why the persistent Secret
 Service collection is asked for beside it, and why the desktop app asks
-for the same four features: a machine should have one answer about
-where a secret lives, not one per binary.
+for the same four store features: a machine should have one answer about
+where a secret lives, not one per binary. The app leaves `vendored` off,
+because it is a GTK and WebKit application that links `libdbus-1.so.3`
+on every Linux it can run on at all.
 
 Which login answers for a remote is decided in one order, and every
 answer says which step decided (`chose_by`): the device local pin for
