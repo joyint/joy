@@ -1,7 +1,7 @@
 id: JOY-028F-0B
 title: Child processes flash console windows under a GUI host on Windows
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-16T05:07:38.296799803Z
-updated: 2026-09-16T08:16:02.878507073Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-19T22:59:32.243231Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Reported 2026-09-15 from the first install of the public Windows build (JAPP-02CE-5D): the desktop app opens and closes console windows in the background continuously. macOS and Linux never showed it, and never can: a console window is a Windows-only concept.
 

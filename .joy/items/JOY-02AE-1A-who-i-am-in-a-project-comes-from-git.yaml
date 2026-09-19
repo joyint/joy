@@ -1,7 +1,7 @@
 id: JOY-02AE-1A
 title: Who I am in a project comes from git config again, local before global, the forge account last, and no pin
 type: task
-status: review
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -10,8 +10,8 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T19:28:02.862267346Z
-updated: 2026-09-19T20:44:15.253487113Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-19T22:59:33.957208Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator decision 2026-09-19, correcting D3.9. The member a person acts as in a project is resolved in this order and from nothing else: (1) a delegation session (AI, unchanged, first), (2) git config user.email of the repository, (3) git config user.email global, (4) the account the forge tool for the remote''s host reports (gh, glab, tea) with an address the forge''s API gives (GitHub: GET /user/emails, needs the user:email scope; GitLab and Gitea: GET /user). The address is held against project.yaml through privacy::member_key_for_email. A match is the member. No members yet: the person may found themselves as the first member with a new passphrase (the existing joy auth init path). Members but no match: the project is read only for this person, read commands keep working with an empty member, writes answer JoyError::UnknownActingMember with a sentence that names the git config the person can set. The device pin of D3.9 (MEMBER_PIN_KEY in the per project app state file, pin_acting_member, pinned_member) goes: it is never read for identity any more; its writers may stay as no-ops or be removed, and no test may depend on it. The forge account is never the primary identity. Acceptance: (a) crates/joy-core identity tests cover the four steps and the two failure shapes; (b) the J11 acceptance that drove the binary twice with and without git config is replaced by its inverse, with user.email set the binary knows the member, without it and without a forge account it does not; (c) on a checkout whose git config user.email names a member and which has no pin, joy auth status answers that member (this is the halcyon case, mps-netbrain-demo, verified by the reviewer); (d) docs/design/forge-connection-ng.md D3.9 gets a dated correction paragraph, no rewrite of the rest; (e) cargo test -p joy-core -p joy-cli and clippy -D warnings green. Out of scope: the app, the tiles, https before ssh.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
