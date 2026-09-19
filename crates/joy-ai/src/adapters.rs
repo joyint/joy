@@ -18,6 +18,35 @@
 //! there is no per-host spelling left to diverge. Adding a tool is one
 //! row here plus installing its binary in the agent image — nothing else
 //! (model roster and cost arrive from the agent over ACP at runtime).
+//!
+//! A row carries a LIST of launches, not one line, because a vendor may
+//! ship the same program under two commands: GitHub's Copilot CLI is
+//! `copilot` when installed from npm and `gh copilot` when driven through
+//! the GitHub CLI, and a person may have either or both. The list is
+//! ordered and the FIRST launch is canonical: it is what the agent image
+//! installs and therefore what the container always runs. Only a desktop,
+//! where we meet a machine we did not build, walks the list. What we must
+//! never do is reach past a launcher into the binary it manages — joy
+//! runs `gh copilot` exactly as the person runs it in their console
+//! (operator rule 2026-09-19), because a homegrown shortcut around a
+//! vendor's launcher is precisely the drift this registry exists to end.
+
+/// One way to start a tool's ACP endpoint on a machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Launch {
+    /// ONE argv prefix that starts the ACP endpoint (e.g. `qwen --acp`).
+    pub entrypoint: &'static str,
+    /// The program to look for on the PATH before trying this launch.
+    pub probe: &'static str,
+    /// The argv that settles whether this launch can really run the tool
+    /// here, for launchers where finding [`Self::probe`] on the PATH is
+    /// no proof. Exit 0 means yes. `gh` is the case that demands it: it
+    /// sits on virtually every CI runner and dev machine and says nothing
+    /// about whether Copilot is installed behind it, so keying off the
+    /// binary alone produced spurious `ai:copilot@joy` registrations.
+    /// None where the probe IS the tool and finding it is the answer.
+    pub verify: Option<&'static str>,
+}
 
 /// Every fact the hosts need about one AI tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,11 +58,11 @@ pub struct AdapterSpec {
     pub label: &'static str,
     /// The canonical member this tool acts as.
     pub member: &'static str,
-    /// ONE argv prefix that starts the tool's ACP endpoint, identical on
-    /// the desktop and in the agent container (e.g. `qwen --acp`).
-    pub entrypoint: &'static str,
-    /// Binary probed on the PATH for "is it installed here".
-    pub probe: &'static str,
+    /// How this tool is started, in order of preference and never empty.
+    /// The first entry is CANONICAL: the agent image installs it, so the
+    /// container runs it without asking. A desktop picks the first launch
+    /// that works on the machine in front of it ([`Self::usable_launch`]).
+    pub launches: &'static [Launch],
     /// The provider-key environment variable the tool reads, when the
     /// platform holds a key for it. None for tools that only ever carry
     /// their own login.
@@ -69,6 +98,47 @@ pub struct AdapterSpec {
     pub tool: Option<ToolBinary>,
 }
 
+impl AdapterSpec {
+    /// The canonical launch: what the agent image installs and the
+    /// container runs, and what a desktop falls back to naming when
+    /// nothing on the machine works (so a card still has something to
+    /// show and an install hint still has something to mean).
+    pub fn canonical(&self) -> &'static Launch {
+        self.launches
+            .first()
+            .expect("every registry row names at least one launch")
+    }
+
+    /// The canonical argv prefix (JI-017A-85's ONE entrypoint).
+    pub fn entrypoint(&self) -> &'static str {
+        self.canonical().entrypoint
+    }
+
+    /// The canonical probe binary.
+    pub fn probe(&self) -> &'static str {
+        self.canonical().probe
+    }
+
+    /// The first launch that works on THIS machine, or None when the tool
+    /// is not installed here at all.
+    ///
+    /// Both checks are handed in, which keeps the decision a pure walk
+    /// over the registry that a test can drive without a PATH or a
+    /// process: `on_path` answers "is the program there", `verify` runs a
+    /// launch's [`Launch::verify`] argv and answers "did it exit 0".
+    /// `verify` is only ever consulted for a launch that names one, so a
+    /// machine with the plain tool installed never pays for a subprocess.
+    pub fn usable_launch(
+        &self,
+        on_path: impl Fn(&str) -> bool,
+        verify: impl Fn(&str) -> bool,
+    ) -> Option<&'static Launch> {
+        self.launches
+            .iter()
+            .find(|launch| on_path(launch.probe) && launch.verify.map(&verify).unwrap_or(true))
+    }
+}
+
 /// The tool a bridge drives, as the registry states it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolBinary {
@@ -94,8 +164,11 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         member: "ai:vibe@joy",
         // vibe speaks ACP natively through vibe-acp, which ships with the
         // Vibe CLI (zed.dev/acp/agent/mistral-vibe).
-        entrypoint: "vibe-acp",
-        probe: "vibe-acp",
+        launches: &[Launch {
+            entrypoint: "vibe-acp",
+            probe: "vibe-acp",
+            verify: None,
+        }],
         key_env: Some("MISTRAL_API_KEY"),
         model_env: Some("VIBE_ACTIVE_MODEL"),
         state_env: Some("VIBE_HOME"),
@@ -113,8 +186,11 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         // The official ACP bridge (same org as codex-acp). One spelling
         // ended the era where the desktop npx-ran one bridge package and
         // the agent image shipped another (JI-017A-85).
-        entrypoint: "claude-agent-acp",
-        probe: "claude-agent-acp",
+        launches: &[Launch {
+            entrypoint: "claude-agent-acp",
+            probe: "claude-agent-acp",
+            verify: None,
+        }],
         key_env: Some("ANTHROPIC_API_KEY"),
         model_env: None,
         state_env: Some("CLAUDE_CONFIG_DIR"),
@@ -135,13 +211,55 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         adapter: "qwen",
         label: "Qwen Code",
         member: "ai:qwen@joy",
-        entrypoint: "qwen --acp",
-        probe: "qwen",
+        launches: &[Launch {
+            entrypoint: "qwen --acp",
+            probe: "qwen",
+            verify: None,
+        }],
         key_env: Some("OPENAI_API_KEY"),
         model_env: Some("OPENAI_MODEL"),
         state_env: Some("QWEN_DIR"),
         install_hint: "Install Qwen Code, then sign in there.",
         install_command: Some("npm i -g @qwen-code/qwen-code"),
+        tool: None,
+    },
+    AdapterSpec {
+        adapter: "copilot",
+        label: "GitHub Copilot",
+        member: "ai:copilot@joy",
+        // GitHub ships ONE Copilot CLI under two commands, and a person
+        // may have either or both. `copilot` is canonical: it is what the
+        // agent image installs, and `gh copilot` itself prefers a
+        // `copilot` on the PATH over its own download — so trying it
+        // first is not our ordering, it is GitHub's.
+        //
+        // `gh` alone proves nothing (see Launch::verify), so the second
+        // launch earns its place by answering `--version`. Note the `--`:
+        // gh parses leading flags itself and passes everything after the
+        // separator to Copilot untouched.
+        launches: &[
+            Launch {
+                entrypoint: "copilot --acp",
+                probe: "copilot",
+                verify: None,
+            },
+            Launch {
+                entrypoint: "gh copilot -- --acp",
+                probe: "gh",
+                verify: Some("gh copilot -- --version"),
+            },
+        ],
+        // The container has no `gh` login to borrow, so the platform
+        // injects a token; on a desktop Copilot carries its own sign-in.
+        // Fine-grained PAT with the "Copilot Requests" permission — a
+        // classic `ghp_` token is rejected by Copilot CLI.
+        key_env: Some("COPILOT_GITHUB_TOKEN"),
+        // The model roster arrives over ACP session config, not env.
+        model_env: None,
+        state_env: Some("COPILOT_HOME"),
+        install_hint: "Install GitHub Copilot CLI and sign in, or run `gh copilot` once to let the GitHub CLI install it.",
+        install_command: Some("npm i -g @github/copilot"),
+        // The entrypoint IS the tool: Copilot CLI speaks ACP itself.
         tool: None,
     },
 ];
@@ -185,10 +303,10 @@ pub enum Placement {
     },
 }
 
-/// Build the argv that starts this adapter's ACP endpoint at the given
+/// Build the argv that starts a launch's ACP endpoint at the given
 /// placement. Element zero is the program.
-pub fn command(spec: &AdapterSpec, placement: &Placement) -> Vec<String> {
-    let entry = spec.entrypoint.split_whitespace().map(str::to_string);
+pub fn command(launch: &Launch, placement: &Placement) -> Vec<String> {
+    let entry = launch.entrypoint.split_whitespace().map(str::to_string);
     match placement {
         Placement::Local => entry.collect(),
         Placement::Container { name, workdir, env } => {
@@ -228,8 +346,72 @@ mod tests {
         assert_eq!(by_adapter("mistral-vibe"), None);
         assert_eq!(by_adapter("claude-code"), None);
         assert_eq!(by_adapter("qwen-code"), None);
-        assert_eq!(by_adapter("copilot"), None);
+        assert_eq!(by_adapter("github-copilot"), None);
         assert_eq!(canonical_adapter_id("mock"), None);
+    }
+
+    #[test]
+    fn every_row_names_at_least_one_launch() {
+        for spec in ADAPTERS {
+            assert!(
+                !spec.launches.is_empty(),
+                "{} names no launch",
+                spec.adapter
+            );
+            // the canonical entrypoint must start with its own probe, or
+            // the container would install one program and run another
+            assert_eq!(
+                spec.entrypoint().split_whitespace().next(),
+                Some(spec.probe()),
+                "{}'s canonical launch probes a different program than it runs",
+                spec.adapter
+            );
+        }
+    }
+
+    /// The whole point of the list: one tool, two commands, and the
+    /// machine decides. `gh` being present must never be enough.
+    #[test]
+    fn copilot_picks_the_launch_the_machine_actually_has() {
+        let copilot = by_adapter("copilot").unwrap();
+        let never = |_: &str| false;
+        let always = |_: &str| true;
+
+        // the plain CLI is preferred, and costs no subprocess
+        let both = copilot
+            .usable_launch(
+                |_| true,
+                |_| panic!("must not verify when copilot is on the PATH"),
+            )
+            .unwrap();
+        assert_eq!(both.entrypoint, "copilot --acp");
+
+        // only gh: the verify decides
+        let gh_only = |b: &str| b == "gh";
+        assert_eq!(
+            copilot
+                .usable_launch(gh_only, |argv| argv == "gh copilot -- --version")
+                .unwrap()
+                .entrypoint,
+            "gh copilot -- --acp"
+        );
+        // gh on the PATH without Copilot behind it is NOT the tool
+        assert_eq!(copilot.usable_launch(gh_only, never), None);
+
+        // nothing installed
+        assert_eq!(copilot.usable_launch(never, always), None);
+    }
+
+    #[test]
+    fn a_single_launch_tool_needs_no_verify() {
+        let qwen = by_adapter("qwen").unwrap();
+        assert_eq!(
+            qwen.usable_launch(|b| b == "qwen", |_| panic!("qwen names no verify"))
+                .unwrap()
+                .entrypoint,
+            "qwen --acp"
+        );
+        assert_eq!(qwen.usable_launch(|_| false, |_| true), None);
     }
 
     #[test]
@@ -241,7 +423,22 @@ mod tests {
     #[test]
     fn local_placement_is_the_bare_entrypoint() {
         let spec = by_adapter("qwen").unwrap();
-        assert_eq!(command(spec, &Placement::Local), vec!["qwen", "--acp"]);
+        assert_eq!(
+            command(spec.canonical(), &Placement::Local),
+            vec!["qwen", "--acp"]
+        );
+    }
+
+    /// A launcher's own separator survives into the argv: `gh` must see
+    /// `--` or it would eat `--acp` as a flag of its own.
+    #[test]
+    fn a_launcher_keeps_its_separator() {
+        let copilot = by_adapter("copilot").unwrap();
+        let gh = copilot.launches[1];
+        assert_eq!(
+            command(&gh, &Placement::Local),
+            vec!["gh", "copilot", "--", "--acp"]
+        );
     }
 
     #[test]
@@ -256,7 +453,7 @@ mod tests {
             ],
         };
         assert_eq!(
-            command(spec, &placement),
+            command(spec.canonical(), &placement),
             vec![
                 "docker",
                 "exec",

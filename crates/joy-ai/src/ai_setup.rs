@@ -56,6 +56,10 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
             (".github/copilot-instructions.md", "GitHub Copilot"),
             (".github/copilot/", "GitHub Copilot"),
             (".github/agents/", "GitHub Copilot"),
+            (".github/skills/", "GitHub Copilot"),
+            // joy no longer writes `.github/prompts/`; the entry stays so
+            // a project set up before the skill does not suddenly show
+            // the leftover as untracked before a reset clears it.
             (".github/prompts/", "GitHub Copilot"),
         ],
     ),
@@ -223,11 +227,14 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
     let workflow = crate::ai_templates::load_workflow()?;
     let agents = crate::ai_templates::load_agents()?;
 
-    // Check SKILL.md (all tools except copilot)
+    // Check SKILL.md. Copilot joined the others once it learned to read
+    // skills: its old `/joy` prompt file only ever worked in VS Code's
+    // Local agent, never in the CLI or over ACP (JOY-02AD-69).
     let skill_path = match tool {
         "claude" => Some(root.join(".claude/skills/joy/SKILL.md")),
         "qwen" => Some(root.join(".qwen/skills/joy/SKILL.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/SKILL.md")),
+        "copilot" => Some(root.join(".github/skills/joy/SKILL.md")),
         _ => None,
     };
     if let Some(path) = skill_path {
@@ -237,11 +244,12 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         }
     }
 
-    // Check setup.md (all tools except copilot)
+    // Check setup.md
     let setup_path = match tool {
         "claude" => Some(root.join(".claude/skills/joy/setup.md")),
         "qwen" => Some(root.join(".qwen/skills/joy/setup.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/setup.md")),
+        "copilot" => Some(root.join(".github/skills/joy/setup.md")),
         _ => None,
     };
     if let Some(path) = setup_path {
@@ -258,19 +266,17 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         _ => None,
     };
     if let Some(path) = block_path {
-        let has_skill = tool != "copilot";
-        let expected_block = render_managed_block(root, member_id, has_skill, tool)?;
+        let expected_block = render_managed_block(root, member_id, true, tool)?;
         if !joy_block_matches(&path, &expected_block) {
             return Ok(true);
         }
     }
 
-    // Check copilot prompt
-    if tool == "copilot" {
-        let expected = crate::ai_templates::render_copilot_prompt(&workflow)?;
-        if !file_matches(&root.join(".github/prompts/joy.prompt.md"), &expected) {
-            return Ok(true);
-        }
+    // A project set up before Copilot could read skills still carries the
+    // `/joy` prompt file. It is stale by its mere existence: the skill has
+    // taken its place and the leftover would answer for it in VS Code.
+    if tool == "copilot" && root.join(".github/prompts/joy.prompt.md").is_file() {
+        return Ok(true);
     }
 
     // Check agent files
@@ -354,11 +360,47 @@ fn detect_vibe() -> bool {
 }
 
 fn detect_copilot() -> bool {
-    // Only the dedicated Copilot CLI counts. `gh` (the GitHub CLI) is present on
-    // virtually every CI runner and many dev machines and says nothing about
-    // whether Copilot is in use, so keying detection off it produced spurious
-    // `ai:copilot@joy` registrations.
-    which("copilot")
+    // GitHub ships one Copilot CLI under two commands: `copilot` from npm
+    // and `gh copilot` through the GitHub CLI. Either counts, because
+    // either is how the person in front of us runs Copilot.
+    //
+    // What still must NOT count is `gh` being on the PATH: it sits on
+    // virtually every CI runner and dev machine and says nothing about
+    // whether Copilot is installed behind it, and keying detection off the
+    // binary alone produced spurious `ai:copilot@joy` registrations. So
+    // the gh launch earns its answer by running, which is exactly what
+    // the registry's `verify` argv is for.
+    crate::adapters::by_adapter("copilot")
+        .and_then(|spec| spec.usable_launch(which, command_succeeds))
+        .is_some()
+        // Copilot is not only a CLI. An editor of the VS Code family has
+        // Copilot Chat built in (VS Code 1.116) and reads the very files
+        // this tool writes, so somebody who never installed a binary is
+        // still a Copilot user — and used to be told to register a member
+        // by hand instead.
+        || editor_reads_copilot_instructions(std::env::var_os("TERM_PROGRAM").as_deref())
+}
+
+/// Is joy running in an editor terminal whose assistant reads the files
+/// `configure_copilot` writes?
+///
+/// `TERM_PROGRAM=vscode` is the ONE documented signal (VS Code's own shell
+/// integration docs tell people to gate on it) and the same string on all
+/// three platforms, which is why nothing here looks at an OS, a path or an
+/// installed application.
+///
+/// It says "a VS Code FAMILY terminal": Cursor, Windsurf, VSCodium and
+/// Positron all set the same value and cannot be told apart by any
+/// documented means. That is why the answer only ever gets a tool OFFERED,
+/// never silently configured — `joy ai init` asks per tool, and an editor
+/// that does not build on the Copilot instructions gets a No. Guessing
+/// harder here would buy nothing: the person knows, and we do not.
+///
+/// It is a floor, not a ceiling. tmux overwrites `TERM_PROGRAM`, `sudo`
+/// clears it and `ssh` does not forward it, so a No here never means "no
+/// Copilot", and `joy ai init --tool copilot` stays the direct answer.
+fn editor_reads_copilot_instructions(term_program: Option<&std::ffi::OsStr>) -> bool {
+    term_program.is_some_and(|value| value.eq_ignore_ascii_case("vscode"))
 }
 
 pub type ToolEntry = (
@@ -599,23 +641,30 @@ fn configure_copilot(root: &Path, member_id: &str, report: Report) -> Result<boo
     }
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
-    clean_managed_dirs(root, &[".github/agents", ".github/prompts"]);
+    // `.github/prompts` is swept for its REMOVAL: joy used to put the
+    // `/joy` entry point there, and a leftover would shadow the skill
+    // that replaced it (JOY-02AD-69).
+    clean_managed_dirs(
+        root,
+        &[".github/agents", ".github/prompts", ".github/skills/joy"],
+    );
     let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
     changed |= update_with_joy_block(
         root,
         &instructions_md,
-        &render_managed_block(root, member_id, false, "copilot")?,
+        &render_managed_block(root, member_id, true, "copilot")?,
     )?;
     report(".github/copilot-instructions.md".into());
 
-    // Copilot skill wrapper
-    let workflow = crate::ai_templates::load_workflow()?;
-    let prompt = crate::ai_templates::render_copilot_prompt(&workflow)?;
-    let prompt_path = github_dir.join("prompts/joy.prompt.md");
-    changed |= write_if_changed(root, &prompt_path, &prompt)?;
-    report(".github/prompts/joy.prompt.md".into());
+    let skill_path = github_dir.join("skills/joy/SKILL.md");
+    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
+    report(".github/skills/joy/SKILL.md".into());
+
+    let setup_path = github_dir.join("skills/joy/setup.md");
+    changed |= write_if_changed(root, &setup_path, crate::ai_templates::setup_instructions())?;
+    report(".github/skills/joy/setup.md".into());
 
     changed |= generate_agents(root, "copilot", ".github/agents", report)?;
     changed |= update_copilot_permissions(root, member_id, report)?;
@@ -750,14 +799,75 @@ pub fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
     removed
 }
 
+/// Is this program installed on this machine?
+///
+/// Kept as the name everything here already asks by, but it no longer
+/// runs `which`: that is a unix program, so on Windows the probe failed
+/// for every tool and a machine with the tool installed was told it had
+/// none (JOY-0290-EA). The lookup now lives in joy-process, which is
+/// where the spawn that follows it lives too.
 pub fn which(binary: &str) -> bool {
-    joy_process::command("which")
-        .arg(binary)
+    joy_process::resolve(binary).is_some()
+}
+
+/// Variables that make a launcher believe it may act unattended. `gh`
+/// treats any of them as "this is CI" and then installs Copilot CLI —
+/// a 166 MB download — without asking. A probe must never do that: it is
+/// asking a question, not accepting an offer. Stripped for the probe
+/// only; a real agent run inherits the environment untouched.
+const UNATTENDED_ENV: &[&str] = &["CI", "BUILD_NUMBER", "RUN_ID"];
+
+/// Does this argv exit 0 on this machine? THE one spelling of "prove a
+/// launcher really works", shared by `joy ai init` and the desktop so the
+/// CLI and the app cannot answer the same question differently.
+///
+/// Answers are cached for the life of the process: the desktop asks this
+/// on every settings and roster load, and `gh copilot -- --version`
+/// starts a second program behind the first.
+pub fn command_succeeds(argv: &str) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+    if let Some(hit) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .get(argv)
+    {
+        return *hit;
+    }
+    let answer = run_probe(argv);
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(argv.to_string(), answer);
+    answer
+}
+
+fn run_probe(argv: &str) -> bool {
+    let mut parts = argv.split_whitespace();
+    let Some(program) = parts.next() else {
+        return false;
+    };
+    // The resolved path, not the bare name: on Windows a bare name only
+    // ever finds an `.exe`, so a launcher installed as a `.cmd` shim
+    // would look absent while it works in the person's own terminal.
+    let Some(program) = joy_process::resolve(program) else {
+        return false;
+    };
+    let mut command = joy_process::command(program);
+    command
+        .args(parts)
+        // No terminal to prompt on: a launcher that wants to ask
+        // something must fail instead of blocking a settings load.
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .stderr(std::process::Stdio::null());
+    for key in UNATTENDED_ENV {
+        command.env_remove(key);
+    }
+    command.status().map(|s| s.success()).unwrap_or(false)
 }
 
 pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
@@ -770,7 +880,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
         "claude" => root.join(".claude/skills/joy/SKILL.md").is_file(),
         "qwen" => root.join(".qwen/skills/joy/SKILL.md").is_file(),
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
-        "copilot" => root.join(".github/agents/conceiver.agent.md").is_file(),
+        "copilot" => root.join(".github/skills/joy/SKILL.md").is_file(),
         _ => false,
     }
 }
@@ -956,7 +1066,9 @@ const RESET_PATHS: &[(&str, &str, &[&str])] = &[
         "copilot",
         &[
             ".github/copilot-instructions.md",
+            ".github/skills/joy/",
             ".github/agents/",
+            // written by an older joy; reset still takes it away
             ".github/prompts/",
         ],
     ),
@@ -1669,5 +1781,32 @@ mod setup_tests {
         assert!(content.contains("new content"));
         assert!(!content.contains("old"));
         assert!(content.trim_end().ends_with("user footer"));
+    }
+
+    /// The editor signal is one documented string, the same on Windows,
+    /// macOS and Linux. It is taken from a value handed in, never from
+    /// the ambient environment, so the rule is testable and no test can
+    /// disturb another by exporting a variable.
+    #[test]
+    fn a_vscode_family_terminal_is_a_copilot_surface() {
+        use std::ffi::OsStr;
+        assert!(editor_reads_copilot_instructions(Some(OsStr::new(
+            "vscode"
+        ))));
+        // VS Code writes it lowercase; a fork that shouts is still one
+        assert!(editor_reads_copilot_instructions(Some(OsStr::new(
+            "vsCode"
+        ))));
+
+        // Every other terminal is just a terminal.
+        for other in ["tmux", "iTerm.app", "Apple_Terminal", "WezTerm", ""] {
+            assert!(
+                !editor_reads_copilot_instructions(Some(OsStr::new(other))),
+                "{other} is not an editor with Copilot in it"
+            );
+        }
+        // tmux overwrites TERM_PROGRAM and sudo drops it: a No is "we
+        // cannot tell", never "this machine has no Copilot".
+        assert!(!editor_reads_copilot_instructions(None));
     }
 }
