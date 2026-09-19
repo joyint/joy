@@ -48,29 +48,31 @@ add_member_capture_otp() {
     MEMBER_OTP=$(extract_otp "$out")
 }
 
-# Act as `email` from here on: authenticating names the member, opens
-# their session and pins them as the member this device acts as (D3.9).
+# Act as `email` from here on: name this repository's git config as
+# them AND authenticate as them, opening their session.
 #
-# This used to be `git config user.email <email>`, and since package J11
-# that changes nothing at all: no joy command decides an identity from
-# git config any more, so a test switching that way went on acting as
-# whoever authenticated last. A person switches by saying who they are,
-# and so does a test.
+# Since the operator's 2026-09-19 correction (JOY-02AE-1A, correcting
+# D3.9) `resolve_identity` reads `git config user.email` again, and the
+# device pin it used to read instead is gone: a bare `joy` command after
+# this acts as `email` because THIS repository's git config names them.
 become_member() {
     local email="$1"
     local passphrase="$2"
+    git config user.email "$email"
     joy auth --user "$email" --passphrase "$passphrase"
 }
 
 # An invited member's first act in their own checkout: redeem the
-# invitation, which sets their passphrase, enrols them and pins them
-# here. The OTP proves the invitation; `--user` is the address the
-# invitee types, which is what git config used to offer them.
+# invitation, which sets their passphrase and enrols them, then name
+# them in this repository's git config so the bare commands that follow
+# act as them (JOY-02AE-1A, correcting D3.9). The OTP proves the
+# invitation; `--user` is the address the invitee types.
 enroll_member() {
     local email="$1"
     local passphrase="$2"
     local otp="${3:-$MEMBER_OTP}"
     joy auth --otp "$otp" --user "$email" --passphrase "$passphrase"
+    git config user.email "$email"
 }
 
 # ============================================================
