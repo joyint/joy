@@ -59,7 +59,10 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
 
 /// The acceptance of J9: `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols `a@b.c`
-/// without reading git config.
+/// without reading git config. What happens AFTER enrolment moved with
+/// the operator's 2026-09-19 correction (JOY-02AE-1A): a further command
+/// now needs the git config back, since resolve_identity no longer reads
+/// the pin the founding and enrolment steps left on this device.
 #[test]
 fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     let (_dir, root, home) = machine();
@@ -97,8 +100,16 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         "{project}"
     );
 
-    // ...and the next command still knows who acts here, with no git
-    // config anywhere in the chain: the device pin of D3.9 carries it.
+    // Operator decision 2026-09-19 (JOY-02AE-1A, correcting D3.9): the
+    // device pin `auth init` used to leave behind is not read for
+    // identity any more, so the next command needs the git config back
+    // to know who acts here, exactly as a working checkout would have
+    // one.
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\temail = a@b.c\n\tname = Founder\n",
+    )
+    .unwrap();
     let add = joy(&root, &home, &["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
 
