@@ -1,0 +1,19 @@
+id: JOY-02AC-D2
+title: Detect and run GitHub Copilot under gh copilot as well as copilot
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-19T07:17:00.688768556Z
+updated: 2026-09-19T07:17:00.688768556Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  GitHub ships one Copilot CLI under two commands: `copilot` from npm and `gh copilot` through the GitHub CLI. A prospect runs it as `gh copilot`, so joy must detect and run it under either, and never reach past a launcher into the binary it manages.
+
+  The registry row now carries an ordered LIST of launches instead of one entrypoint. The first is canonical (what the agent image installs and the container runs); a desktop picks the first that works on the machine in front of it. A launch may name a verify argv, because finding `gh` on the PATH proves nothing about Copilot sitting behind it.
+
+  The probe strips CI, BUILD_NUMBER and RUN_ID: the real gh treats them as consent and silently downloads 166 MB of Copilot CLI. joy is asking a question there, not accepting an offer.
+
+  Verified on zara against the real tools (gh 2.93.0, Copilot CLI 1.0.85): both `copilot --acp` and `gh copilot -- --acp` complete an ACP handshake and open a session; detection finds Copilot with either installed alone and with both, and a bare gh registers nothing.

@@ -1,0 +1,17 @@
+id: JOY-02AD-69
+title: Give Copilot the joy skill instead of the deprecated prompt file
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-19T10:17:50.684412648Z
+updated: 2026-09-19T10:17:50.684412648Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Copilot reads skills now. Measured against Copilot CLI 1.0.86 with /env: a project skill at .github/skills/joy/SKILL.md is loaded and offered as /joy, while .github/prompts/joy.prompt.md in the same project is not read at all.
+
+  The prompt file only ever worked in VS Code's Local agent, which GitHub has deprecated for Agent Host sessions and plans to remove. It never did anything in the CLI or over ACP, which is where joy's own app and platform drive Copilot.
+
+  So Copilot now gets the same skill the other three tools get, under its own folder, and the joy block tells it to use /joy. A project set up by an older joy is carried over: the leftover prompt file makes the tool stale, and configure sweeps .github/prompts away so it cannot answer for the skill.

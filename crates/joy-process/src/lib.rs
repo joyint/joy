@@ -116,6 +116,91 @@ pub fn headless() -> bool {
     !host_has_console()
 }
 
+/// Where `program` resolves on this machine, or None when it is not
+/// installed (JOY-0290-EA).
+///
+/// THE one answer to "is this program here", on all three platforms. The
+/// question used to be asked by running `which`, which is a unix program:
+/// on Windows that probe failed for every tool, so a machine with Claude
+/// Code or Copilot installed was told it had neither.
+///
+/// Windows needs more than a PATH walk. What a person types is `copilot`,
+/// but what an installer put there is `copilot.exe` or, for anything
+/// installed through npm, `copilot.cmd` — so the extensions in PATHEXT
+/// are what is looked for, and an extensionless file is NOT a candidate
+/// there, because Windows cannot execute one. npm does leave such a file
+/// beside its `.cmd`: it is the unix shell script, and matching it would
+/// resolve to something that cannot run.
+///
+/// The answer is an ABSOLUTE path, and that is the other half of the fix.
+/// Handed a bare name, Rust's own spawn appends `.exe` and nothing else,
+/// so it would miss `copilot.cmd` all over again; handed the resolved
+/// path it runs the thing, batch shims included.
+pub fn resolve(program: impl AsRef<OsStr>) -> Option<std::path::PathBuf> {
+    let program = std::path::Path::new(program.as_ref());
+    // A name with a path in it is not a PATH lookup; take it as given.
+    if program.components().count() > 1 {
+        return candidates(program).into_iter().find(|p| is_executable(p));
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .flat_map(|dir| candidates(&dir.join(program)))
+        .find(|candidate| is_executable(candidate))
+}
+
+/// The file names one program name may wear here, in the order Windows
+/// itself prefers. On unix a program is its own name and nothing else.
+#[cfg(windows)]
+fn candidates(base: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let exts: Vec<String> = std::env::var_os("PATHEXT")
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".into())
+        .to_string_lossy()
+        .split(';')
+        .filter(|e| !e.is_empty())
+        .map(str::to_string)
+        .collect();
+    // An extension that is already one of PATHEXT's is taken as meant.
+    let named = base
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|given| {
+            exts.iter()
+                .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(given))
+        });
+    if named {
+        return vec![base.to_path_buf()];
+    }
+    exts.iter()
+        .map(|ext| {
+            let mut name = base.as_os_str().to_os_string();
+            name.push(ext);
+            std::path::PathBuf::from(name)
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+fn candidates(base: &std::path::Path) -> Vec<std::path::PathBuf> {
+    vec![base.to_path_buf()]
+}
+
+/// A file somebody could actually start. Unix asks for the execute bit,
+/// because a readable file of the right name is not a program; Windows
+/// has no such bit, and the extension already carried that meaning.
+#[cfg(unix)]
+fn is_executable(path: &std::path::Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_executable(path: &std::path::Path) -> bool {
+    path.is_file()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -144,6 +229,78 @@ mod tests {
     #[test]
     fn unix_is_never_headless() {
         assert!(!headless());
+    }
+
+    /// The same question, answered the same way on all three platforms:
+    /// a program that IS installed is found, one that is not is not, and
+    /// the answer is an absolute path a spawn can use as-is.
+    #[test]
+    fn a_program_on_the_path_resolves_absolutely() {
+        // `cargo` is on the PATH of every machine that runs this test.
+        let found = resolve("cargo").expect("cargo is on the PATH of a machine building joy");
+        assert!(found.is_absolute(), "{found:?} is not absolute");
+        assert!(found.is_file(), "{found:?} is not a file");
+        assert_eq!(
+            resolve("joy-definitely-not-installed-anywhere"),
+            None,
+            "a name nobody installed must not resolve"
+        );
+    }
+
+    /// A name that carries a path is not a PATH lookup; it is checked
+    /// where it points, and a directory is not a program.
+    #[test]
+    fn a_path_is_taken_as_given() {
+        let cargo = resolve("cargo").expect("cargo");
+        assert_eq!(resolve(&cargo).as_ref(), Some(&cargo));
+        assert_eq!(
+            resolve(std::env::temp_dir()),
+            None,
+            "a directory is not a program"
+        );
+    }
+
+    /// The execute bit is what separates a program from a file that
+    /// merely shares its name — the reason a PATH walk over `is_file`
+    /// alone was not enough.
+    #[cfg(unix)]
+    #[test]
+    fn unix_wants_the_execute_bit() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("joy-resolve-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let plain = dir.join("not-a-program");
+        std::fs::write(&plain, "#!/bin/sh\n").expect("write");
+        assert_eq!(resolve(&plain), None, "a readable file is not a program");
+
+        std::fs::set_permissions(&plain, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+        assert_eq!(resolve(&plain).as_ref(), Some(&plain));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Windows types a name and runs a file: the candidates are the
+    /// PATHEXT ones, never the bare name, because an extensionless file
+    /// there cannot be executed — and npm leaves exactly such a file
+    /// (its unix shell script) beside the `.cmd` that actually runs.
+    #[cfg(windows)]
+    #[test]
+    fn windows_looks_for_the_pathext_names() {
+        let names = candidates(std::path::Path::new(r"C:\tools\copilot"));
+        assert!(
+            names
+                .iter()
+                .any(|p| p.ends_with("copilot.CMD") || p.ends_with("copilot.cmd")),
+            "npm shims must be candidates: {names:?}"
+        );
+        assert!(
+            !names.iter().any(|p| p.extension().is_none()),
+            "the bare name cannot run on Windows: {names:?}"
+        );
+        // an extension PATHEXT already names is taken as meant
+        assert_eq!(
+            candidates(std::path::Path::new(r"C:\tools\gh.exe")),
+            vec![std::path::PathBuf::from(r"C:\tools\gh.exe")]
+        );
     }
 
     /// The symptom itself: a host without a console must not give its
