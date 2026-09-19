@@ -205,13 +205,14 @@ impl Guard {
             return Verdict::Allow;
         }
 
-        // Nobody is acting: no delegation session, and this device pinned
-        // no member (D3.9, package J11). git config is not consulted for
-        // an identity any more, so a fresh clone or a second machine
+        // Nobody is acting: no delegation session, no git config naming a
+        // member, and no forge account naming one either (operator
+        // decision 2026-09-19, JOY-02AE-1A, correcting D3.9 of package
+        // J11). A fresh clone or a second machine with none of the three
         // arrives here, and an empty name in front of "is not a
-        // registered project member" is not a sentence anybody can act on. [`Verdict::enforce`] turns
-        // this one into `UnknownActingMember`, whose text names the
-        // remedy.
+        // registered project member" is not a sentence anybody can act
+        // on. [`Verdict::enforce`] turns this one into
+        // `UnknownActingMember`, whose text names the remedy.
         if identity.member.id().trim().is_empty() {
             return Verdict::Deny(JoyError::UnknownActingMember.to_string());
         }

@@ -601,11 +601,12 @@ fn config_name_belongs_to(
 /// This is what the git binary used to take from `user.name` and
 /// `user.email` when joy shelled `git commit`. libgit2 asks for the
 /// signature instead, and joy knows who acts, so the answer is joy's
-/// identity resolution: the session's member under a delegation, else
-/// the member this device pinned (D3.9, package J11, which took the git
-/// config step out of [`resolve_identity`] altogether). A project
-/// founded without a git config is therefore committable, which it was
-/// not while a git process wrote the commit.
+/// own identity resolution: [`resolve_identity`]'s order (the
+/// delegation session, then git config, then the forge account, since
+/// the operator's 2026-09-19 correction, JOY-02AE-1A). A project founded
+/// without a git config is still committable through `--user`, a
+/// delegation session or a forge login, which it was not while a git
+/// process wrote the commit and demanded `user.email` itself.
 pub fn acting_signature(root: &Path) -> Result<(String, String), JoyError> {
     let member = resolve_identity(root)?.member.id().to_string();
     commit_signature(root, &member)

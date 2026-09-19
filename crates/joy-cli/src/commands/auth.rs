@@ -720,22 +720,21 @@ fn run_status() -> Result<()> {
 
     let identity =
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
-    // Nothing on this device says who acts here: no delegation session
-    // and no pin, which is a fresh clone or a second machine, and git
-    // config is not an answer (D3.9). Say the sentence that names the
-    // remedy instead of printing "No active session for " with an empty
-    // name in it.
+    // Nothing says who acts here: no delegation session, no git config
+    // naming a member, and no forge account naming one either (operator
+    // decision 2026-09-19, JOY-02AE-1A, correcting D3.9). Say the
+    // sentence that names the remedy instead of printing "No active
+    // session for " with an empty name in it.
     if identity.member.id().trim().is_empty() {
         return Err(joy_core::error::JoyError::UnknownActingMember.into());
     }
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
-    // Where the answer came from, so a person can see that this machine
-    // decided it once and how to decide it again: a delegation session
-    // names the AI, a pin is this device's own state, and `joy auth
-    // --user <address>` replaces it (D3.9). Without this line a machine
-    // that answers with a member nobody expected looks like a machine
-    // reading somebody's mind.
+    // Where the answer came from, so a person can see why this machine
+    // named them: a delegation session names the AI, git config or the
+    // forge account name a human (JOY-02AE-1A). Without this line a
+    // machine that answers with a member nobody expected looks like a
+    // machine reading somebody's mind.
     let source = identity_source(&root, &project, &identity);
 
     // AI identities authenticate via the env-carried session (per-session
@@ -914,9 +913,10 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
-    // The acting member comes from the session, then this device's pin,
-    // then git config as a prefill (D3.9), and it is already an at-rest
-    // member key, which is what `target` is consumed as below.
+    // The acting member is resolve_identity's own answer (the delegation
+    // session, then git config, then the forge account, since the
+    // operator's 2026-09-19 correction, JOY-02AE-1A), and it is already
+    // an at-rest member key, which is what `target` is consumed as below.
     let acting = joy_core::identity::acting_human_key(&root)?;
 
     let target = args.member.as_deref().unwrap_or(&acting);
@@ -1077,8 +1077,9 @@ pub(crate) fn create_delegation_token(
     // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
     // the attestation are all keyed by this id, never by the cleartext
     // e-mail. The caller holds either an address a person typed (`--user`)
-    // or an at-rest member key (`joy_core::identity::acting_human_key`, and
-    // the device pin behind it, D3.9); both must find the same member.
+    // or an at-rest member key (`joy_core::identity::acting_human_key`,
+    // which is resolve_identity's own answer); both must find the same
+    // member.
     let member_key = project
         .member_key_for_email(operator)
         .or_else(|| {
@@ -1230,11 +1231,11 @@ pub(crate) fn create_delegation_token(
         // here used to be `member_by_email_mut` on the caller's raw
         // string, which resolves an ADDRESS through the member map's
         // e-mail matcher. It found the operator while the acting member
-        // was still a git config address; since identity resolution
-        // answers with the member this device pinned (D3.9, package
-        // J11), an anonymous project hands this function the operator's
-        // opaque `m-<hex>` id, no address matches it, and the `if let`
-        // wrote NOTHING. The token was printed all the same, and
+        // was still a git config address; once identity resolution
+        // started answering with an at-rest member KEY instead (D3.9,
+        // package J11), an anonymous project handed this function the
+        // operator's opaque `m-<hex>` id, no address matched it, and the
+        // `if let` wrote NOTHING. The token was printed all the same, and
         // redeeming it then failed with "no delegation registered for
         // <ai> by <operator>": a token that could never work, from a
         // command that reported success. A member the map cannot find is
