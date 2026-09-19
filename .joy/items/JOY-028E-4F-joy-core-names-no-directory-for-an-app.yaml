@@ -1,13 +1,13 @@
 id: JOY-028E-4F
 title: joy-core names no directory for an app's local state
 type: task
-status: review
+status: closed
 priority: high
 capabilities:
 - implement
 effort: 1
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-14T09:38:58.877349797Z
-updated: 2026-09-14T22:15:39.754081013Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-19T07:16:26.859233377Z
+updated_by: horst.schwarz@joydev.com
 description: ADR JAPP-02BD-56 (Horst, 2026-09-14) puts every piece of app state and every local setting of the desktop into one directory per person, beside joy's sessions and on each system where apps keep such data. joy-core resolves the state base for its sessions but offers hosts no resolver for that app directory, so each host would re-derive the platform rules.
