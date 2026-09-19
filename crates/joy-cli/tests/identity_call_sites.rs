@@ -736,7 +736,11 @@ fn every_identity_command_needs_a_git_config_or_a_forge_account() {
     assert_every_step_needed_an_identity(&identity_script(&machine));
 
     let ls = machine.joy(&["ls"]);
-    assert!(ls.status.success(), "reading needs no member: {}", text(&ls));
+    assert!(
+        ls.status.success(),
+        "reading needs no member: {}",
+        text(&ls)
+    );
 }
 
 /// The acceptance of J11 was that removing `user.email` changed no joy

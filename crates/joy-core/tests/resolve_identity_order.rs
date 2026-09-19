@@ -286,7 +286,8 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
     // have installed: `set_plugin_dirs` is searched before PATH (D2.2),
     // so the stub answers even where a real one exists.
     let repo = git2::Repository::open(root).unwrap();
-    repo.remote("origin", "git@github.example.com:o/r.git").unwrap();
+    repo.remote("origin", "git@github.example.com:o/r.git")
+        .unwrap();
     let plugins = tempfile::tempdir().unwrap();
     let stub_path = stub(
         plugins.path(),
