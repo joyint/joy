@@ -370,8 +370,15 @@ fn detect_copilot() -> bool {
     // binary alone produced spurious `ai:copilot@joy` registrations. So
     // the gh launch earns its answer by running, which is exactly what
     // the registry's `verify` argv is for.
+    copilot_present(command_succeeds)
+}
+
+/// Is Copilot reachable here? `verify` settles the launchers that answer
+/// only by being run, so a caller that may not start anything can pass a
+/// closure that always says no.
+fn copilot_present(verify: impl Fn(&str) -> bool) -> bool {
     crate::adapters::by_adapter("copilot")
-        .and_then(|spec| spec.usable_launch(which, command_succeeds))
+        .and_then(|spec| spec.usable_launch(which, verify))
         .is_some()
         // Copilot is not only a CLI. An editor of the VS Code family has
         // Copilot Chat built in (VS Code 1.116) and reads the very files
@@ -379,6 +386,33 @@ fn detect_copilot() -> bool {
         // still a Copilot user — and used to be told to register a member
         // by hand instead.
         || editor_reads_copilot_instructions(std::env::var_os("TERM_PROGRAM").as_deref())
+}
+
+/// Is the tool on this machine, asked WITHOUT starting anything?
+///
+/// For the read-only surfaces. `joy update --check` promises to write no
+/// files, and it cannot keep that promise through a probe that starts
+/// another program: `gh` drops a device id under the person's state
+/// directory the first time it runs, and joy would be the one that made
+/// it happen — on every auto-sync, for everybody who has `gh` and no
+/// Copilot.
+///
+/// So this asks only what it can answer by looking. The cost is one
+/// launcher it cannot see: `gh copilot` on a machine without the plain
+/// CLI reads here as "not installed". That is a line in an informational
+/// row, while `joy ai init` — which a person ran on purpose, and which
+/// may start things — still finds it.
+pub fn is_tool_present_without_probing(tool: &str) -> bool {
+    match tool {
+        // the only tool whose launcher has to be run to answer
+        "copilot" => copilot_present(|_| false),
+        other => TOOLS
+            .iter()
+            .find(|(_, id, _, _)| *id == other)
+            // every other detector is a PATH lookup and starts nothing
+            .map(|(_, _, detect, _)| detect())
+            .unwrap_or(false),
+    }
 }
 
 /// Is joy running in an editor terminal whose assistant reads the files
