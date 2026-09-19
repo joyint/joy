@@ -1,11 +1,28 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Who joy thinks is acting, and in which order it asks (D3.9 of the
-//! forge connection NG design, JOY-0297-1A): the session first, then the
-//! member this device pinned, and that is all. git config is a prefill
-//! for the paths that ask a person for an address, and it decides no
-//! identity, which is what makes removing `user.email` a no-op.
+//! Two different questions that both live in `identity.rs`, and how the
+//! operator's 2026-09-19 correction (JOY-02AE-1A, correcting D3.9 of the
+//! forge connection NG design, JOY-0297-1A) moved only one of them:
+//!
+//! - [`resolve_identity`] answers "who is acting right now": the
+//!   delegation session first, then git config (repository before
+//!   global), then the forge account, and nothing else. The device pin
+//!   is never read here any more, whatever it names.
+//! - [`acting_member`] answers a narrower, earlier question: "who does a
+//!   bare `joy auth` or a bare enrolment act as, before a name, a git
+//!   config or a forge account settled it". This one is UNCHANGED: the
+//!   name a person typed first, then the member this device pinned,
+//!   then git config as a prefill they can still overrule.
+//!
+//! Because only the first of the two dropped the pin, this file's one
+//! case has a scenario where they disagree: a device pinned to one
+//! member whose git config now names another. `resolve_identity` (`joy
+//! auth status`, every write) follows the config; `acting_member` (a
+//! bare `joy auth` with no `--user`) still offers the pin. That is a
+//! deliberate consequence of the correction, not an oversight: the two
+//! functions serve different moments (deciding who already acted, and
+//! prefilling who a person about to authenticate probably is).
 //!
 //! ONE test in its own binary, on purpose. The question is about process
 //! state that has no per-thread version: HOME, libgit2's config search
@@ -97,19 +114,27 @@ fn found(root: &Path, founder: &str) {
 }
 
 #[test]
-fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
+fn resolve_identity_follows_git_config_acting_member_still_offers_the_pin() {
     let home = a_machine_without_a_git_identity();
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
 
-    // 1. Founding names the founder, and this device remembers that it is
-    //    the founder's device. Without that, nothing on a machine with no
-    //    git config could say who acts here.
+    // 1. Founding names the founder and pins this device to them, and
+    //    with no git config anywhere `acting_member` has only the pin to
+    //    offer. `resolve_identity`, though, reads git config and the
+    //    forge account, not the pin: with neither present yet (no
+    //    config, no remote) it answers with nobody, exactly as it would
+    //    on a machine with no identity anywhere.
     found(root, "a@b.c");
     let project = joy_core::store::load_project(root).unwrap();
     assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
     assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
-    assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "",
+        "no git config and no forge account: the pin decides nothing here \
+         (operator decision 2026-09-19, JOY-02AE-1A)"
+    );
 
     // 2. A named address wins over everything: that is how a second person
     //    on one machine says who they are.
@@ -119,22 +144,31 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
         "the named address wins, trimmed"
     );
 
-    // 3. git config appears and names a DIFFERENT member of this project.
-    //    D3.9 puts the pin before it, and the point of the order is that
-    //    both resolvers give the same answer: `joy auth status` and
-    //    `joy auth init` cannot contradict each other.
+    // 3. git config appears and names a DIFFERENT member of this
+    //    project. `acting_member` still offers the pin first (a person
+    //    can still overrule it, and often should), but `resolve_identity`
+    //    now follows the config: this is the one point in the file where
+    //    the two disagree, and it is the correction's whole point.
     add_member(root, "bea@example.com");
     let project = joy_core::store::load_project(root).unwrap();
     git_config_says(home.path(), "bea@example.com");
-    assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
-    assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
+    assert_eq!(
+        acting_member(root, &project, None).unwrap(),
+        "a@b.c",
+        "acting_member is unaffected by this correction: the pin still \
+         wins over the git config prefill"
+    );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "bea@example.com",
+        "resolve_identity reads git config now, regardless of the pin"
+    );
 
     // 4. The same project on a machine that pinned nobody, a fresh clone
-    //    or a second machine. git config is a PREFILL: the paths that ask
-    //    a person for an address offer it, and nothing decides an
-    //    identity from it. `resolve_identity` therefore answers with
-    //    nobody, and the callers that need a name say so, even though
-    //    `user.email` names a registered member of this very project.
+    //    or a second machine. `acting_member`'s prefill is the git config
+    //    address, unchanged; `resolve_identity` answers the very same
+    //    member, because it was reading the config all along and never
+    //    the pin.
     forget_the_pin(root);
     assert_eq!(pinned_member(root, &project), None);
     assert_eq!(
@@ -144,23 +178,16 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
     );
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
-        "",
-        "git config decides no identity (D3.9, package J11)"
-    );
-    let err = acting_member_key(root).unwrap_err();
-    assert!(
-        matches!(err, joy_core::error::JoyError::UnknownActingMember),
-        "{err}"
-    );
-    let err = acting_human_key(root).unwrap_err();
-    assert!(
-        matches!(err, joy_core::error::JoyError::UnknownActingMember),
-        "{err}"
+        "bea@example.com",
+        "forgetting the pin changes nothing here: resolve_identity was \
+         never reading it"
     );
 
     // 5. A pin for somebody this project does not know is no answer at
     //    all: a member who was removed, or a project rekeyed to anonymous
-    //    ids, must not keep deciding.
+    //    ids, must not keep deciding. This is `acting_member`'s own
+    //    guard, unaffected by the correction; `resolve_identity` does
+    //    not notice the pin change either way.
     pin_acting_member(root, &project, "ghost@example.com");
     assert_eq!(
         pinned_member(root, &project),
@@ -171,11 +198,18 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
         acting_member(root, &project, None).unwrap(),
         "bea@example.com"
     );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "bea@example.com"
+    );
 
     // 6. Bea authenticates here, on a machine whose git config already
-    //    names her: the pin is written anyway. Dropping it because the
-    //    config agrees today would stand this project back on a git
-    //    setting tomorrow, when the setting goes.
+    //    names her: the pin is written anyway (still true; a future
+    //    cleanup may retire the write, see identity.rs's note on
+    //    `pin_acting_member`). Removing `user.email` now DOES change
+    //    what `resolve_identity` answers, which is the inverse of what
+    //    this file asserted before the correction: the pin no longer
+    //    stands in for a git config that went away.
     pin_acting_member(root, &project, "bea@example.com");
     assert_eq!(
         pinned_member(root, &project).as_deref(),
@@ -185,20 +219,28 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
     assert_eq!(
         acting_member(root, &project, None).unwrap(),
         "bea@example.com",
-        "removing user.email changes nothing once the member is known here"
+        "acting_member still has the pin to fall back on"
     );
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
-        "bea@example.com"
+        "",
+        "removing user.email now DOES change resolve_identity's answer: \
+         the pin behind acting_member is not a source resolve_identity \
+         reads (JOY-02AE-1A)"
     );
 
     // ...and the next person who authenticates here replaces the pin,
-    // which is the one way the answer on this machine changes.
+    // which is still the one way `acting_member`'s answer changes absent
+    // a config or a name; `resolve_identity` needs the config back too.
     git_config_says(home.path(), "bea@example.com");
     pin_acting_member(root, &project, "a@b.c");
     assert_eq!(pinned_member(root, &project).as_deref(), Some("a@b.c"));
     assert_eq!(acting_member(root, &project, None).unwrap(), "a@b.c");
-    assert_eq!(resolve_identity(root).unwrap().member.id(), "a@b.c");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "bea@example.com",
+        "resolve_identity follows the config, not the pin `acting_member` just changed"
+    );
 
     // 7. Neither pin nor git config, and a project with exactly one human
     //    member: joy says it does not know, and names the way out. It does
@@ -216,4 +258,15 @@ fn the_pin_answers_before_git_config_and_the_two_resolvers_agree() {
         "{err}"
     );
     assert!(err.to_string().contains("--user <address>"), "{err}");
+    assert_eq!(resolve_identity(solo.path()).unwrap().member.id(), "");
+    let err = acting_member_key(solo.path()).unwrap_err();
+    assert!(
+        matches!(err, joy_core::error::JoyError::UnknownActingMember),
+        "{err}"
+    );
+    let err = acting_human_key(solo.path()).unwrap_err();
+    assert!(
+        matches!(err, joy_core::error::JoyError::UnknownActingMember),
+        "{err}"
+    );
 }
