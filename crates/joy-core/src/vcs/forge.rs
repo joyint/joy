@@ -5382,6 +5382,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("joy-ci-merge-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         let repo = git2::Repository::init(&dir).unwrap();
+        // These fixtures compare file bytes. A Windows runner has
+        // core.autocrlf=true globally, and the checkout below would then
+        // hand the log back with CRLF while the assertion reads LF.
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
         let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
         let write = |rel: &str, body: &str| {
             let path = dir.join(rel);
@@ -5477,6 +5484,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("joy-ci-merge-stop-{}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         let repo = git2::Repository::init(&dir).unwrap();
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
         let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
         let write = |rel: &str, body: &str| std::fs::write(dir.join(rel), body).unwrap();
         fn commit<'r>(
