@@ -71,12 +71,13 @@ load setup
 
 @test "joy ai init fails clearly when nobody on this machine has said who acts" {
     joy init --name "Test Project" 2>/dev/null
-    # This case used to point git config at a stranger. Since package J11
-    # that says nothing about who acts (D3.9), and a stranger cannot
-    # claim a member at all: what is left is the machine that answers
-    # nobody, which is a fresh clone or a second one. `joy ai init` takes
-    # no `--user`, so it cannot be told here either; it has to refuse,
-    # and the refusal has to say how to settle it.
+    # `joy init` registered the founder under this repository's own git
+    # config (set by setup() to $FOUNDER_EMAIL); `forget_this_device`
+    # clears that too now (JOY-02AE-1A, correcting D3.9), or it would
+    # still answer for who acts. What is left is the machine that
+    # answers nobody, which is a fresh clone or a second one. `joy ai
+    # init` takes no `--user`, so it cannot be told here either; it has
+    # to refuse, and the refusal has to say how to settle it.
     forget_this_device
     PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
     run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
