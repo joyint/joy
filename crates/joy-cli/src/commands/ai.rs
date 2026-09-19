@@ -309,12 +309,12 @@ pub(crate) fn tool_ids() -> &'static [&'static str] {
     &["claude", "qwen", "vibe", "copilot"]
 }
 
+/// Is the tool on this machine? For the READ-ONLY surfaces (`joy update
+/// --check` and the auto-sync report), so it never starts a program: a
+/// command that promises to write nothing must not make `gh` write its
+/// device id. See `joy_ai::ai_setup::is_tool_present_without_probing`.
 pub(crate) fn is_tool_installed(id: &str) -> bool {
-    ALL_TOOLS
-        .iter()
-        .find(|(_, eid, _, _)| *eid == id)
-        .map(|(_, _, detect, _)| detect())
-        .unwrap_or(false)
+    joy_ai::ai_setup::is_tool_present_without_probing(id)
 }
 
 pub(crate) fn is_tool_configured_pub(root: &Path, id: &str) -> bool {
