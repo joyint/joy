@@ -679,16 +679,18 @@ fn auth_with_token(
     Ok(())
 }
 
-/// Where `joy auth status` got the member it just named (D3.9), in the
-/// words a person can act on.
+/// Where `joy auth status` got the member it just named (operator
+/// decision 2026-09-19, JOY-02AE-1A, correcting D3.9), in the words a
+/// person can act on.
 ///
-/// The order is the resolver's own: a delegation session names the AI and
-/// the operator behind it, the device pin is this machine's own state,
-/// and nothing else answers. The pin is worth naming because it is
-/// invisible otherwise: a person who once ran `joy auth --user
-/// somebody-else` has changed what this machine answers with, and the
-/// only way to see it was to guess. Naming it also names the way to
-/// change it, which is to authenticate as somebody else.
+/// The order is `resolve_identity`'s own: a delegation session names the
+/// AI and the operator behind it; failing that, git config (the
+/// repository's own file or the person's global one, read as one merged
+/// value, so this does not try to say which of the two it was); failing
+/// that, the forge account for the remote's host. The device pin is not
+/// in this list any more: `run_status` already refused before calling
+/// this function when nothing named a member, so a non-empty member here
+/// is always one of the three, checked in the same order.
 fn identity_source(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
@@ -697,12 +699,17 @@ fn identity_source(
     if identity.delegated_by.is_some() {
         return "delegation session in JOY_SESSION".to_string();
     }
-    match joy_core::identity::pinned_member(root, project).as_deref() {
-        Some(pin) if pin == identity.member.id() => {
-            "remembered on this device (`joy auth --user <address>` changes it)".to_string()
-        }
-        _ => "this session".to_string(),
+    let member = identity.member.id();
+    let (_, config_email) = joy_core::vcs::forge::user_identity(root);
+    let config_names_member = config_email
+        .as_deref()
+        .and_then(|email| joy_core::privacy::member_key_for_email(project, email))
+        .as_deref()
+        == Some(member);
+    if config_names_member {
+        return "git config user.email".to_string();
     }
+    "the forge account for this remote's host".to_string()
 }
 
 /// `joy auth status` — show current session state and any AI sessions

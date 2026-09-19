@@ -49,6 +49,19 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
+/// Give the checkout a git identity naming `email`: since the operator's
+/// 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) resolve_identity
+/// reads git config again, so every one of joy's own commit paths below
+/// needs a real one to know who is acting, exactly as a working checkout
+/// would have. The tests here are about what joy's commits carry (D3.4,
+/// D4.5), not about identity resolution itself, so this is the same
+/// fixture, applied uniformly, rather than a pin nobody can see any more.
+fn git_config_names(root: &Path, email: &str) {
+    let repo = git2::Repository::open(root).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.email", email).unwrap();
+}
+
 /// joy commits its own writes from here on.
 fn auto_git_commit(root: &Path) {
     std::fs::write(
@@ -152,6 +165,7 @@ fn a_joy_commit_leaves_the_persons_staged_work_where_it_was() {
         &["init", "--name", "Scoped", "--user", "scotty@example.com"],
     );
     assert!(init.status.success(), "{}", text(&init));
+    git_config_names(&root, "scotty@example.com");
     auto_git_commit(&root);
 
     // The person is in the middle of something and has staged part of it.
@@ -190,19 +204,16 @@ fn a_joy_commit_leaves_the_persons_staged_work_where_it_was() {
     assert!(index.get_path(Path::new("src.rs"), 0).is_some());
 }
 
-/// The second half of J11's acceptance, on the one observable git config
-/// still decides: the display NAME of a commit joy writes (D4.5, "name is
-/// git config `user.name` when it maps to the acting member").
-///
-/// Removing ONLY `user.email` and keeping `user.name` used to drop the
-/// name from every commit, because the name was gated on the address
-/// mapping to the acting member. It is not a crash and not a wrong
-/// author, but it is a behaviour that changed when `user.email` went, and
-/// the criterion says none does. With no address in the config the
-/// question is answered by the member this device pinned instead, so the
-/// author line is identical before and after.
+/// J11's acceptance was that removing ONLY `user.email` and keeping
+/// `user.name` changed nothing, because the member this device pinned
+/// backstopped the address once it was known. The operator's 2026-09-19
+/// correction (JOY-02AE-1A) retires that backstop: `resolve_identity`
+/// reads git config again, so removing the ONE key it actually reads
+/// (`user.email`) now takes the acting member away with it, `user.name`
+/// or not. This is the inverse of what this test asserted before the
+/// correction, checked on the same fixture.
 #[test]
-fn removing_only_user_email_leaves_the_author_line_alone() {
+fn removing_user_email_takes_the_acting_member_with_it() {
     let (_dir, root, home) = machine();
 
     // A machine whose git config names the person by both name and
@@ -225,9 +236,8 @@ fn removing_only_user_email_leaves_the_author_line_alone() {
 
     let first = joy(&root, &home, &["add", "task", "First thing"]);
     assert!(first.status.success(), "{}", text(&first));
-    let with_the_address = head_fields(&root);
     assert_eq!(
-        with_the_address,
+        head_fields(&root),
         [
             "Alice Anderson".to_string(),
             "alice@example.com".to_string(),
@@ -237,16 +247,22 @@ fn removing_only_user_email_leaves_the_author_line_alone() {
         "the configured name rides along while the address names the member"
     );
 
-    // Only `user.email` goes. The name stays exactly where it was, and so
-    // does the member this device pinned.
+    // Only `user.email` goes. `user.name` alone names nobody: D4.5's
+    // display name check is a question about a member ALREADY resolved,
+    // and with no address in the config (and no forge account, no
+    // remote here) nothing resolves one any more.
     std::fs::write(home.join(".gitconfig"), "[user]\n\tname = Alice Anderson\n").unwrap();
 
     let second = joy(&root, &home, &["add", "task", "Second thing"]);
-    assert!(second.status.success(), "{}", text(&second));
-    assert_eq!(
-        head_fields(&root),
-        with_the_address,
-        "removing user.email changed the author line"
+    assert!(
+        !second.status.success(),
+        "removing user.email now takes the acting member with it: {}",
+        text(&second)
+    );
+    assert!(
+        text(&second).contains("git config user.email"),
+        "the refusal names the remedy: {}",
+        text(&second)
     );
 }
 
@@ -266,6 +282,7 @@ fn a_release_commit_carries_joys_own_paths_only() {
         &["init", "--name", "Rel", "--user", "scotty@example.com"],
     );
     assert!(init.status.success(), "{}", text(&init));
+    git_config_names(&root, "scotty@example.com");
 
     // A version file, which is joy's because `joy release bump` patches it.
     std::fs::write(root.join("Cargo.toml"), "[package]\nversion = \"0.0.1\"\n").unwrap();
@@ -347,6 +364,7 @@ fn an_automatic_commit_without_an_item_warns_and_still_happens() {
         &["init", "--name", "Warned", "--user", "scotty@example.com"],
     );
     assert!(init.status.success(), "{}", text(&init));
+    git_config_names(&root, "scotty@example.com");
     auto_git_commit(&root);
 
     // `joy project set` writes "joy: project set ...": no item id, and
@@ -400,6 +418,7 @@ fn a_refused_auto_git_push_speaks_the_one_failure_vocabulary() {
         &["init", "--name", "Pushed", "--user", "scotty@example.com"],
     );
     assert!(init.status.success(), "{}", text(&init));
+    git_config_names(&root, "scotty@example.com");
 
     // A remote nothing answers, so the push after the commit is refused
     // for certain, with no network anywhere near it.
@@ -470,6 +489,7 @@ fn a_release_commit_stays_quiet_when_nothing_of_the_persons_was_skipped() {
         &["init", "--name", "Quiet", "--user", "scotty@example.com"],
     );
     assert!(init.status.success(), "{}", text(&init));
+    git_config_names(&root, "scotty@example.com");
 
     // `joy init` stages SECURITY.md and no joy command commits it, so
     // the person's first commit is where it lands. After it this
