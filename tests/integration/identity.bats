@@ -36,15 +36,17 @@ load setup
     setup_human_auth
     joy add task "Reject test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Reject test" | awk '{print $1}')
-    # Since package J11 an identity is a session or the member this
-    # device pinned, never a git config address, so somebody the project
-    # does not know can only be turned away where they name themselves.
+    # --user always beats git config (JOY-02AE-1A, correcting D3.9), so
+    # somebody the project does not know is turned away here regardless
+    # of what this repository's git config says.
     run joy auth --user nobody@invalid.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 
-    # On a machine that nobody has named themselves on, the write is
-    # refused too, instead of being credited to the last person here.
+    # On a machine that nobody has named themselves on -- forget_this_device
+    # clears both the session state and this checkout's own git config --
+    # the write is refused too, instead of being credited to the last
+    # person here.
     forget_this_device
     run joy comment "$ITEM_ID" "Should fail"
     [ "$status" -ne 0 ]
