@@ -14,6 +14,10 @@
 //! global one), then the forge account for the remote's host, and
 //! nothing else: the device pin that used to stand at the second step
 //! is retired, and none of the cases below may depend on it any more.
+//! `identity::acting_member`, which some cases here also exercise
+//! through a bare `joy auth`, was left reading the pin at first; a later
+//! addition to the same item retired it there too, so it now reads the
+//! same three sources in the same order.
 //! These tests drive the real binary, because the question is what a
 //! command does on a machine, and the machine is what they take away.
 
@@ -108,8 +112,7 @@ impl Machine {
     }
 
     /// Model another machine, or a fresh clone: the project file travels,
-    /// this device's own state does not. Both the sessions and the member
-    /// pin live in it.
+    /// this device's own state (sessions) does not.
     fn forget_the_device_state(&self) {
         let state = self.home.join(".state");
         if state.exists() {
@@ -118,9 +121,8 @@ impl Machine {
     }
 
     /// Invite `email` and redeem the invitation as them: the real
-    /// two-sided flow, ending with `email` enrolled, holding
-    /// [`SECOND_PASSPHRASE`], and pinned as the member this device acts
-    /// as. Returns the redemption's output.
+    /// two-sided flow, ending with `email` enrolled and holding
+    /// [`SECOND_PASSPHRASE`]. Returns the redemption's output.
     ///
     /// The caller must have already given this machine's git config the
     /// FOUNDER's address, so the invite step (a write only the founder
@@ -209,6 +211,14 @@ const SECOND_PASSPHRASE: &str = "second pass phrase entirely";
 const FOUNDER: &str = "a@b.c";
 
 /// Found the project and enrol the founder, so the member is known.
+///
+/// Both steps name the founder with `--user`, not just the first: with
+/// the device pin gone from `acting_member` too (a later addition to
+/// JOY-02AE-1A), a bare `joy auth init` right after founding on a
+/// machine with no git config has nothing left to resolve who is
+/// initialising, exactly like every other command this file exercises.
+/// A caller that wants to test the no-git-config case removes the git
+/// config or the whole device state AFTER this helper, never before.
 fn found_and_enrol(machine: &Machine) {
     let init = machine.joy(&[
         "init",
@@ -220,7 +230,14 @@ fn found_and_enrol(machine: &Machine) {
         "a@b.c",
     ]);
     assert!(init.status.success(), "{}", text(&init));
-    let auth = machine.joy(&["auth", "init", "--passphrase", PASSPHRASE]);
+    let auth = machine.joy(&[
+        "auth",
+        "init",
+        "--user",
+        "a@b.c",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
     assert!(auth.status.success(), "{}", text(&auth));
 }
 
@@ -290,24 +307,19 @@ struct Step {
 }
 
 /// Assert that every step of a script run with no git config and no
-/// forge account failed to resolve an identity, with one documented
-/// exception this file's scripts carry: a bare `joy auth <passphrase>`
-/// login (`auth again`) asks `identity::acting_member`, not
-/// resolve_identity, and that question ("who does a bare login act as
-/// before anybody names somebody") is untouched by the operator's
-/// 2026-09-19 correction (JOY-02AE-1A; see acting_member.rs) — it still
-/// finds the member through the pin. Whether it then SUCCEEDS depends on
-/// whichever passphrase an earlier, now-failing step in the same script
-/// meant to leave in place, which is no longer this helper's question,
-/// so `auth again` is skipped here rather than asserted either way.
-/// Every other step asks resolve_identity, directly or through
-/// acting_member_key / acting_human_key, and none of those read a pin
-/// any more.
+/// forge account failed to resolve an identity.
+///
+/// This used to carry one documented exception: the bare `joy auth
+/// <passphrase>` login this file calls "auth again" asks
+/// `identity::acting_member`, not `resolve_identity`, and that question
+/// used to keep answering through the device pin after every other step
+/// had already stopped. A later addition to the same item (JOY-02AE-1A)
+/// retired the pin from `acting_member` too, so "auth again" now asks
+/// the same three sources (a name, git config, the forge account) as
+/// everything else and fails here exactly like the rest; the exception
+/// is gone, not worked around.
 fn assert_every_step_needed_an_identity(steps: &[Step]) {
     for step in steps {
-        if step.label == "auth again" {
-            continue;
-        }
         assert!(
             !step.ok,
             "`joy {}` succeeded with no git config and no forge account: {}",
@@ -558,8 +570,9 @@ fn privacy_migration_script(machine: &Machine) -> Vec<Step> {
             false,
         ),
         // The rekey invalidated the session, because it was bound to the
-        // old member key. Authenticating again needs the pin the
-        // migration rewrote, and no `--user`.
+        // old member key. Authenticating again needs no `--user`: the
+        // same git config that named the founder before the rekey still
+        // does after it (no pin involved, see this function's own doc).
         (
             "auth again",
             vec!["auth", "--passphrase", PASSPHRASE],
@@ -873,8 +886,9 @@ fn a_git_config_alone_decides_who_acts() {
     let machine = Machine::new();
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
-    // The project file travels to the new machine; this device's session
-    // and pin do not. The git config stays, and it names the founder.
+    // The project file travels to the new machine; this device's own
+    // session state does not. The git config stays, and it names the
+    // founder.
     machine.forget_the_device_state();
 
     // `joy auth status` already names the founder and the source of the
@@ -899,8 +913,8 @@ fn a_git_config_alone_decides_who_acts() {
     let ls = machine.joy(&["ls"]);
     assert!(ls.status.success(), "{}", text(&ls));
 
-    // A write, with no session and no pin, resolves the founder from
-    // git config alone and succeeds outright: the exact opposite of what
+    // A write, with no session at all, resolves the founder from git
+    // config alone and succeeds outright: the exact opposite of what
     // package J11 accepted.
     let add = machine.joy(&["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
@@ -1015,19 +1029,19 @@ fn a_delegation_session_outranks_the_git_config() {
 /// The one boundary of the criterion above, named rather than left to be
 /// discovered: with no session, no git config and no forge account, joy
 /// says it does not know who is acting and names the remedy. `--user`
-/// authenticates for that one command, but the operator's 2026-09-19
-/// correction (JOY-02AE-1A) retired the pin authenticating used to
-/// leave behind, so a LATER bare command, still with no git config,
-/// needs a name or a config again: naming an address once no longer
-/// settles it for good on a machine with no git identity of its own.
+/// authenticates for that one command only: there is no pin left
+/// anywhere in joy for authenticating to leave behind (JOY-02AE-1A), so
+/// a LATER bare command, still with no git config, needs a name or a
+/// config again: naming an address once no longer settles it for good
+/// on a machine with no git identity of its own.
 #[test]
-fn without_a_session_a_pin_or_a_config_joy_names_the_remedy() {
+fn without_a_session_or_a_config_joy_names_the_remedy() {
     let machine = Machine::new();
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
     // Another machine, or a fresh clone: the project file travels, this
-    // device's session and pin do not, and this one has no git config
-    // either. That is the only state in which nothing can answer.
+    // device's own session state does not, and this one has no git
+    // config either. That is the only state in which nothing can answer.
     machine.forget_the_device_state();
     machine.forget_the_git_config();
 
@@ -1058,10 +1072,10 @@ fn without_a_session_a_pin_or_a_config_joy_names_the_remedy() {
     assert!(named.status.success(), "{}", text(&named));
     assert!(text(&named).contains("a@b.c"), "{}", text(&named));
 
-    // Authenticating with --user no longer pins the member for later
-    // commands (JOY-02AE-1A): a bare command, still with no git config,
-    // needs a name or a config again, including the one that has no
-    // `--user` of its own.
+    // Authenticating with --user leaves nothing behind for later
+    // commands to read: there is no pin (JOY-02AE-1A), so a bare
+    // command, still with no git config, needs a name or a config
+    // again, including the one that has no `--user` of its own.
     let status = machine.joy(&["auth", "status"]);
     assert!(!status.status.success(), "{}", text(&status));
     assert!(
@@ -1071,7 +1085,8 @@ fn without_a_session_a_pin_or_a_config_joy_names_the_remedy() {
     );
 
     // Naming the member again works, and so does giving git config the
-    // address: neither one is the pin, and neither was ever retired.
+    // address: both are still sources this function reads, unaffected
+    // by the pin's removal.
     let named_again = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
     assert!(named_again.status.success(), "{}", text(&named_again));
     machine.git_config_says("a@b.c");
@@ -1218,15 +1233,16 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
 /// both spellings the issuing command accepts.
 ///
 /// `joy auth token add` takes the operator from `identity::acting_member`,
-/// which hands back whatever it was given: the member this device pinned,
-/// which in an anonymous project is the opaque id, or the raw string of a
-/// `--user` flag, which is an address a person typed. The token used to
-/// carry that string as its `delegated_by` claim, so the SAME operator of
-/// the SAME project was written into the token two different ways, and
-/// one of them was a cleartext address inside a credential that is then
-/// pasted into chats, CI variables and agent configuration. The claim is
-/// resolved once, at issuance, so neither end has to accept two forms and
-/// the address never leaves the project.
+/// which hands back whatever it was given, unchecked: this repository's
+/// own git config, the forge account, or the raw string of a `--user`
+/// flag, which is an address a person typed (exercised below). The token
+/// used to carry that string as its `delegated_by` claim, so the SAME
+/// operator of the SAME project was written into the token two different
+/// ways, and one of them was a cleartext address inside a credential
+/// that is then pasted into chats, CI variables and agent configuration.
+/// The claim is resolved once, at issuance, into the at-rest member key
+/// (the opaque id in an anonymous project), so neither end has to accept
+/// two forms and the address never leaves the project.
 #[test]
 fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
     let machine = Machine::new();
@@ -1296,11 +1312,13 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
 }
 
 /// D3.9 promises a person that naming themselves once settles it: this
-/// device remembers the member, and every later command knows them. In an
-/// ANONYMOUS project what the device remembers is the opaque `m-<hex>`
-/// id, because that is the member map's key (ADR-042), and three things
-/// on the login path still wanted an address where the pin hands them an
-/// id:
+/// repository's own git config remembers the member (JOY-02AE-1A,
+/// correcting D3.9; the device pin that used to carry this, including
+/// through `acting_member`, is retired for good). In an ANONYMOUS
+/// project git config still carries the real address, because that is
+/// what it has always held; the project's own member map key is the
+/// opaque `m-<hex>` id (ADR-042), and three things on the login path
+/// used to want an address where an id showed up instead:
 ///
 ///  - the attestation check, which compares against the identifier the
 ///    attestation SIGNED, and an attestation never signs an opaque id;
@@ -1311,9 +1329,9 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
 /// The first one locked every returning member of a multi-member
 /// anonymous project out of their own project, with a message saying
 /// their entry looked tampered with, until they typed `--user <address>`
-/// again. That is the opposite of what the pin is for.
+/// again.
 #[test]
-fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
+fn an_anonymous_project_knows_its_members_from_git_config() {
     let machine = Machine::new();
     found_and_enrol(&machine);
     // The founder's own invite write needs a git config naming them,
@@ -1336,12 +1354,13 @@ fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
     ]);
     assert!(anonymous.status.success(), "{}", text(&anonymous));
 
-    // b@c.d is the member this device pinned, and is the one the plain
+    // b@c.d is who this repository's git config names
+    // (a_second_enrolled_member set it), and is the one the plain
     // `joy auth` speaks for: no address is typed anywhere below.
     let returning = machine.joy(&["auth", "--passphrase", SECOND_PASSPHRASE]);
     assert!(
         returning.status.success(),
-        "a pinned member of an anonymous project authenticates: {}",
+        "the member git config names in an anonymous project authenticates: {}",
         text(&returning)
     );
     // And is told who they are in words, not as the project's own id.
@@ -1356,9 +1375,9 @@ fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
         text(&returning)
     );
 
-    // The founder, named once, is then equally known from the pin alone.
-    let named = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
-    assert!(named.status.success(), "{}", text(&named));
+    // The founder, named in git config again, is equally known: no
+    // pin carries this any more, only the config itself.
+    machine.git_config_says("a@b.c");
     let again = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(again.status.success(), "{}", text(&again));
     assert!(
@@ -1385,7 +1404,7 @@ fn an_anonymous_project_knows_its_members_from_the_pin_alone() {
 fn a_login_says_when_an_anonymous_project_cannot_name_its_member() {
     let machine = Machine::new();
     found_and_enrol(&machine);
-    // See an_anonymous_project_knows_its_members_from_the_pin_alone: the
+    // See an_anonymous_project_knows_its_members_from_git_config: the
     // invite write needs the founder's git config now.
     machine.git_config_says("a@b.c");
     let second = machine.a_second_enrolled_member("b@c.d");
