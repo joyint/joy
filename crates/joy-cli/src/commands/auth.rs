@@ -201,12 +201,11 @@ pub fn run(args: AuthArgs) -> Result<()> {
 }
 
 /// Resolve the member-selector for this invocation. `--user` always
-/// wins; otherwise the member this device pinned when a person last
-/// authenticated in this project, and git config only as the prefill
-/// behind both (D3.9). Centralised here so every auth path uses the same
-/// rule (JOY-00F3-AE), and the same rule `joy auth init` uses, so a
-/// founder who never had a git config is not locked out of his own
-/// project when the session expires.
+/// wins; otherwise this repository's own git config (local before
+/// global), then the account the forge tool for the remote's host
+/// reports (JOY-02AE-1A, correcting D3.9). Centralised here so every
+/// auth path uses the same rule (JOY-00F3-AE), and the same rule `joy
+/// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
     let project = store::load_project(root)?;
     Ok(joy_core::identity::acting_member(
@@ -304,12 +303,11 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are. The member is NAMED here (D3.9): `--user`,
-    // else the member this device pinned, else git config as a prefill.
-    // The project is never guessed from, not even when it has exactly one
-    // member: the project file travels with every clone. A founder
-    // created with `joy init --user` on a machine without a git config
-    // enrols through the pin.
+    // Determine who we are. The member is NAMED here (JOY-02AE-1A,
+    // correcting D3.9): `--user`, else this repository's own git config,
+    // else the forge account. The project is never guessed from, not
+    // even when it has exactly one member: the project file travels
+    // with every clone.
     let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
@@ -411,12 +409,6 @@ pub(crate) fn run_init(
         cached_members_zone_key(&project, &session_member, seed.as_bytes());
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
-
-    // Remember who acts here (D3.9): a founder who set this project up
-    // with `joy init --user` on a machine without a git identity is known
-    // to the next command too, and so is one whose git config named them
-    // today and will not tomorrow.
-    joy_core::identity::pin_acting_member(&root, &project, &session_member);
 
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
@@ -535,12 +527,12 @@ fn auth_with_passphrase(
     if outcome.relocked > 0 {
         println!("Re-locked {} unlocked file(s).", outcome.relocked);
     }
-    // Who authenticated, as the person reads it. Not `email`: since
-    // package J11 that is the member this device pinned (D3.9), which in
-    // an anonymous project is an opaque `m-<hex>` id, and telling
-    // somebody they are "m-kapvns3ors" is the one thing ADR-042 asks
-    // every output not to do. The login resolved the address on its way
-    // through members.yaml and hands it back.
+    // Who authenticated, as the person reads it. Not `email`: it may be
+    // an opaque `m-<hex>` id in an anonymous project (`--user` can pass
+    // one directly) or a forge alias git config still carries, and
+    // telling somebody they are either is not what ADR-042 or the alias
+    // resolution of D3.9 ask for. The login resolved the real address on
+    // its way through members.yaml and hands it back.
     println!(
         "Authenticated as {}. Session active (24h).",
         outcome.address
@@ -679,16 +671,18 @@ fn auth_with_token(
     Ok(())
 }
 
-/// Where `joy auth status` got the member it just named (D3.9), in the
-/// words a person can act on.
+/// Where `joy auth status` got the member it just named (operator
+/// decision 2026-09-19, JOY-02AE-1A, correcting D3.9), in the words a
+/// person can act on.
 ///
-/// The order is the resolver's own: a delegation session names the AI and
-/// the operator behind it, the device pin is this machine's own state,
-/// and nothing else answers. The pin is worth naming because it is
-/// invisible otherwise: a person who once ran `joy auth --user
-/// somebody-else` has changed what this machine answers with, and the
-/// only way to see it was to guess. Naming it also names the way to
-/// change it, which is to authenticate as somebody else.
+/// The order is `resolve_identity`'s own: a delegation session names the
+/// AI and the operator behind it; failing that, git config (the
+/// repository's own file or the person's global one, read as one merged
+/// value, so this does not try to say which of the two it was); failing
+/// that, the forge account for the remote's host. The device pin is not
+/// in this list any more: `run_status` already refused before calling
+/// this function when nothing named a member, so a non-empty member here
+/// is always one of the three, checked in the same order.
 fn identity_source(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
@@ -697,12 +691,17 @@ fn identity_source(
     if identity.delegated_by.is_some() {
         return "delegation session in JOY_SESSION".to_string();
     }
-    match joy_core::identity::pinned_member(root, project).as_deref() {
-        Some(pin) if pin == identity.member.id() => {
-            "remembered on this device (`joy auth --user <address>` changes it)".to_string()
-        }
-        _ => "this session".to_string(),
+    let member = identity.member.id();
+    let (_, config_email) = joy_core::vcs::forge::user_identity(root);
+    let config_names_member = config_email
+        .as_deref()
+        .and_then(|email| joy_core::privacy::member_key_for_email(project, email))
+        .as_deref()
+        == Some(member);
+    if config_names_member {
+        return "git config user.email".to_string();
     }
+    "the forge account for this remote's host".to_string()
 }
 
 /// `joy auth status` — show current session state and any AI sessions
@@ -713,22 +712,21 @@ fn run_status() -> Result<()> {
 
     let identity =
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
-    // Nothing on this device says who acts here: no delegation session
-    // and no pin, which is a fresh clone or a second machine, and git
-    // config is not an answer (D3.9). Say the sentence that names the
-    // remedy instead of printing "No active session for " with an empty
-    // name in it.
+    // Nothing says who acts here: no delegation session, no git config
+    // naming a member, and no forge account naming one either (operator
+    // decision 2026-09-19, JOY-02AE-1A, correcting D3.9). Say the
+    // sentence that names the remedy instead of printing "No active
+    // session for " with an empty name in it.
     if identity.member.id().trim().is_empty() {
         return Err(joy_core::error::JoyError::UnknownActingMember.into());
     }
     let project = store::load_project(&root)?;
     let project_id = session::project_id(&root)?;
-    // Where the answer came from, so a person can see that this machine
-    // decided it once and how to decide it again: a delegation session
-    // names the AI, a pin is this device's own state, and `joy auth
-    // --user <address>` replaces it (D3.9). Without this line a machine
-    // that answers with a member nobody expected looks like a machine
-    // reading somebody's mind.
+    // Where the answer came from, so a person can see why this machine
+    // named them: a delegation session names the AI, git config or the
+    // forge account name a human (JOY-02AE-1A). Without this line a
+    // machine that answers with a member nobody expected looks like a
+    // machine reading somebody's mind.
     let source = identity_source(&root, &project, &identity);
 
     // AI identities authenticate via the env-carried session (per-session
@@ -907,9 +905,10 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
 
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
-    // The acting member comes from the session, then this device's pin,
-    // then git config as a prefill (D3.9), and it is already an at-rest
-    // member key, which is what `target` is consumed as below.
+    // The acting member is resolve_identity's own answer (the delegation
+    // session, then git config, then the forge account, since the
+    // operator's 2026-09-19 correction, JOY-02AE-1A), and it is already
+    // an at-rest member key, which is what `target` is consumed as below.
     let acting = joy_core::identity::acting_human_key(&root)?;
 
     let target = args.member.as_deref().unwrap_or(&acting);
@@ -1070,8 +1069,9 @@ pub(crate) fn create_delegation_token(
     // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
     // the attestation are all keyed by this id, never by the cleartext
     // e-mail. The caller holds either an address a person typed (`--user`)
-    // or an at-rest member key (`joy_core::identity::acting_human_key`, and
-    // the device pin behind it, D3.9); both must find the same member.
+    // or an at-rest member key (`joy_core::identity::acting_human_key`,
+    // which is resolve_identity's own answer); both must find the same
+    // member.
     let member_key = project
         .member_key_for_email(operator)
         .or_else(|| {
@@ -1223,11 +1223,11 @@ pub(crate) fn create_delegation_token(
         // here used to be `member_by_email_mut` on the caller's raw
         // string, which resolves an ADDRESS through the member map's
         // e-mail matcher. It found the operator while the acting member
-        // was still a git config address; since identity resolution
-        // answers with the member this device pinned (D3.9, package
-        // J11), an anonymous project hands this function the operator's
-        // opaque `m-<hex>` id, no address matches it, and the `if let`
-        // wrote NOTHING. The token was printed all the same, and
+        // was still a git config address; once identity resolution
+        // started answering with an at-rest member KEY instead (D3.9,
+        // package J11), an anonymous project handed this function the
+        // operator's opaque `m-<hex>` id, no address matched it, and the
+        // `if let` wrote NOTHING. The token was printed all the same, and
         // redeeming it then failed with "no delegation registered for
         // <ai> by <operator>": a token that could never work, from a
         // command that reported success. A member the map cannot find is
@@ -1460,11 +1460,6 @@ fn run_passphrase(
     let project_id = session::project_id(&root)?;
     let _ = session::remove_session(&project_id, &acting);
 
-    // This command ends the session it just authenticated, so it must not
-    // also lose the person's name: remember who acts here, whether or not
-    // git config can say it (D3.9).
-    joy_core::identity::pin_acting_member(&root, &project, &acting);
-
     println!("Passphrase changed for {}.", color::user(&acting));
     println!("Prior sessions are invalidated. Run `joy auth` to start a fresh session.");
 
@@ -1548,11 +1543,6 @@ fn run_recover(
 
         let project_id = session::project_id(&root)?;
         let _ = session::remove_session(&project_id, &acting);
-
-        // This command ends the session it just authenticated, so it must
-        // not also lose the person's name: remember who acts here, whether
-        // or not git config can say it (D3.9).
-        joy_core::identity::pin_acting_member(&root, &project, &acting);
 
         println!(
             "Recovery successful. Passphrase reset for {}.",

@@ -65,10 +65,11 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
     };
     let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    // Who acts here is the session, then this device's pin, then git
-    // config as a prefill (D3.9): the AI branch below is reached because
-    // JOY_SESSION named an AI member, not because a git config happened
-    // to spell one.
+    // Who acts here is resolve_identity's own answer: the delegation
+    // session first, then git config, then the forge account (operator
+    // decision 2026-09-19, JOY-02AE-1A). The AI branch below is reached
+    // because JOY_SESSION named an AI member, not because a git config
+    // happened to spell one.
     let Ok(member_key) = joy_core::identity::acting_member_key(&root) else {
         return Ok(());
     };

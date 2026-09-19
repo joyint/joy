@@ -82,18 +82,22 @@ extract_otp() {
     grep -oE '[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}' | head -1
 }
 
-# Act as `member` from here on: authenticate as them, which opens their
-# session AND pins them as the member this device acts as (D3.9).
+# Act as `member` from here on: name this repository's git config as
+# them AND authenticate as them, which opens their session.
 #
-# This is how a test says who is working now. It used to be `git config
-# user.email <member>`, and since package J11 that changes nothing at
-# all: no joy command decides an identity from git config any more, so a
-# test that switched that way went on acting as whoever was
-# authenticated last. Naming the member is the only way left, and it is
-# also the way a person does it.
+# This is how a test says who is working now. Since the operator's
+# 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) `resolve_identity`
+# reads `git config user.email` again (repository over global, over the
+# forge account), and the device pin it used to read instead is gone: a
+# bare `joy` command after this acts as `member` because THIS repository's
+# git config names them, not because a session was opened last. The
+# `joy auth --user` call still matters too: it is what makes the session
+# `check_session` finds authenticated, so a caller after this both is
+# named and has proven the passphrase.
 act_as() {
     local member="$1"
     local passphrase="$2"
+    git config user.email "$member"
     joy auth --user "$member" --passphrase "$passphrase"
 }
 
@@ -103,11 +107,15 @@ act_as_founder() {
 }
 
 # A fresh clone, or a second machine: the project travels in the
-# repository, this device's own state does not. Both the sessions and the
-# member pin live in it, so afterwards nothing on this machine says who
-# acts here.
+# repository, this device's own state does not. Sessions live in it, and
+# so, since JOY-02AE-1A retired the device pin `resolve_identity` used to
+# read, does this checkout's own LOCAL git config: a real clone carries
+# none either (`user.email` lives in `.git/config`, which git never
+# copies), so this unsets it too, or the founder's address set in
+# `setup()` would still answer for a machine meant to know nobody.
 forget_this_device() {
     rm -rf "$XDG_STATE_HOME/joy"
+    git config --unset user.email 2>/dev/null || true
 }
 
 # Enrol another member (e.g. dev@example.com) by redeeming their invitation,
@@ -119,9 +127,10 @@ setup_member_auth() {
     local member="$1"
     local passphrase="$2"
     local otp="${3:-$DEV_OTP}"
-    # The invitee names themselves, the way an invited person does on
-    # their own machine. The redemption pins them here, so the way back
-    # to the founder names the founder.
+    # The invitee names themselves with --user, the way an invited person
+    # does on their own machine; that redemption does not touch this
+    # repository's git config, so `act_as_founder` is what actually names
+    # the founder again for the bare commands that follow (JOY-02AE-1A).
     joy auth --otp "$otp" --user "$member" --passphrase "$passphrase"
     act_as_founder
 }

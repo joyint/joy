@@ -1378,6 +1378,102 @@ fn an_https_remote_without_a_credential_is_polled_every_fifteen_minutes() {
     set_gaps("");
 }
 
+/// A public repository answers the first request, so a poll that carried
+/// a token never had to present it. The leg loop then says the token was
+/// in hand, and the host is not polled anonymously on the strength of a
+/// challenge that never came (JOY-02AC-C3, the case behind "Nobody is
+/// signed in for github.com" on a signed in machine).
+#[test]
+fn a_token_in_hand_keeps_a_public_repository_out_of_the_anonymous_lane() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_limits();
+    reset_throttle();
+    reset_anonymous_polls();
+    reset_credential_memory();
+    reset_token_memory();
+    set_gaps("default=0");
+
+    // the poll goes out with a token and comes back without a challenge
+    run_poll("https://public.test/o/r", "ls-remote", true, || Ok(())).unwrap();
+    assert!(
+        !credential_answers("public.test", Transport::Https, true),
+        "`run` alone reads a contact without a challenge as nothing presented"
+    );
+    // ...which is what the leg loop corrects for a leg built around a token
+    note_credential_in_hand("public.test", Transport::Https);
+    assert!(credential_answers("public.test", Transport::Https, true));
+    assert_eq!(
+        poll_period("public.test", "ls-remote", Transport::Https, true),
+        Duration::from_secs(1),
+        "the budget's period, not fifteen minutes"
+    );
+    run_poll("https://public.test/o/r", "ls-remote", true, || Ok(()))
+        .expect("the next poll is not held");
+}
+
+/// The ssh leg of D1.2 says nothing about the https twin behind it
+/// (JOY-02AC-C3). Horst met this on Windows on 2026-09-19: an ssh
+/// remote whose key libgit2 could not use, a connector that had a
+/// GitHub token all along, and a project that told him "GitHub is
+/// limiting our requests" and never contacted anything. The ssh
+/// refusal had taught the credential memory that nobody is signed in
+/// to github.com, and the twin, which exists for exactly this failure,
+/// was then held back by the no anonymous polling rule of D1.9.
+#[test]
+fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_limits();
+    reset_throttle();
+    reset_anonymous_polls();
+    reset_credential_memory();
+    reset_token_memory();
+    set_gaps("default=0");
+
+    // the ssh leg: the host asked for a credential and joy had none
+    let refused = run(
+        "git@twinned.test:owner/repo.git",
+        "ls-remote",
+        true,
+        || -> anyhow::Result<()> {
+            // what the classifier makes of `Class::Ssh` + `Code::Auth`
+            // (D1.8a), which is what the leg loop hands `run` back
+            Err(anyhow::Error::new(ContactError {
+                failure: Failure::NeedsSignIn,
+                message: "Not signed in to twinned.test.".into(),
+                detail: None,
+                action: None,
+                next_try: None,
+                self_imposed: false,
+            }))
+        },
+    )
+    .expect_err("the ssh leg fails");
+    assert_eq!(failure_of(&refused), Failure::NeedsSignIn);
+    assert!(
+        !credential_answers("twinned.test", Transport::Ssh, true),
+        "the engine has learnt that it has no ssh credential for this host"
+    );
+
+    // and the twin is untouched: it carries a forge token, which is why
+    // the resolver built it at all
+    assert!(
+        credential_answers("twinned.test", Transport::Https, true),
+        "an ssh refusal is no statement about the https credential"
+    );
+    assert_eq!(
+        poll_period("twinned.test", "ls-remote", Transport::Https, true),
+        Duration::from_secs(1),
+        "so the twin is polled at the budget's period, not once every 15 minutes"
+    );
+    run_poll(
+        "https://twinned.test/owner/repo.git",
+        "ls-remote",
+        true,
+        || Ok(()),
+    )
+    .expect("the twin contact goes out");
+}
+
 /// The rule bites where it was written for (D1.8b, D1.9): on the
 /// desktop `Auth::Local` claims a credential for EVERY host, so the
 /// claim alone can never carry the gate. What carries it is what the
@@ -1395,7 +1491,7 @@ fn a_host_nothing_was_ever_presented_to_is_polled_anonymously() {
 
     // before anything is known the claim stands: the first contact goes
     // out and teaches the engine what the machine really has
-    assert!(credential_answers("desktop.test", true));
+    assert!(credential_answers("desktop.test", Transport::Https, true));
     assert_eq!(
         poll_period("desktop.test", "ls-remote", Transport::Https, true),
         Duration::from_secs(1),
@@ -1407,7 +1503,7 @@ fn a_host_nothing_was_ever_presented_to_is_polled_anonymously() {
     // is presented
     run_poll("https://desktop.test/o/r", "ls-remote", true, || Ok(())).unwrap();
     assert!(
-        !credential_answers("desktop.test", true),
+        !credential_answers("desktop.test", Transport::Https, true),
         "the engine has learnt that it has nothing for this host"
     );
     assert_eq!(
@@ -1427,7 +1523,7 @@ fn a_host_nothing_was_ever_presented_to_is_polled_anonymously() {
         Ok(())
     })
     .unwrap();
-    assert!(credential_answers("signed.test", true));
+    assert!(credential_answers("signed.test", Transport::Https, true));
     assert_eq!(
         poll_period("signed.test", "ls-remote", Transport::Https, true),
         Duration::from_secs(1)
@@ -1467,7 +1563,7 @@ fn a_poll_that_found_nobody_home_keeps_its_slot() {
     })
     .expect_err("401");
     assert_eq!(failure_of(&asked), Failure::NeedsSignIn);
-    assert!(!credential_answers("down.test", true));
+    assert!(!credential_answers("down.test", Transport::Https, true));
     assert!(anonymous_poll_due("down.test").is_some());
 
     // the window runs out by hand, and now the host is simply down

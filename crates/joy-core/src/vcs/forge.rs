@@ -1415,6 +1415,7 @@ fn nobody_answered(host: &str, verb: &'static str) -> anyhow::Error {
         )),
         action: None,
         next_try: None,
+        self_imposed: false,
     })
 }
 
@@ -1451,6 +1452,7 @@ fn over_plan_inner<T>(
             detail: (!plan.notes.is_empty()).then(|| plan.why()),
             action: None,
             next_try: None,
+            self_imposed: false,
         }));
     }
     let last_leg = plan.legs.len().saturating_sub(1);
@@ -1492,6 +1494,24 @@ fn over_plan_inner<T>(
         match outcome {
             Ok(value) => {
                 remember_success(&plan, leg, used.get());
+                // A leg that carried a forge token is a signed in host,
+                // whether or not the forge asked for it: a public
+                // repository answers the first request without a
+                // challenge, so the callback never ran and `run` has just
+                // written down "nothing was presented". Left standing,
+                // that note put the host into the no anonymous polling
+                // lane of D1.9 (once every fifteen minutes, "Nobody is
+                // signed in for github.com") with the token right there,
+                // until the next push presented it and cleared the note
+                // (JOY-02AC-C3, Horst on Windows 2026-09-19, a public
+                // repository behind an ssh remote whose key libgit2
+                // could not use).
+                if leg.credential.is_token() {
+                    super::contact::note_credential_in_hand(
+                        &plan.host,
+                        super::contact::transport_of(&leg.url),
+                    );
+                }
                 return Ok(value);
             }
             Err(e) => {
@@ -1645,6 +1665,7 @@ impl PushStatus {
             detail: Some(rejected.join("; ")),
             action: None,
             next_try: None,
+            self_imposed: false,
         }))
     }
 }

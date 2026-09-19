@@ -141,11 +141,31 @@ fn an_explicit_user_founds_and_enrols_without_a_git_config() {
     .expect("the enrolment resolves its member without git config");
     assert_eq!(outcome.member_key, "mate@example.com");
 
-    // ...and this device now knows who acts here, still without a git
-    // config: the pin of D3.9, read back through resolve_identity.
+    // Operator decision 2026-09-19 (JOY-02AE-1A, correcting D3.9): the
+    // device pin the redemption used to write is not read by
+    // resolve_identity any more, so a passphrase session on its own,
+    // with no git config and no forge account naming the member, is not
+    // enough to say who is acting. This is the opposite of what this
+    // test asserted before the correction, and it is deliberate: "who
+    // acts" now comes from git config or the forge account, full stop,
+    // and a session only turns THAT answer into an authenticated one.
+    let identity = joy_core::identity::resolve_identity(root).unwrap();
+    assert_eq!(
+        identity.member.id(),
+        "",
+        "a live session names nobody by itself once the pin is out of the order"
+    );
+
+    // Once git config names her, the very session the redemption just
+    // opened makes the answer an authenticated one: the two mechanisms
+    // are independent, and this is where they meet.
+    joy_core::vcs::forge::local_config_set(root, "user.email", "mate@example.com").unwrap();
     let identity = joy_core::identity::resolve_identity(root).unwrap();
     assert_eq!(identity.member.id(), "mate@example.com");
-    assert!(identity.authenticated, "the redemption opened a session");
+    assert!(
+        identity.authenticated,
+        "git config named her, and her own redemption session is still live"
+    );
 }
 
 /// The named member wins over everything else, which is what the desktop

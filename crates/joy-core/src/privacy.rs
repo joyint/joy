@@ -44,6 +44,37 @@ pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
     project.member_key_for_email(email)
 }
 
+/// Direction two of the forge match: the PROJECT is keyed by an alias
+/// (created under one). `resolve` is pure by contract, it attributes an
+/// address from the address alone, so a member key the plugin attributes
+/// to the acting forge account IS the actor's slot. joy-core only
+/// compares what two answers say; whether anything is an alias stays the
+/// plugin's judgement. Shared by [`member_key_for_email_or_forge`] (the
+/// login path) and by the identity resolver's forge step, which used to
+/// know direction one only and so lost a member the login had just found
+/// (JOY-02AE-1A).
+pub fn member_key_owned_by(
+    project: &Project,
+    spec: &'static crate::forge_plugins::ForgePluginSpec,
+    ctx: &crate::forge_plugins::CallContext,
+    acting: &crate::forge_plugins::ForgeIdentity,
+) -> Option<String> {
+    project
+        .members()
+        .map(|(key, _)| key)
+        .filter(|key| !key.starts_with("ai:"))
+        .find(|key| {
+            crate::forge_plugins::resolve(spec, key, ctx).is_some_and(|owner| {
+                match (&owner.user_id, &acting.user_id) {
+                    // the numeric account id is the strongest join
+                    (Some(a), Some(b)) => a == b,
+                    _ => owner.login.is_some() && owner.login == acting.login,
+                }
+            })
+        })
+        .cloned()
+}
+
 /// [`member_key_for_email`] plus the forge fallback (JOY-0253-8A, epic
 /// JOY-0251-AA): when the address resolves no member, the project's
 /// responsible forge plugin is asked whether it means anything (a forge
@@ -89,26 +120,9 @@ pub fn member_key_for_email_or_forge(
         forge_cache_put(root, email, &key);
         return Some(key);
     }
-    // Direction two: the PROJECT is keyed by an alias (created under
-    // one). `resolve` is pure by contract — it attributes an address
-    // from the address alone — so a member key the plugin attributes to
-    // the acting forge account IS the actor's slot. joy-core only
-    // compares what two answers say; whether anything is an alias stays
-    // the plugin's judgement.
-    let key = project
-        .members()
-        .map(|(key, _)| key)
-        .filter(|key| !key.starts_with("ai:"))
-        .find(|key| {
-            crate::forge_plugins::resolve(spec, key, &ctx).is_some_and(|owner| {
-                match (&owner.user_id, &acting.user_id) {
-                    // the numeric account id is the strongest join
-                    (Some(a), Some(b)) => a == b,
-                    _ => owner.login.is_some() && owner.login == acting.login,
-                }
-            })
-        })
-        .cloned()?;
+    // Direction two, shared with the identity resolver's forge step
+    // (JOY-02AE-1A): the PROJECT is keyed by an alias.
+    let key = member_key_owned_by(project, spec, &ctx, &acting)?;
     forge_cache_put(root, email, &key);
     Some(key)
 }

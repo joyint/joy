@@ -192,13 +192,6 @@ fn finish_login(
     token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &token)?;
 
-    // Authenticating is a person saying who they are on this device, so
-    // it is one of the moments that pins them (D3.9): every command
-    // afterwards knows the member without asking git config, and removing
-    // `user.email` changes nothing. The desktop app comes through here
-    // too, so its login pins exactly as the CLI's does.
-    crate::identity::pin_acting_member(root, view, &member_key);
-
     let relocked = relock_unlocked_files(root, view, &member_key, seed.as_bytes());
 
     Ok(LoginOutcome {

@@ -157,6 +157,7 @@ mod tests {
             detail: detail.map(str::to_string),
             action: None,
             next_try: None,
+            self_imposed: false,
         }))
     }
 
@@ -208,6 +209,7 @@ mod tests {
             detail: None,
             action: Some(page.to_string()),
             next_try: None,
+            self_imposed: false,
         }));
         let refusal = Refusal::of("github.com", &error);
         assert_eq!(refusal.state, "needs_org_approval");

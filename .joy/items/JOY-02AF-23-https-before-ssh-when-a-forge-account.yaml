@@ -1,0 +1,13 @@
+id: JOY-02AF-23
+title: HTTPS before SSH when a forge account exists
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-19T19:42:53.204037185Z
+updated: 2026-09-19T19:42:53.204037185Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst, 2026-09-19: when a forge account is connected on this machine, the https twin goes first and the configured ssh remote second, the reverse of D1.2 today. Consequence to accept: pushes then appear under the forge account. Deferred until the token budget allows.'

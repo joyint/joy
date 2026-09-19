@@ -227,7 +227,7 @@ const CA_GUIDANCE: &str = "your administrator must install the CA in the Windows
 
 /// How the contact travelled. libgit2 produces completely different
 /// errors per transport, so the transport is part of the evidence.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Transport {
     Https,
     Ssh,
@@ -1183,6 +1183,15 @@ pub struct ContactError {
     /// carries `None`.
     pub action: Option<String>,
     pub next_try: Option<SystemTime>,
+    /// Whether this wait is joy's OWN and not the forge's. The word on
+    /// the wire stays `rate_limited` for both, because a reader that
+    /// knows four words must not be handed a fifth and because
+    /// `needs_sign_in` would stop writes for a poll that is merely
+    /// slow. The difference still has to reach the surface: "GitHub is
+    /// limiting our requests" about a forge that is limiting nothing is
+    /// a lie about somebody else (JOY-02AC-C3, Horst on Windows
+    /// 2026-09-19).
+    pub self_imposed: bool,
 }
 
 impl std::fmt::Display for ContactError {
@@ -1224,6 +1233,7 @@ fn error_of(verdict: Verdict) -> anyhow::Error {
         detail: (!detail.is_empty()).then_some(detail),
         action: verdict.action,
         next_try: verdict.wait.map(|w| SystemTime::now() + w),
+        self_imposed: false,
     })
 }
 
@@ -1266,6 +1276,15 @@ pub fn failure_of(error: &anyhow::Error) -> Failure {
         Some(c) => c.failure,
         None => Failure::Error,
     }
+}
+
+/// Whether the wait an error carries is joy's own (the held poll of
+/// D1.9) rather than the forge's refusal. The surface needs it to tell
+/// a person who is limiting them.
+pub fn self_imposed_wait(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ContactError>()
+        .is_some_and(|c| c.self_imposed)
 }
 
 /// The next-try moment an error carries, if the forge limits us.
@@ -1414,7 +1433,7 @@ pub fn poll_period_for(
     // budget would allow. What "signed in" means is not what the caller
     // hopes but what joy really handed over here
     // ([`credential_answers`]).
-    if transport == Transport::Https && !credential_answers(host, credentialed) {
+    if transport == Transport::Https && !credential_answers(host, transport, credentialed) {
         return ANONYMOUS_POLL_INTERVAL;
     }
     let cost = gap_for(host) * requests(verb, transport, credentialed) * projects.max(1);
@@ -1862,9 +1881,21 @@ fn take_credential_presented() -> bool {
     PRESENTED.with(|p| p.replace(false))
 }
 
-/// Whether joy has ever really handed a credential to this host in this
-/// process. `None` until a contact to the host has been made.
-static CREDENTIAL_PRESENTED: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+/// Whether joy has ever really handed a credential to this host OVER
+/// THIS TRANSPORT in this process. `None` until such a contact has been
+/// made.
+///
+/// The transport belongs in the key. One host is reached two ways and
+/// the two carry different credentials: an ssh remote presents a key
+/// from the agent, its https twin presents a forge token. Keyed by host
+/// alone, an ssh contact that presented nothing taught this memory that
+/// "nobody is signed in to github.com", and the twin that D1.2 exists
+/// for was then held back by the no anonymous polling rule of D1.9,
+/// with a token from the connector sitting right there unused. That is
+/// what Horst met on Windows on 2026-09-19 (JOY-02AC-C3): an ssh
+/// remote, a sign-in the start page showed, and a project that told him
+/// GitHub was limiting our requests.
+static CREDENTIAL_PRESENTED: Mutex<Option<HashMap<(String, Transport), bool>>> = Mutex::new(None);
 
 /// Whether joy has anything to present to this host.
 ///
@@ -1883,17 +1914,26 @@ static CREDENTIAL_PRESENTED: Mutex<Option<HashMap<String, bool>>> = Mutex::new(N
 /// records per host. Until a contact has been made there is nothing to
 /// overrule it with, so the first contact goes out on the claim and
 /// teaches this memory what it is worth.
-pub fn credential_answers(host: &str, claimed: bool) -> bool {
+pub fn credential_answers(host: &str, transport: Transport, claimed: bool) -> bool {
     claimed
         && CREDENTIAL_PRESENTED
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .as_ref()
-            .and_then(|m| m.get(host).copied())
+            .and_then(|m| m.get(&(host.to_string(), transport)).copied())
             .unwrap_or(true)
 }
 
-fn note_credential_answer(host: &str, presented: bool) {
+/// The caller HAD a credential for this host over this transport, and
+/// the contact went through: the fact of D1.9, said by the one place that
+/// knows it (the leg loop, for a leg built around a forge token). A forge
+/// that never asked for the credential is not a forge nobody is signed in
+/// to.
+pub fn note_credential_in_hand(host: &str, transport: Transport) {
+    note_credential_answer(host, transport, true);
+}
+
+fn note_credential_answer(host: &str, transport: Transport, presented: bool) {
     if host.is_empty() {
         return;
     }
@@ -1901,7 +1941,7 @@ fn note_credential_answer(host: &str, presented: bool) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .get_or_insert_with(HashMap::new)
-        .insert(host.to_string(), presented);
+        .insert((host.to_string(), transport), presented);
 }
 
 #[cfg(test)]
@@ -2039,7 +2079,7 @@ pub fn run<T>(
             // but it does prove what joy has for this host: the forge
             // answered and joy handed nothing over, which is what the
             // no anonymous polling rule of D1.9 needs to know
-            note_credential_answer(&host, presented);
+            note_credential_answer(&host, transport, presented);
             // The contact carried a credential joy's helper runner had
             // just produced: the helper is told to store it (git's
             // `approve`). A credential that came from the cache, or
@@ -2062,9 +2102,9 @@ pub fn run<T>(
             // alone, so a network outage never makes joy believe it is
             // signed out.
             if presented {
-                note_credential_answer(&host, true);
+                note_credential_answer(&host, transport, true);
             } else if failure == Failure::NeedsSignIn {
-                note_credential_answer(&host, false);
+                note_credential_answer(&host, transport, false);
             }
             let next_try = match failure {
                 Failure::RateLimited => {
@@ -2117,6 +2157,9 @@ pub fn run<T>(
                 // through the re-wrap instead of being dropped here
                 action: action_of(&e),
                 next_try,
+                // a contact that went out and failed is the forge's
+                // answer, never a wait joy chose
+                self_imposed: false,
             }))
         }
     }
@@ -2138,7 +2181,8 @@ pub fn run_poll<T>(
 ) -> anyhow::Result<T> {
     let host = host_of(url);
     let anonymous = |host: &str| {
-        transport_of(url) == Transport::Https && !credential_answers(host, credentialed)
+        transport_of(url) == Transport::Https
+            && !credential_answers(host, Transport::Https, credentialed)
     };
     if anonymous(&host) {
         if let Some(next_try) = anonymous_poll_due(&host) {
@@ -2156,6 +2200,7 @@ pub fn run_poll<T>(
                 detail: None,
                 action: None,
                 next_try: Some(next_try),
+                self_imposed: true,
             }));
         }
     }

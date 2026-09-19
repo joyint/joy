@@ -171,8 +171,11 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     # Dev cannot reset others (no manage capability). Redeeming the
-    # invitation enrols dev and pins them as the member acting here.
+    # invitation enrols dev; naming dev in this repository's git config
+    # is what makes the bare command below act as dev (JOY-02AE-1A,
+    # correcting D3.9).
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    git config user.email dev@example.com
     run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
@@ -361,9 +364,11 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    # Dev redeems their invitation, which opens dev's session and pins
-    # dev as the member acting here.
+    # Dev redeems their invitation, which opens dev's session; naming dev
+    # in this repository's git config is what makes the bare commands
+    # below act as dev (JOY-02AE-1A, correcting D3.9).
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    git config user.email dev@example.com
     run joy auth status
     [ "$status" -eq 0 ]
     [[ "$output" == *"dev@example.com"* ]]
@@ -385,6 +390,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Naming dev in this repository's git config is what makes the bare
+    # `joy deauth` below act as dev (JOY-02AE-1A, correcting D3.9).
+    git config user.email dev@example.com
     [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 2 ]
     # Dev deauths
     joy deauth
@@ -563,6 +571,9 @@ YAML
     OTP=$(joy project member add alice@example.com --passphrase "$TEST_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     joy auth --otp "$OTP" --user alice@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
+    # Naming alice in this repository's git config is what makes the bare
+    # `joy auth passphrase` below act as her (JOY-02AE-1A, correcting D3.9).
+    git config user.email alice@example.com
 
     # alice's capability block is now multi-line (defaults exclude
     # manage/delete, so nine capability keys each render on their own

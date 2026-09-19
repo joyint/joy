@@ -327,7 +327,7 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
     // without this one an engine that noted nothing at all would pass
     // both.
     assert!(
-        contact::credential_answers("127.0.0.1", true),
+        contact::credential_answers("127.0.0.1", contact::Transport::Https, true),
         "a token the forge accepted is what joy has for this host (D1.9)"
     );
     assert!(
@@ -471,7 +471,11 @@ fn a_public_remote_nobody_is_signed_in_for_is_polled_every_fifteen_minutes() {
     );
 
     // and now the engine knows: nothing was ever presented here
-    assert!(!contact::credential_answers("localhost", true));
+    assert!(!contact::credential_answers(
+        "localhost",
+        contact::Transport::Https,
+        true
+    ));
     assert_eq!(
         contact::poll_period("localhost", "ls-remote", contact::Transport::Https, true),
         contact::ANONYMOUS_POLL_INTERVAL,

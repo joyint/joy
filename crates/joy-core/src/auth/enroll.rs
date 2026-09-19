@@ -258,10 +258,6 @@ pub fn redeem_with_passphrase(
     let token = session::create_session(&keypair, &member_key, &project_id, None);
     session::save_session(&project_id, &token)?;
 
-    // Remember who enrolled here, so the next command on this machine
-    // knows the acting member with no git config at all (D3.9).
-    crate::identity::pin_acting_member(root, &project, &member_key);
-
     Ok(EnrollmentOutcome {
         keypair,
         recovery_key,

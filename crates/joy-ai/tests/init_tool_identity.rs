@@ -12,9 +12,9 @@
 //! that a checkout where nobody is known says so in D4.5's words instead
 //! of registering a member attested by a guess.
 //!
-//! ONE test in its own binary: it moves `XDG_STATE_HOME`, which is
-//! process state, so a second test beside it would read the device pin
-//! this one writes.
+//! ONE test in its own binary: it moves `XDG_STATE_HOME`, `HOME` and
+//! `XDG_CONFIG_HOME`, which are process state, so a second test beside
+//! it would read the device pin or the git identity this one writes.
 
 use std::path::Path;
 
@@ -24,7 +24,12 @@ use joy_core::init::{self, InitOptions};
 const PASSPHRASE: &str = "correct horse battery staple";
 
 /// A project founded by `founder` with `founder` enrolled, on a device
-/// whose state directory is this test's own.
+/// whose state directory is this test's own. Also leaves the
+/// repository's own `user.email` naming `founder`: since the operator's
+/// 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) `resolve_identity`
+/// reads git config again, a caller that wants activation attested by
+/// `founder` has to set it explicitly, exactly as a working checkout
+/// would have it.
 fn founded(root: &Path, founder: &str) {
     init::init(InitOptions {
         name: Some("Activated".into()),
@@ -33,6 +38,7 @@ fn founded(root: &Path, founder: &str) {
         ..InitOptions::new(root.to_path_buf())
     })
     .unwrap();
+    act_as(root, founder);
 
     let salt = generate_salt();
     let seed = seed_mod::Seed::generate();
@@ -56,26 +62,55 @@ fn founded(root: &Path, founder: &str) {
     joy_core::store::write_yaml(&path, &project).unwrap();
 }
 
+/// Set this repository's own (local) `user.email`, the identity source
+/// `resolve_identity` reads second, right after `JOY_SESSION`
+/// (JOY-02AE-1A).
+fn act_as(root: &Path, email: &str) {
+    let repo = git2::Repository::open(root).unwrap();
+    let mut config = repo.config().unwrap();
+    config.set_str("user.email", email).unwrap();
+}
+
 /// Model the desktop on a fresh clone: the project file travels, this
-/// device's own state does not.
+/// device's own state does not, and neither does a real clone's LOCAL
+/// git config, which lives only in the checkout that wrote it and is
+/// never carried by the git objects a clone copies. Removing the pin
+/// alone used to be enough to model "nobody is known here"; since the
+/// operator's 2026-09-19 correction (JOY-02AE-1A) git config is a source
+/// again, so the repository's own `user.email` set by [`founded`] has to
+/// go too, or the same checkout would still resolve to the founder.
 fn forget_the_device_state(root: &Path) {
     let pin = joy_core::auth::session::app_state_project_file(root).unwrap();
     if pin.exists() {
         std::fs::remove_file(pin).unwrap();
     }
+    let repo = git2::Repository::open(root).unwrap();
+    let mut local = repo
+        .config()
+        .unwrap()
+        .open_level(git2::ConfigLevel::Local)
+        .unwrap();
+    let _ = local.remove("user.email");
 }
 
 #[test]
 fn activation_takes_its_attester_from_the_acting_member() {
     let state = tempfile::tempdir().unwrap();
     std::env::set_var("XDG_STATE_HOME", state.path());
+    // Isolate HOME/XDG_CONFIG_HOME too: since JOY-02AE-1A resolve_identity
+    // reads git config, and a global config on whichever machine runs this
+    // test must not be able to name a member the repository's own config
+    // did not.
+    let home = tempfile::tempdir().unwrap();
+    std::env::set_var("HOME", home.path());
+    std::env::set_var("XDG_CONFIG_HOME", home.path().join(".config"));
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
     founded(root, "alice@example.com");
 
-    // The desktop activates a tool. Nothing here reads git config: the
-    // attester is the member this device pinned when the project was
-    // founded, and the attestation is signed with her seed.
+    // The desktop activates a tool. The attester is the member the
+    // repository's own git config names (JOY-02AE-1A, correcting D3.9),
+    // and the attestation is signed with her seed.
     joy_ai::ai_setup::init_tool(root, "claude", PASSPHRASE, &mut |_| {}).unwrap();
     let project = joy_core::store::load_project(root).unwrap();
     let member = project
