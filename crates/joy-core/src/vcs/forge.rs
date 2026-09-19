@@ -1415,6 +1415,7 @@ fn nobody_answered(host: &str, verb: &'static str) -> anyhow::Error {
         )),
         action: None,
         next_try: None,
+        self_imposed: false,
     })
 }
 
@@ -1451,6 +1452,7 @@ fn over_plan_inner<T>(
             detail: (!plan.notes.is_empty()).then(|| plan.why()),
             action: None,
             next_try: None,
+            self_imposed: false,
         }));
     }
     let last_leg = plan.legs.len().saturating_sub(1);
@@ -1645,6 +1647,7 @@ impl PushStatus {
             detail: Some(rejected.join("; ")),
             action: None,
             next_try: None,
+            self_imposed: false,
         }))
     }
 }

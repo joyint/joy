@@ -1410,6 +1410,7 @@ fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
                 detail: None,
                 action: None,
                 next_try: None,
+                self_imposed: false,
             }))
         },
     )

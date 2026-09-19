@@ -1183,6 +1183,15 @@ pub struct ContactError {
     /// carries `None`.
     pub action: Option<String>,
     pub next_try: Option<SystemTime>,
+    /// Whether this wait is joy's OWN and not the forge's. The word on
+    /// the wire stays `rate_limited` for both, because a reader that
+    /// knows four words must not be handed a fifth and because
+    /// `needs_sign_in` would stop writes for a poll that is merely
+    /// slow. The difference still has to reach the surface: "GitHub is
+    /// limiting our requests" about a forge that is limiting nothing is
+    /// a lie about somebody else (JOY-02AC-C3, Horst on Windows
+    /// 2026-09-19).
+    pub self_imposed: bool,
 }
 
 impl std::fmt::Display for ContactError {
@@ -1224,6 +1233,7 @@ fn error_of(verdict: Verdict) -> anyhow::Error {
         detail: (!detail.is_empty()).then_some(detail),
         action: verdict.action,
         next_try: verdict.wait.map(|w| SystemTime::now() + w),
+        self_imposed: false,
     })
 }
 
@@ -1266,6 +1276,15 @@ pub fn failure_of(error: &anyhow::Error) -> Failure {
         Some(c) => c.failure,
         None => Failure::Error,
     }
+}
+
+/// Whether the wait an error carries is joy's own (the held poll of
+/// D1.9) rather than the forge's refusal. The surface needs it to tell
+/// a person who is limiting them.
+pub fn self_imposed_wait(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ContactError>()
+        .is_some_and(|c| c.self_imposed)
 }
 
 /// The next-try moment an error carries, if the forge limits us.
@@ -2129,6 +2148,9 @@ pub fn run<T>(
                 // through the re-wrap instead of being dropped here
                 action: action_of(&e),
                 next_try,
+                // a contact that went out and failed is the forge's
+                // answer, never a wait joy chose
+                self_imposed: false,
             }))
         }
     }
@@ -2169,6 +2191,7 @@ pub fn run_poll<T>(
                 detail: None,
                 action: None,
                 next_try: Some(next_try),
+                self_imposed: true,
             }));
         }
     }

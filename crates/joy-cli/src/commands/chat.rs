@@ -829,6 +829,7 @@ mod sync_tests {
             detail: Some("chats push; libgit2 said so".into()),
             action: None,
             next_try: None,
+            self_imposed: false,
         }))
     }
 
