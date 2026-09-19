@@ -9,9 +9,10 @@
 //! and to the forge. The pin lives in the per project app state file
 //! joy-core computes and which the CLI and the app both reach
 //! (`app_state_project_file`), as
-//! `forgeLogin: {"github.com": "scotty-work"}`. It sits beside the
-//! acting member pin joy-core already keeps in the same object, so both
-//! readers must leave every other key alone.
+//! `forgeLogin: {"github.com": "scotty-work"}`. The acting member pin
+//! joy-core used to keep in the same object is gone (JOY-02AE-1A); this
+//! reader still leaves every other key in the file alone, on the chance
+//! a future one lands beside it again.
 //!
 //! **The memory** is the second step of the order: the login that last
 //! reached this remote. It is cached per normalised remote in the
