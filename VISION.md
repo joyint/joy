@@ -493,7 +493,7 @@ Joy actively dispatches work to external AI tools and tracks results:
 |------|-----------|---------|
 | Claude Code (Anthropic) | `claude-code` | `claude` |
 | Mistral Vibe (Mistral) | `mistral-vibe` | `vibe` |
-| GitHub Copilot (GitHub) | `github-copilot` | `copilot` |
+| GitHub Copilot (GitHub) | `github-copilot` | `copilot`, or `gh copilot` |
 | Qwen Code (Alibaba) | `qwen-code` | `qwen` |
 
 Each project configures one tool via `joy ai init agent`. Joy is the **dispatcher**, not the **runtime** - it prepares context, invokes the tool, and tracks the outcome.

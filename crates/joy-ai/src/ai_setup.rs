@@ -354,11 +354,19 @@ fn detect_vibe() -> bool {
 }
 
 fn detect_copilot() -> bool {
-    // Only the dedicated Copilot CLI counts. `gh` (the GitHub CLI) is present on
-    // virtually every CI runner and many dev machines and says nothing about
-    // whether Copilot is in use, so keying detection off it produced spurious
-    // `ai:copilot@joy` registrations.
-    which("copilot")
+    // GitHub ships one Copilot CLI under two commands: `copilot` from npm
+    // and `gh copilot` through the GitHub CLI. Either counts, because
+    // either is how the person in front of us runs Copilot.
+    //
+    // What still must NOT count is `gh` being on the PATH: it sits on
+    // virtually every CI runner and dev machine and says nothing about
+    // whether Copilot is installed behind it, and keying detection off the
+    // binary alone produced spurious `ai:copilot@joy` registrations. So
+    // the gh launch earns its answer by running, which is exactly what
+    // the registry's `verify` argv is for.
+    crate::adapters::by_adapter("copilot")
+        .and_then(|spec| spec.usable_launch(which, command_succeeds))
+        .is_some()
 }
 
 pub type ToolEntry = (
@@ -758,6 +766,60 @@ pub fn which(binary: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Variables that make a launcher believe it may act unattended. `gh`
+/// treats any of them as "this is CI" and then installs Copilot CLI —
+/// a 166 MB download — without asking. A probe must never do that: it is
+/// asking a question, not accepting an offer. Stripped for the probe
+/// only; a real agent run inherits the environment untouched.
+const UNATTENDED_ENV: &[&str] = &["CI", "BUILD_NUMBER", "RUN_ID"];
+
+/// Does this argv exit 0 on this machine? THE one spelling of "prove a
+/// launcher really works", shared by `joy ai init` and the desktop so the
+/// CLI and the app cannot answer the same question differently.
+///
+/// Answers are cached for the life of the process: the desktop asks this
+/// on every settings and roster load, and `gh copilot -- --version`
+/// starts a second program behind the first.
+pub fn command_succeeds(argv: &str) -> bool {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static CACHE: Mutex<Option<HashMap<String, bool>>> = Mutex::new(None);
+    if let Some(hit) = CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .get(argv)
+    {
+        return *hit;
+    }
+    let answer = run_probe(argv);
+    CACHE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_or_insert_with(HashMap::new)
+        .insert(argv.to_string(), answer);
+    answer
+}
+
+fn run_probe(argv: &str) -> bool {
+    let mut parts = argv.split_whitespace();
+    let Some(program) = parts.next() else {
+        return false;
+    };
+    let mut command = joy_process::command(program);
+    command
+        .args(parts)
+        // No terminal to prompt on: a launcher that wants to ask
+        // something must fail instead of blocking a settings load.
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    for key in UNATTENDED_ENV {
+        command.env_remove(key);
+    }
+    command.status().map(|s| s.success()).unwrap_or(false)
 }
 
 pub fn is_tool_configured(root: &Path, tool: &str) -> bool {

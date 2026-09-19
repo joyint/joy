@@ -50,7 +50,7 @@ const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 #[derive(clap::Args)]
 #[command(
-    after_help = "For chat-only or otherwise undetected AI tools (e.g. Copilot Chat in VS Code, Cursor's built-in chat), register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
+    after_help = "For chat-only or otherwise undetected AI tools (e.g. Cursor's built-in chat, or Copilot Chat in an IDE rather than the Copilot CLI), register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
 )]
 pub struct AiArgs {
     #[command(subcommand)]
