@@ -201,12 +201,11 @@ pub fn run(args: AuthArgs) -> Result<()> {
 }
 
 /// Resolve the member-selector for this invocation. `--user` always
-/// wins; otherwise the member this device pinned when a person last
-/// authenticated in this project, and git config only as the prefill
-/// behind both (D3.9). Centralised here so every auth path uses the same
-/// rule (JOY-00F3-AE), and the same rule `joy auth init` uses, so a
-/// founder who never had a git config is not locked out of his own
-/// project when the session expires.
+/// wins; otherwise this repository's own git config (local before
+/// global), then the account the forge tool for the remote's host
+/// reports (JOY-02AE-1A, correcting D3.9). Centralised here so every
+/// auth path uses the same rule (JOY-00F3-AE), and the same rule `joy
+/// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
     let project = store::load_project(root)?;
     Ok(joy_core::identity::acting_member(
@@ -304,12 +303,11 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are. The member is NAMED here (D3.9): `--user`,
-    // else the member this device pinned, else git config as a prefill.
-    // The project is never guessed from, not even when it has exactly one
-    // member: the project file travels with every clone. A founder
-    // created with `joy init --user` on a machine without a git config
-    // enrols through the pin.
+    // Determine who we are. The member is NAMED here (JOY-02AE-1A,
+    // correcting D3.9): `--user`, else this repository's own git config,
+    // else the forge account. The project is never guessed from, not
+    // even when it has exactly one member: the project file travels
+    // with every clone.
     let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
@@ -411,12 +409,6 @@ pub(crate) fn run_init(
         cached_members_zone_key(&project, &session_member, seed.as_bytes());
     session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
     session::save_session(&project_id, &session_token)?;
-
-    // Remember who acts here (D3.9): a founder who set this project up
-    // with `joy init --user` on a machine without a git identity is known
-    // to the next command too, and so is one whose git config named them
-    // today and will not tomorrow.
-    joy_core::identity::pin_acting_member(&root, &project, &session_member);
 
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
@@ -535,12 +527,12 @@ fn auth_with_passphrase(
     if outcome.relocked > 0 {
         println!("Re-locked {} unlocked file(s).", outcome.relocked);
     }
-    // Who authenticated, as the person reads it. Not `email`: since
-    // package J11 that is the member this device pinned (D3.9), which in
-    // an anonymous project is an opaque `m-<hex>` id, and telling
-    // somebody they are "m-kapvns3ors" is the one thing ADR-042 asks
-    // every output not to do. The login resolved the address on its way
-    // through members.yaml and hands it back.
+    // Who authenticated, as the person reads it. Not `email`: it may be
+    // an opaque `m-<hex>` id in an anonymous project (`--user` can pass
+    // one directly) or a forge alias git config still carries, and
+    // telling somebody they are either is not what ADR-042 or the alias
+    // resolution of D3.9 ask for. The login resolved the real address on
+    // its way through members.yaml and hands it back.
     println!(
         "Authenticated as {}. Session active (24h).",
         outcome.address
@@ -1468,11 +1460,6 @@ fn run_passphrase(
     let project_id = session::project_id(&root)?;
     let _ = session::remove_session(&project_id, &acting);
 
-    // This command ends the session it just authenticated, so it must not
-    // also lose the person's name: remember who acts here, whether or not
-    // git config can say it (D3.9).
-    joy_core::identity::pin_acting_member(&root, &project, &acting);
-
     println!("Passphrase changed for {}.", color::user(&acting));
     println!("Prior sessions are invalidated. Run `joy auth` to start a fresh session.");
 
@@ -1556,11 +1543,6 @@ fn run_recover(
 
         let project_id = session::project_id(&root)?;
         let _ = session::remove_session(&project_id, &acting);
-
-        // This command ends the session it just authenticated, so it must
-        // not also lose the person's name: remember who acts here, whether
-        // or not git config can say it (D3.9).
-        joy_core::identity::pin_acting_member(&root, &project, &acting);
 
         println!(
             "Recovery successful. Passphrase reset for {}.",

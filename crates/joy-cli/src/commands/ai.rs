@@ -266,11 +266,12 @@ fn ensure_human_auth_initialized(
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
     // The human this command sets authentication up for: the operator
-    // behind a delegation session, else the member pinned here, and git
-    // config only as the prefill behind both (D3.9). It is already an
-    // at-rest member key, so anonymous mode (ADR-042) needs no second
-    // lookup path, and it is the same member `joy auth init` resolves,
-    // so the two cannot disagree about who is being initialised.
+    // behind a delegation session, else this repository's own git
+    // config, else the forge account (JOY-02AE-1A, correcting D3.9). It
+    // is already an at-rest member key, so anonymous mode (ADR-042) needs
+    // no second lookup path, and it is the same member `joy auth init`
+    // resolves, so the two cannot disagree about who is being
+    // initialised.
     let member_key = joy_core::identity::acting_human_key(root)?;
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(

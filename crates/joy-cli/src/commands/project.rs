@@ -631,18 +631,13 @@ fn set_privacy(
         joy_core::privacy::switch_to_open(&ctx.root, project, &unlocked.seed)?
     };
 
-    // The migration rekeyed every human member, so this device's pin
-    // names a key that no longer exists. Re-pin the acting member under
-    // their new key: since J11 the pin is the whole answer to "who acts
-    // here" (D3.9), and a machine that has just migrated its own project
-    // must not be the one machine that no longer knows. `renamed` is
-    // (old key, new key) in both directions.
-    let migrated_key = renamed
-        .iter()
-        .find(|(from, _)| *from == member_key)
-        .map(|(_, to)| to.clone())
-        .unwrap_or_else(|| member_key.clone());
-    joy_core::identity::pin_acting_member(&ctx.root, project, &migrated_key);
+    // The migration rekeys every human member, but git config (or the
+    // forge account) still names the person by their real address, which
+    // `member_key_for_email` resolves in either mode (open: the address
+    // itself; anonymous: the opaque id whose `email_match` verifies
+    // against it, ADR-042). With the device pin gone (JOY-02AE-1A) there
+    // is no stale key to repair here any more: the next command re-reads
+    // git config and finds the migrated key on its own.
 
     // The migration rewrote project.yaml, members.yaml, items and logs.
     joy_core::git_ops::auto_git_add(&ctx.root, &[store::JOY_DIR]);
