@@ -12,7 +12,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T06:55:14.642892871Z
-updated: 2026-09-19T06:58:41.996089370Z
+updated: 2026-09-19T07:20:50.325682547Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   A person works in a branch, opens a pull request and presses the merge button. Today the forge answers with a conflict in the Joy files, and the button stays locked: forges do not run Joy's merge driver. Verified on 2026-09-16: GitHub ignores a repository's .gitattributes entirely (its own statement in community discussion 9288, request open since 2021), GitLab honours only the built-in union, Gitea merges with the real git binary so union works there but a custom driver still needs the joy binary on the server. Replaying our failing pull requests with .gitattributes removed reproduces the forge result exactly.
@@ -43,3 +43,13 @@ comments:
     4. Tutorial: own chapter about merging.
 
     Worktree .claude/worktrees/forgemerge/joy on feat/joy-merge-ci, so the other sessions are not disturbed.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T07:20:50.325680002Z
+  text: |-
+    [x] joy-core, vcs::forge::merge_resolving_joy: merges a ref into HEAD with git2 and resolves the conflicts Joy owns. Items and the other Joy YAML through merge::merge_yaml_doc, .joy/logs/*.log as the union of both sides' lines in timestamp order, an encrypted blob by the newer side. Anything else stops the merge and is named by path. The merge commit carries a machine signature, because a CI runner is no member.
+    [x] joy-cli, hidden 'joy merge ci': reads the target from --target or from what the CI announces (GITHUB_BASE_REF, CI_MERGE_REQUEST_TARGET_BRANCH_NAME), fetches it, merges, publishes. A forge it cannot reach only matters when the target is missing from the checkout as well.
+    [x] joy-core init: CI templates for GitHub, Gitea and GitLab, written by joy init for the forge the remote names, inside a joy marked block; a file joy did not write is never touched. joy init ci [--forge x] adds it later.
+    [x] Tutorial chapter 13, Merging branches, in the user tutorial and the in-crate copy.
+    [x] Verified: two new forge tests (items and logs resolved, a real conflict stops it), three template tests, and the whole chain by hand in a scratch project: joy init wrote the workflow, joy merge ci resolved status from one branch and a comment from the other, then git merge --ff-only went through, which is what the forge's button does.
+    [x] just check green (fmt, clippy, guard-vcs, 709 + 110 unit tests, command tests, smoke tests). git2 only, no git process.
+    Branch feat/joy-merge-ci in worktree .claude/worktrees/forgemerge/joy, commit a4c6134. Not pushed yet.
