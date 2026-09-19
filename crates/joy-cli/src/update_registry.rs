@@ -34,6 +34,7 @@ pub fn all() -> Vec<Box<dyn UpdateItem>> {
     let mut v: Vec<Box<dyn UpdateItem>> = joy_chat_store::update::project_items();
     v.push(Box::new(LegacyAiArtifactsItem));
     v.push(Box::new(GitignoreBlockItem));
+    v.push(Box::new(CiMergeFileItem));
     v.push(Box::new(AiMemberAdapterItem));
     for id in ai::tool_ids() {
         v.push(Box::new(AiToolItem { id }));
@@ -129,6 +130,63 @@ impl UpdateItem for GitignoreBlockItem {
             name: ".gitignore block".into(),
             action: if before { None } else { Some("registered") },
         }])
+    }
+}
+
+/// The CI file that keeps this project mergeable from the forge's web
+/// interface (JOY-02AC-53). `joy init` writes it for new projects; this
+/// brings it to every clone that was set up before, and to a project
+/// that got its remote later. A file of the person's own with that name
+/// is reported and left alone.
+struct CiMergeFileItem;
+
+impl CiMergeFileItem {
+    fn state(root: &Path) -> (String, RowMark, String) {
+        let Some(template) = init::ci_template_for_remote(root) else {
+            return (
+                "CI merge file".into(),
+                RowMark::Info,
+                "no forge in the remote (joy init ci --forge <name>)".into(),
+            );
+        };
+        let name = format!("CI merge file ({})", template.target);
+        let path = root.join(template.target);
+        let Ok(existing) = std::fs::read_to_string(&path) else {
+            return (name, RowMark::Stale, "missing".into());
+        };
+        if !existing.contains(init::CI_TEMPLATE_MARKER) {
+            return (name, RowMark::Info, "yours, left alone".into());
+        }
+        if existing == template.content {
+            (name, RowMark::Ok, "up to date".into())
+        } else {
+            (name, RowMark::Stale, "out of date".into())
+        }
+    }
+}
+
+impl UpdateItem for CiMergeFileItem {
+    fn section(&self) -> &'static str {
+        SECTION_GIT
+    }
+    fn check(&self, root: &Path) -> UpdateResult<Vec<CheckRow>> {
+        let (name, mark, detail) = Self::state(root);
+        Ok(vec![CheckRow { name, mark, detail }])
+    }
+    fn refresh(&self, root: &Path) -> UpdateResult<Vec<RefreshRow>> {
+        let (name, mark, _) = Self::state(root);
+        if mark != RowMark::Stale {
+            return Ok(vec![RefreshRow { name, action: None }]);
+        }
+        let Some(template) = init::ci_template_for_remote(root) else {
+            return Ok(vec![RefreshRow { name, action: None }]);
+        };
+        let action = match init::write_ci_template(root, &template)? {
+            init::CiWrite::Written(_) => Some("written"),
+            init::CiWrite::UpToDate(_) => None,
+            init::CiWrite::Foreign(_) => None,
+        };
+        Ok(vec![RefreshRow { name, action }])
     }
 }
 
@@ -272,6 +330,48 @@ impl UpdateItem for AiToolItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What `joy update` says about the CI merge file in the four states
+    /// a clone can be in (JOY-02AC-53).
+    #[test]
+    fn the_ci_merge_file_is_reported_per_state() {
+        let dir = std::env::temp_dir().join(format!("joy-upd-ci-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = git2::Repository::init(&dir).unwrap();
+
+        // no remote: nothing to write for, and nothing to nag about
+        let (_, mark, detail) = CiMergeFileItem::state(&dir);
+        assert!(mark == RowMark::Info);
+        assert!(detail.contains("no forge"), "detail was {detail}");
+
+        // a GitHub remote: the file is missing, so joy update writes it
+        repo.remote("origin", "https://github.com/acme/demo.git")
+            .unwrap();
+        let (_, mark, detail) = CiMergeFileItem::state(&dir);
+        assert!(mark == RowMark::Stale);
+        assert_eq!(detail, "missing");
+        CiMergeFileItem.refresh(&dir).unwrap();
+        let (_, mark, _) = CiMergeFileItem::state(&dir);
+        assert!(mark == RowMark::Ok);
+
+        // an older version of ours is refreshed
+        let path = dir.join(init::CI_GITHUB.target);
+        std::fs::write(&path, format!("{}\nold\n", init::CI_TEMPLATE_MARKER)).unwrap();
+        let (_, mark, detail) = CiMergeFileItem::state(&dir);
+        assert!(mark == RowMark::Stale);
+        assert_eq!(detail, "out of date");
+
+        // a file of the person's own is reported and never touched
+        std::fs::write(&path, "name: mine\n").unwrap();
+        let (_, mark, detail) = CiMergeFileItem::state(&dir);
+        assert!(mark == RowMark::Info);
+        assert_eq!(detail, "yours, left alone");
+        CiMergeFileItem.refresh(&dir).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "name: mine\n");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     /// Sanity: every section name referenced in [`all`] is one of the
     /// declared section constants. This stops a typo from silently

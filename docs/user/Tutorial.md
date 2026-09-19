@@ -1088,6 +1088,13 @@ joy init ci                      # for the forge your remote points at
 joy init ci --forge github       # or name it: github, gitlab, gitea
 ```
 
+A clone that was set up before this existed gets the file from `joy update`, which also refreshes it when a newer joy ships a better one:
+
+```sh
+joy update --check               # says "CI merge file ... missing" when it is
+joy update                       # writes it
+```
+
 Joy never touches a file it did not write: a workflow of your own with the same name is left alone, and joy says so.
 
 ### Without CI
