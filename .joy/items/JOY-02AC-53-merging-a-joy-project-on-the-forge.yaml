@@ -12,7 +12,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T06:55:14.642892871Z
-updated: 2026-09-19T07:26:45.402410558Z
+updated: 2026-09-19T11:19:29.680092578Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   A person works in a branch, opens a pull request and presses the merge button. Today the forge answers with a conflict in the Joy files, and the button stays locked: forges do not run Joy's merge driver. Verified on 2026-09-16: GitHub ignores a repository's .gitattributes entirely (its own statement in community discussion 9288, request open since 2021), GitLab honours only the built-in union, Gitea merges with the real git binary so union works there but a custom driver still needs the joy binary on the server. Replaying our failing pull requests with .gitattributes removed reproduces the forge result exactly.
@@ -64,3 +64,6 @@ comments:
     [x] Tutorial chapter 13 names the update path too.
     [x] just check green again. Commits a4c6134, 68040a7, 0ca1b5f on feat/joy-merge-ci.
     Note: joy ai init deliberately does NOT write it (operator, 2026-09-19); the file belongs to joy init and joy update.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T11:19:29.680090825Z
+  text: '[x] AI tutorial: the merge rule sits where ''never edit .joy by hand'' already stands. An agent merges in the checkout and lets joy resolve; conflict markers inside .joy mean the merge ran without joy''s rules, so it aborts and asks instead of repairing the file by hand.'
