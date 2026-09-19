@@ -244,14 +244,26 @@ fn member_key_from_git_config(root: &Path, project: &Project) -> Option<String> 
 /// `None` on every one of: no remote configured, no installed connector
 /// claims the remote's host, the connector answers `known: false`
 /// (nobody signed in there), or none of the addresses it vouches for
-/// (`ForgeIdentity::emails`) is a member. This reuses
-/// [`crate::forge_plugins::responsible_plugin`] and
-/// [`crate::forge_plugins::identity`] exactly as
-/// [`crate::privacy::member_key_for_email_or_forge`] does, rather than
-/// duplicating them: joy-core holds no forge knowledge of its own, so
-/// "which plugin answers for this remote" and "who is signed in there"
-/// stay the plugin's judgement, never this function's.
+/// (`ForgeIdentity::emails`) is a member, nor a member key the account
+/// owns (a project founded under an alias). Both directions are the
+/// login path's, [`crate::privacy::member_key_for_email_or_forge`] and
+/// [`crate::privacy::member_key_owned_by`], never a copy here: joy-core
+/// holds no forge knowledge of its own, so "which plugin answers for
+/// this remote" and "who is signed in there" stay the plugin's
+/// judgement.
 fn member_key_from_forge_account(root: &Path, project: &Project) -> Option<String> {
+    // With an address in git config that named no member, the login
+    // path's function does the whole job: direction one (the account's
+    // own addresses) and direction two (a project keyed by an alias the
+    // account owns), with its cache. The resolver used to know direction
+    // one only, so a member `joy auth` had just found was unknown to the
+    // very next command (JOY-02AE-1A).
+    let (_, email) = crate::vcs::forge::user_identity(root);
+    if let Some(email) = email.filter(|e| !e.trim().is_empty()) {
+        return crate::privacy::member_key_for_email_or_forge(project, root, &email, None);
+    }
+    // No git config at all: the same two directions, without an address
+    // to cache under.
     let remotes = crate::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default();
@@ -259,6 +271,7 @@ fn member_key_from_forge_account(root: &Path, project: &Project) -> Option<Strin
     let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
     let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
     crate::privacy::member_key_for_any(project, &acting.emails)
+        .or_else(|| crate::privacy::member_key_owned_by(project, spec, &ctx, &acting))
 }
 
 /// Print one identity hint to stderr, at most once per process.
