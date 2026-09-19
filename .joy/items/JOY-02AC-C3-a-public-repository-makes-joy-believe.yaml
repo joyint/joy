@@ -1,7 +1,7 @@
 id: JOY-02AC-C3
 title: A public repository makes joy believe nobody is signed in, so the host falls into the 15 minute lane
 type: bug
-status: in-progress
+status: closed
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T15:40:39.736781546Z
-updated: 2026-09-19T16:00:59.557897845Z
+updated: 2026-09-19T21:13:44.092293182Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Found by Horst on Windows 2026-09-19, desktop app on joyint-forge-test. The start page says ''github.com, signed in as joydev-horst, from gh''; the project banner at the same moment says ''Nobody is signed in for github.com, so it is checked once every 15 minutes''. The second sentence is wrong. Cause in crates/joy-core/src/vcs/contact.rs (run): after a successful contact it calls note_credential_answer(host, presented) with presented=false whenever libgit2 never ASKED for a credential. A public repository answers the first request, so nothing is ever presented; the comment three lines above says so itself (''a contact that never had to present anything proves nothing about a credential'') and the next line stores exactly that as proof. poll_period_for then reads the false through credential_answers and returns ANONYMOUS_POLL_INTERVAL. Effect: every public repository is polled once every 15 minutes although a token is right there, the person is told they are signed out, and nothing they do changes it, because the next contact presents nothing either. Fix: a successful contact that presented nothing leaves the memory alone; the anonymous lane keeps the case the error path already knows (the host asked and joy had nothing) and gains an explicit ask at the resolver, the same source the start page shows. Acceptance: with a credential obtainable for github.com and a public remote, poll_period_for returns the budget period and no surface says anybody is signed out.'
 comments:
@@ -21,3 +21,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-19T16:00:59.489816934Z
   text: 'Cause found and verified in code 2026-09-19, with Horst''s own evidence from Windows. The remote is ssh (git@github.com:joydev-horst/joyint-forge-test.git) and the connector answers for exactly that remote in background mode with known:true, source gh, login joydev-horst. The chain: the ssh leg of D1.2 runs first and fails with class Ssh code Auth, which the classifier reads as needs_sign_in (contact.rs:782). In run''s error path a needs_sign_in with nothing presented calls note_credential_answer(host, false), and that memory was keyed by HOST ALONE. The https twin leg, which exists for exactly this ssh failure and carries the connector''s token, is then held by run_poll: transport is https and credential_answers says nobody is signed in to github.com. So the twin never goes out, the 15 minute window is renewed on every tick, and because a held poll is reported as Failure::RateLimited the surface writes ''GitHub is limiting our requests''. Nothing about the twin concept is wrong, and nothing here is about forcing ssh: the memory simply must not let one transport speak for the other. Fix: CREDENTIAL_PRESENTED is keyed by (host, transport), credential_answers and note_credential_answer take the transport, and the no anonymous polling rule asks for https. Regression test an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host: it fails on the old key and passes on the new one.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T21:13:44.092290136Z
+  text: 'Final cause, proven 2026-09-19 with a public throwaway repository on Linux and on the Windows runner: the repository was public (GitHub API private:false, anonymous ls-remote answers), so the https twin succeeded without a credential challenge, run wrote ''nothing presented'', and every later poll was held for fifteen minutes with ''Nobody is signed in''; a push presented the token and cleared it, which matches the operator''s observation. Fix ac5573a: a leg built around a token notes the credential as in hand after a successful contact. Together with the transport keyed memory and the self imposed marker (and the client wrapper copying selfImposed, JAPP side) the banner and the hold are gone.'
