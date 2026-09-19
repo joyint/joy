@@ -59,10 +59,13 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
 
 /// The acceptance of J9: `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols `a@b.c`
-/// without reading git config. What happens AFTER enrolment moved with
-/// the operator's 2026-09-19 correction (JOY-02AE-1A): a further command
-/// now needs the git config back, since resolve_identity no longer reads
-/// the pin the founding and enrolment steps left on this device.
+/// without reading git config, given the same `--user` explicitly. A
+/// later addition to the operator's 2026-09-19 correction (JOY-02AE-1A)
+/// retired the device pin from `acting_member` too, so `auth init` no
+/// longer finds the founder through it either: naming `--user` at both
+/// steps is what a founder with no git config actually has to do now,
+/// and what happens AFTER enrolment needs the git config back, since
+/// resolve_identity reads it, not a pin.
 #[test]
 fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     let (_dir, root, home) = machine();
@@ -76,14 +79,16 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
     assert!(project.contains("a@b.c"), "{project}");
 
-    // The enrolment takes the member from the project, not from a git
-    // config this machine does not have.
+    // The enrolment takes the member from `--user`, not from a git
+    // config this machine does not have, and not from a pin either.
     let auth = joy(
         &root,
         &home,
         &[
             "auth",
             "init",
+            "--user",
+            "a@b.c",
             "--passphrase",
             "correct horse battery staple",
         ],
