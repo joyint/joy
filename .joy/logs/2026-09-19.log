@@ -28,3 +28,6 @@
 2026-09-19T22:59:32.259Z JOY-028F-0B item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-09-19T22:59:33.970Z JOY-02AE-1A item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-09-19T23:00:36.118Z JOY-028F-0B item.status_changed "closed -> closed" [horst.schwarz@joydev.com]
+2026-09-19T23:34:41.894Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-19T23:34:55.636Z JOY-02AE-84 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-19T23:35:00.135Z JOY-02AE-84 item.status_changed "new -> open" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

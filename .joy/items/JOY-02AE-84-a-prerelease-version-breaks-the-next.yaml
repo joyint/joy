@@ -1,0 +1,35 @@
+id: JOY-02AE-84
+title: A prerelease version breaks the next bump and the release order
+type: bug
+status: open
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-19T23:34:55.627415246Z
+updated: 2026-09-19T23:35:00.127865211Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  joy release bump accepts an explicit prerelease version such as 0.30.0-beta and writes it correctly into the version files, the release record and the tag. What happens afterwards is wrong.
+
+  Reproduced with the 0.21-era binary in a throwaway project:
+    joy release bump --adopt 0.30.0-beta   ->  v0.29.0 -> v0.30.0-beta, Cargo.toml says 0.30.0-beta
+    joy release bump --adopt patch         ->  v0.30.0-beta -> v0.30.1
+    joy release bump --adopt 1.2.3-rc1, then patch -> v1.2.3-rc1 -> v1.2.1
+
+  So a keyword bump silently drops the suffix and skips a version, and from a three-part base it even goes backwards, with no warning.
+
+  Cause, two places:
+  - crates/joy-core/src/model/release.rs:83 bump_version splits on '.' and parses the third part as a number. For "0.30.0-beta" the third part is "0-beta", which fails to parse, so the patch level reads as 0.
+  - crates/joy-core/src/releases.rs:75 semver_key drops everything from '-' or '+' before ordering, so v0.30.0-beta and v0.30.0 compare equal. sort_by_key is stable, so which one counts as the latest depends on the order the directory is read in. That feeds latest_version, joy release ls, joy release show and the baseline of the next bump.
+
+  There is no validation at all on the explicit path: crates/joy-core/src/releases.rs:213 looks_like_explicit only asks whether the string starts with a digit or a 'v', so "9lives" is accepted as a version too.
+
+  The suffix-aware shape to reuse already exists in crates/joy-core/src/version_bump.rs:195 looks_like_semver, which handles '-prerelease' and '+build' and has a passing test.
+
+  - [ ] A keyword bump from a prerelease base does the expected thing instead of skipping or going backwards
+  - [ ] A prerelease sorts before its own release, so latest_version is deterministic
+  - [ ] An explicit version that is not a version is refused with a sentence that says what a version looks like
+  - [ ] Tests cover 0.30.0-beta, 0.30.0-beta.1 and 1.2.3-rc1 for bump and for ordering
