@@ -83,10 +83,12 @@ setup_bob_with_crypt() {
     joy crypt add CT-0001 --passphrase "$PASS_BOB" >/dev/null
 
     # Bob (still the member acting here) registers Alice, capturing her
-    # invitation OTP; Alice then redeems it herself, which enrols her and
-    # makes her the member this device acts as.
+    # invitation OTP; Alice then redeems it herself, which enrols her.
+    # Naming her in this repository's git config is what makes the bare
+    # commands below act as her (JOY-02AE-1A, correcting D3.9).
     ALICE_OTP=$(joy project member add alice@example.com --passphrase "$PASS_BOB" | extract_otp)
     joy auth --otp "$ALICE_OTP" --user alice@example.com --passphrase "$PASS_ALICE" >/dev/null
+    git config user.email alice@example.com
 
     # Alice has no zone access yet. ls must list the locked row, not error.
     run joy ls
@@ -99,8 +101,8 @@ setup_bob_with_crypt() {
     run joy show CT-0001
     [ "$status" -ne 0 ]
 
-    # Bob grants Alice. Naming Bob is what makes this device act as him
-    # again: since package J11 the git config decides nothing (D3.9).
+    # Bob grants Alice. `act_as` names Bob in git config and authenticates
+    # him, which is what makes this device act as him again.
     act_as bob@example.com "$PASS_BOB" >/dev/null
     joy crypt grant alice@example.com --passphrase "$PASS_BOB" >/dev/null
 
