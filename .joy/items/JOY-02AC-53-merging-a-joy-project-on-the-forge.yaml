@@ -1,0 +1,69 @@
+id: JOY-02AC-53
+title: Merging a Joy project on the forge just works
+type: story
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-19T06:55:14.642892871Z
+updated: 2026-09-19T11:19:29.680092578Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  A person works in a branch, opens a pull request and presses the merge button. Today the forge answers with a conflict in the Joy files, and the button stays locked: forges do not run Joy's merge driver. Verified on 2026-09-16: GitHub ignores a repository's .gitattributes entirely (its own statement in community discussion 9288, request open since 2021), GitLab honours only the built-in union, Gitea merges with the real git binary so union works there but a custom driver still needs the joy binary on the server. Replaying our failing pull requests with .gitattributes removed reproduces the forge result exactly.
+
+  This hits every customer who merges through the web interface, so it belongs in the product, not in our operations notes.
+
+  The way that works, demonstrated end to end with a bare repository as the forge: do the hard merge where joy is installed, then the forge only fast forwards, which cannot fail. A hidden 'joy merge ci' does it, and joy init writes the CI file that calls it, like it writes .gitattributes today.
+
+  - [ ] joy merge ci: merge the target branch into the pull request branch with the Joy driver and publish the result; stop and explain when both sides really changed the same field
+  - [ ] Hidden like joy merge driver, because only the CI calls it
+  - [ ] joy init writes the CI file for the forge it detects, inside a joy marked block, and never touches a foreign file
+  - [ ] joy init ci --forge <name> for local repositories and for adding it later; a forge change through joy config updates the file
+  - [ ] Templates for GitHub Actions, Gitea Actions and GitLab CI
+  - [ ] Contributions from a fork: the job cannot write there, so it comments on the pull request and asks the contributor to merge the target branch in
+  - [ ] The person sees a check line and a green button, nothing about drivers
+  - [ ] Tutorial: own chapter about merging
+  - [ ] git2 only, no git process (JOY-01FD-ED)
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T06:58:41.996086855Z
+  text: |-
+    Plan, after reading the code on main (1f59f25):
+
+    libgit2 runs no external merge driver, so 'joy merge ci' cannot lean on .gitattributes either. It resolves the Joy files itself, in process, which also keeps the git2 only rule (JOY-01FD-ED):
+    1. joy-core, next to forge::merge_branch: merge a ref into HEAD with git2, then walk the index conflicts. A .joy YAML file goes through merge::merge_yaml_doc, a .joy log through a line union, an encrypted blob takes the newer side (the rule merge.rs already states). Anything else stays a conflict and the function reports it.
+    2. joy-cli, next to merge driver: the hidden 'merge ci' subcommand. It reads the target branch from its argument or from the CI environment, fetches it, runs the merge, commits and pushes. On a real conflict it exits with the file and field named.
+    3. joy-core init: embedded CI templates per forge, written like the hooks and .gitattributes, inside a joy marked block. New: joy init ci --forge <name> for local repositories and for adding it later.
+    4. Tutorial: own chapter about merging.
+
+    Worktree .claude/worktrees/forgemerge/joy on feat/joy-merge-ci, so the other sessions are not disturbed.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T07:20:50.325680002Z
+  text: |-
+    [x] joy-core, vcs::forge::merge_resolving_joy: merges a ref into HEAD with git2 and resolves the conflicts Joy owns. Items and the other Joy YAML through merge::merge_yaml_doc, .joy/logs/*.log as the union of both sides' lines in timestamp order, an encrypted blob by the newer side. Anything else stops the merge and is named by path. The merge commit carries a machine signature, because a CI runner is no member.
+    [x] joy-cli, hidden 'joy merge ci': reads the target from --target or from what the CI announces (GITHUB_BASE_REF, CI_MERGE_REQUEST_TARGET_BRANCH_NAME), fetches it, merges, publishes. A forge it cannot reach only matters when the target is missing from the checkout as well.
+    [x] joy-core init: CI templates for GitHub, Gitea and GitLab, written by joy init for the forge the remote names, inside a joy marked block; a file joy did not write is never touched. joy init ci [--forge x] adds it later.
+    [x] Tutorial chapter 13, Merging branches, in the user tutorial and the in-crate copy.
+    [x] Verified: two new forge tests (items and logs resolved, a real conflict stops it), three template tests, and the whole chain by hand in a scratch project: joy init wrote the workflow, joy merge ci resolved status from one branch and a comment from the other, then git merge --ff-only went through, which is what the forge's button does.
+    [x] just check green (fmt, clippy, guard-vcs, 709 + 110 unit tests, command tests, smoke tests). git2 only, no git process.
+    Branch feat/joy-merge-ci in worktree .claude/worktrees/forgemerge/joy, commit a4c6134. Not pushed yet.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T07:26:45.402409326Z
+  text: |-
+    [x] joy update carries the CI file to clones that predate it: an update item next to the .gitignore block, in the Git extensions section. Verified by hand in a scratch project and by a test over the four states a clone can be in:
+    - no forge in the remote: informational, points at joy init ci --forge <name>, no nagging
+    - file missing: --check says missing, update writes it
+    - older version of ours: out of date, update refreshes it
+    - a workflow of the person's own with that name: 'yours, left alone', never touched
+    [x] Tutorial chapter 13 names the update path too.
+    [x] just check green again. Commits a4c6134, 68040a7, 0ca1b5f on feat/joy-merge-ci.
+    Note: joy ai init deliberately does NOT write it (operator, 2026-09-19); the file belongs to joy init and joy update.
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-19T11:19:29.680090825Z
+  text: '[x] AI tutorial: the merge rule sits where ''never edit .joy by hand'' already stands. An agent merges in the checkout and lets joy resolve; conflict markers inside .joy mean the merge ran without joy''s rules, so it aborts and asks instead of repairing the file by hand.'

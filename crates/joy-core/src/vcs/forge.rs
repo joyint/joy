@@ -4207,6 +4207,214 @@ pub fn refresh_branch_from_forge(repo_dir: &Path, branch: &str, auth: &Auth) {
     }
 }
 
+/// Whether this checkout can resolve `rev` (a branch, a remote branch
+/// or any other revision name).
+pub fn rev_exists(repo_dir: &Path, rev: &str) -> bool {
+    let Ok(repo) = open(repo_dir) else {
+        return false;
+    };
+    let found = repo.revparse_single(rev).is_ok();
+    found
+}
+
+/// What one CI merge did (JOY-02AC-53).
+#[derive(Debug)]
+pub struct JoyMerge {
+    /// False when the target was already contained: nothing to do.
+    pub merged: bool,
+    /// The merge commit, when one was written.
+    pub commit: Option<String>,
+    /// Joy files this merge resolved by Joy's own rules.
+    pub resolved: Vec<String>,
+}
+
+/// Merge `theirs` into HEAD and resolve the Joy files ourselves
+/// (JOY-02AC-53).
+///
+/// A forge merges with plain git and libgit2 runs no external merge
+/// driver, so neither of them applies the rules `.gitattributes` names.
+/// This is the same merge, with those rules applied in process: a Joy
+/// YAML file goes through [`crate::merge::merge_yaml_doc`], a Joy log
+/// unions both sides, an encrypted blob takes the newer side. Anything
+/// else stays a conflict and is reported by path, because a real
+/// disagreement belongs to a person.
+pub fn merge_resolving_joy(
+    repo_dir: &Path,
+    theirs: &str,
+    message: &str,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<JoyMerge> {
+    let repo = open(repo_dir).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let head = repo.head()?.peel_to_commit()?;
+    let their = repo
+        .revparse_single(theirs)
+        .map_err(|e| anyhow::anyhow!("{theirs}: {}", e.message()))?
+        .peel_to_commit()
+        .map_err(|e| anyhow::anyhow!("{theirs} is no commit: {}", e.message()))?;
+
+    if repo.graph_descendant_of(head.id(), their.id())? || head.id() == their.id() {
+        return Ok(JoyMerge {
+            merged: false,
+            commit: None,
+            resolved: Vec::new(),
+        });
+    }
+
+    let mut index = repo.merge_commits(&head, &their, None)?;
+    let mut resolved = Vec::new();
+    if index.has_conflicts() {
+        let conflicts: Vec<git2::IndexConflict> =
+            index.conflicts()?.collect::<Result<Vec<_>, _>>()?;
+        let mut unresolved = Vec::new();
+        for conflict in conflicts {
+            let path = conflict_path(&conflict);
+            let Some(path) = path else { continue };
+            match resolve_joy_conflict(&repo, &conflict, &path, &head, &their) {
+                Some(content) => {
+                    let blob = repo.blob(&content)?;
+                    index.conflict_remove(Path::new(&path))?;
+                    index.add(&index_entry(&path, blob))?;
+                    resolved.push(path);
+                }
+                None => unresolved.push(path),
+            }
+        }
+        if !unresolved.is_empty() {
+            unresolved.sort();
+            anyhow::bail!(
+                "both sides changed the same thing in: {}",
+                unresolved.join(", ")
+            );
+        }
+    }
+
+    let tree = repo.find_tree(index.write_tree_to(&repo)?)?;
+    // A machine's merge commit, not an item action: it carries no member
+    // key, because the CI runner is nobody in the project and answering
+    // "who are you" is not its job (JOY-02AC-53).
+    let sig = git2::Signature::now(author_name, author_email).map_err(err)?;
+    let oid = repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &[&head, &their])?;
+    repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))?;
+    repo.cleanup_state().ok();
+    resolved.sort();
+    Ok(JoyMerge {
+        merged: true,
+        commit: Some(oid.to_string()),
+        resolved,
+    })
+}
+
+fn conflict_path(conflict: &git2::IndexConflict) -> Option<String> {
+    let entry = conflict
+        .our
+        .as_ref()
+        .or(conflict.their.as_ref())
+        .or(conflict.ancestor.as_ref())?;
+    Some(String::from_utf8_lossy(&entry.path).to_string())
+}
+
+fn index_entry(path: &str, blob: git2::Oid) -> git2::IndexEntry {
+    git2::IndexEntry {
+        ctime: git2::IndexTime::new(0, 0),
+        mtime: git2::IndexTime::new(0, 0),
+        dev: 0,
+        ino: 0,
+        mode: 0o100644,
+        uid: 0,
+        gid: 0,
+        file_size: 0,
+        id: blob,
+        flags: 0,
+        flags_extended: 0,
+        path: path.as_bytes().to_vec(),
+    }
+}
+
+/// The merged bytes for one conflicted Joy file, or `None` when this is
+/// not a file Joy owns or its two sides really disagree.
+fn resolve_joy_conflict(
+    repo: &git2::Repository,
+    conflict: &git2::IndexConflict,
+    path: &str,
+    head: &git2::Commit<'_>,
+    their: &git2::Commit<'_>,
+) -> Option<Vec<u8>> {
+    let side = |entry: &Option<git2::IndexEntry>| -> Vec<u8> {
+        entry
+            .as_ref()
+            .and_then(|e| repo.find_blob(e.id).ok())
+            .map(|b| b.content().to_vec())
+            .unwrap_or_default()
+    };
+    let base = side(&conflict.ancestor);
+    let ours = side(&conflict.our);
+    let theirs = side(&conflict.their);
+
+    if crate::merge::is_joycrypt_blob(&ours) || crate::merge::is_joycrypt_blob(&theirs) {
+        // opaque ciphertext: the newer side stands, the rule the driver
+        // already follows for encrypted blobs
+        return Some(if their.time().seconds() >= head.time().seconds() {
+            theirs
+        } else {
+            ours
+        });
+    }
+    if is_joy_log(path) {
+        return Some(union_lines(&ours, &theirs));
+    }
+    if !is_joy_yaml(path) {
+        return None;
+    }
+    let text = |b: Vec<u8>| String::from_utf8(b).ok();
+    let (base, ours, theirs) = (text(base)?, text(ours)?, text(theirs)?);
+    crate::merge::merge_yaml_doc(&base, &ours, &theirs)
+        .ok()
+        .map(|s| s.into_bytes())
+}
+
+/// Every Joy YAML file the `.gitattributes` block names.
+fn is_joy_yaml(path: &str) -> bool {
+    let Some(rest) = path.strip_prefix(".joy/") else {
+        return false;
+    };
+    if !rest.ends_with(".yaml") {
+        return false;
+    }
+    matches!(rest, "project.yaml" | "config.defaults.yaml")
+        || [
+            "items/",
+            "milestones/",
+            "releases/",
+            "chats/",
+            "ai/agents/",
+            "ai/jobs/",
+        ]
+        .iter()
+        .any(|dir| rest.starts_with(dir))
+}
+
+fn is_joy_log(path: &str) -> bool {
+    path.starts_with(".joy/logs/") && path.ends_with(".log")
+}
+
+/// Both sides' lines, each one once, in timestamp order. The log is
+/// append-only and every line starts with its timestamp, so sorting is
+/// the chronological order and the same on both sides of a merge.
+fn union_lines(ours: &[u8], theirs: &[u8]) -> Vec<u8> {
+    let ours = String::from_utf8_lossy(ours).to_string();
+    let theirs = String::from_utf8_lossy(theirs).to_string();
+    let mut all: Vec<&str> = ours.lines().chain(theirs.lines()).collect();
+    all.sort_unstable();
+    all.dedup();
+    if all.is_empty() {
+        return Vec::new();
+    }
+    let mut out = all.join("\n");
+    out.push('\n');
+    out.into_bytes()
+}
+
 /// AcceptJob's merge (JP-006D-28): refuse when the branch diff (merge
 /// base..branch) touches `.joy/` — job branches must not carry item state;
 /// `.joy` changes ride main via the joywork landing — then merge the
@@ -5165,6 +5373,161 @@ mod tests {
 
     /// Local end-to-end against a bare "forge" repo: clone, commit, push,
     /// pull. No network, real git2 semantics.
+    /// What a forge does to a Joy project: two branches touch the same
+    /// item and the same day log, and plain git cannot put them back
+    /// together (JOY-02AC-53). merge_resolving_joy applies the rules
+    /// .gitattributes only names.
+    #[test]
+    fn a_ci_merge_resolves_items_and_logs_itself() {
+        let dir = std::env::temp_dir().join(format!("joy-ci-merge-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let repo = git2::Repository::init(&dir).unwrap();
+        // These fixtures compare file bytes. A Windows runner has
+        // core.autocrlf=true globally, and the checkout below would then
+        // hand the log back with CRLF while the assertion reads LF.
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
+        let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
+        let write = |rel: &str, body: &str| {
+            let path = dir.join(rel);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, body).unwrap();
+        };
+        fn commit<'r>(
+            repo: &'r git2::Repository,
+            sig: &git2::Signature<'_>,
+            msg: &str,
+            parents: &[&git2::Commit<'_>],
+        ) -> git2::Commit<'r> {
+            let mut index = repo.index().unwrap();
+            index
+                .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+                .unwrap();
+            index.write().unwrap();
+            let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+            let oid = repo
+                .commit(Some("HEAD"), sig, sig, msg, &tree, parents)
+                .unwrap();
+            repo.find_commit(oid).unwrap()
+        }
+
+        write(
+            ".joy/items/D-1.yaml",
+            "id: D-1\nstatus: new\nupdated: 2026-09-10T08:00:00Z\ndescription: the bug\n",
+        );
+        write(".joy/logs/2026-09-16.log", "08:00 D-1 item.created\n");
+        let base = commit(&repo, &sig, "base", &[]);
+        let default_branch = repo.head().unwrap().name().unwrap().to_string();
+        repo.branch("target", &base, false).unwrap();
+
+        // the target branch comments, so status stays and the log grows
+        repo.set_head("refs/heads/target").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        write(
+            ".joy/items/D-1.yaml",
+            "id: D-1\nstatus: new\nupdated: 2026-09-16T10:05:00Z\ndescription: the bug\ncomments:\n- author: philipp@example.com\n  date: 2026-09-16T10:05:00Z\n  text: seen on iOS too\n",
+        );
+        write(
+            ".joy/logs/2026-09-16.log",
+            "08:00 D-1 item.created\n10:05 D-1 comment.added\n",
+        );
+        commit(&repo, &sig, "comment on the target branch", &[&base]);
+
+        // the pull request branch starts the item, same day, same files
+        repo.set_head(&default_branch).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        write(
+            ".joy/items/D-1.yaml",
+            "id: D-1\nstatus: in-progress\nupdated: 2026-09-16T09:12:00Z\ndescription: the bug\n",
+        );
+        write(
+            ".joy/logs/2026-09-16.log",
+            "08:00 D-1 item.created\n09:12 D-1 item.started\n",
+        );
+        commit(&repo, &sig, "start on the pull request branch", &[&base]);
+
+        let outcome = merge_resolving_joy(
+            &dir,
+            "target",
+            "Merge target into the pull request branch",
+            "Joy CI",
+            "tester@example.com",
+        )
+        .expect("the merge resolves");
+        assert!(outcome.merged);
+        assert_eq!(
+            outcome.resolved,
+            vec![".joy/items/D-1.yaml", ".joy/logs/2026-09-16.log"]
+        );
+
+        // both sides survive: the status from here, the comment from there
+        let item = std::fs::read_to_string(dir.join(".joy/items/D-1.yaml")).unwrap();
+        assert!(item.contains("status: in-progress"), "item was {item}");
+        assert!(item.contains("seen on iOS too"), "item was {item}");
+        // the log carries both lines, once each, in time order
+        let log = std::fs::read_to_string(dir.join(".joy/logs/2026-09-16.log")).unwrap();
+        assert_eq!(
+            log,
+            "08:00 D-1 item.created\n09:12 D-1 item.started\n10:05 D-1 comment.added\n"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A disagreement outside Joy's own files is not ours to settle: the
+    /// merge stops and says which file (JOY-02AC-53).
+    #[test]
+    fn a_ci_merge_stops_on_a_real_conflict() {
+        let dir = std::env::temp_dir().join(format!("joy-ci-merge-stop-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        let repo = git2::Repository::init(&dir).unwrap();
+        repo.config()
+            .unwrap()
+            .set_bool("core.autocrlf", false)
+            .unwrap();
+        let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
+        let write = |rel: &str, body: &str| std::fs::write(dir.join(rel), body).unwrap();
+        fn commit<'r>(
+            repo: &'r git2::Repository,
+            sig: &git2::Signature<'_>,
+            msg: &str,
+            parents: &[&git2::Commit<'_>],
+        ) -> git2::Commit<'r> {
+            let mut index = repo.index().unwrap();
+            index
+                .add_all(["."], git2::IndexAddOption::DEFAULT, None)
+                .unwrap();
+            index.write().unwrap();
+            let tree = repo.find_tree(index.write_tree().unwrap()).unwrap();
+            let oid = repo
+                .commit(Some("HEAD"), sig, sig, msg, &tree, parents)
+                .unwrap();
+            repo.find_commit(oid).unwrap()
+        }
+        write("README.md", "one\n");
+        let base = commit(&repo, &sig, "base", &[]);
+        let default_branch = repo.head().unwrap().name().unwrap().to_string();
+        repo.branch("target", &base, false).unwrap();
+        repo.set_head("refs/heads/target").unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        write("README.md", "their line\n");
+        commit(&repo, &sig, "theirs", &[&base]);
+        repo.set_head(&default_branch).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+        write("README.md", "our line\n");
+        commit(&repo, &sig, "ours", &[&base]);
+
+        let err = merge_resolving_joy(&dir, "target", "m", "Joy CI", "tester@example.com")
+            .expect_err("a real conflict stops the merge");
+        assert!(err.to_string().contains("README.md"), "message was {err}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn clone_commit_push_pull_roundtrip() {
         let base = std::env::temp_dir().join(format!("jp-git-test-{}", std::process::id()));

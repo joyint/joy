@@ -1,0 +1,32 @@
+# joy:start -- managed by joy, do not edit manually (JOY-02AC-53)
+# Joy stores its items, comments and logs as files in this repository.
+# When two branches touch the same item, GitLab cannot put them back
+# together: it merges with plain git, which does not run Joy's merge
+# rules. This job does that merge here, where joy is installed, and
+# publishes the result. The merge button then only fast forwards, which
+# cannot fail.
+#
+# Include it from your .gitlab-ci.yml:
+#   include:
+#     - local: .joy/ci/gitlab.yml
+#
+# The job needs to push to the source branch, so give the project a
+# token with write access and put it in the CI variable JOY_PUSH_TOKEN
+# (Settings, CI/CD, Variables, masked and protected).
+joy-merge:
+  stage: .pre
+  image: debian:stable-slim
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_STRATEGY: clone
+    GIT_DEPTH: 0
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl ca-certificates git
+    - curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joyint/joy/releases/latest/download/joy-cli-installer.sh | sh
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    - git remote set-url origin "https://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git"
+    - joy merge ci
+# joy:end

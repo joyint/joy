@@ -350,6 +350,16 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 
     // Register the YAML / log merge driver in .gitattributes and git config.
     ensure_gitattributes(root)?;
+
+    // The forge merges with plain git and runs no driver, so the CI file
+    // that does the merge where joy is installed goes in right away
+    // (JOY-02AC-53). Without a remote there is no forge to write for
+    // yet: `joy init ci --forge <name>` adds it later.
+    if let Some(template) = ci_template_for_remote(root) {
+        if let Err(e) = write_ci_template(root, &template) {
+            tracing::debug!(error = %e, "CI merge file not written");
+        }
+    }
     register_merge_driver(root)?;
 
     // Install hooks
@@ -676,6 +686,101 @@ pub const GITATTRIBUTES_BASE_ENTRIES: &[&str] = &[
     ".joy/logs/*.log merge=union",
 ];
 
+/// The CI file that makes a Joy project mergeable from the forge's web
+/// interface (JOY-02AC-53), one per forge. A forge merges with plain
+/// git, which runs no merge driver, so the merge happens in CI where joy
+/// is installed and the button only fast forwards afterwards.
+pub struct CiTemplate {
+    /// Where the file belongs, relative to the repository root.
+    pub target: &'static str,
+    pub content: &'static str,
+    /// What the person still has to do, if anything.
+    pub note: Option<&'static str>,
+}
+
+pub const CI_TEMPLATE_MARKER: &str = "# joy:start -- managed by joy";
+
+pub const CI_GITHUB: CiTemplate = CiTemplate {
+    target: ".github/workflows/joy-merge.yml",
+    content: include_str!("../data/ci/github.yml"),
+    note: None,
+};
+
+pub const CI_GITEA: CiTemplate = CiTemplate {
+    target: ".gitea/workflows/joy-merge.yml",
+    content: include_str!("../data/ci/gitea.yml"),
+    note: None,
+};
+
+pub const CI_GITLAB: CiTemplate = CiTemplate {
+    target: ".joy/ci/gitlab.yml",
+    content: include_str!("../data/ci/gitlab.yml"),
+    note: Some(
+        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nand set the CI variable JOY_PUSH_TOKEN",
+    ),
+};
+
+/// The template for a forge, by the name a person types or a plugin id.
+pub fn ci_template_for(forge: &str) -> Option<CiTemplate> {
+    match forge.trim().to_ascii_lowercase().as_str() {
+        "github" | "github-enterprise" | "ghes" => Some(CI_GITHUB),
+        "gitea" | "forgejo" | "codeberg" => Some(CI_GITEA),
+        "gitlab" => Some(CI_GITLAB),
+        _ => None,
+    }
+}
+
+/// The template for the forge this checkout pushes to, read from the
+/// remote. `None` when there is no remote yet, which is the local
+/// repository a person adds the file to later with `joy init ci`.
+pub fn ci_template_for_remote(root: &Path) -> Option<CiTemplate> {
+    let vcs = default_vcs();
+    let remote = vcs.default_remote(root).ok()?;
+    let url = vcs.remote_url(root, &remote).ok()?;
+    let host = crate::vcs::remote_url::RemoteUrl::parse(&url)
+        .map(|parsed| parsed.host)
+        .unwrap_or_default();
+    match crate::vcs::forge::known_forge_kind(&host)? {
+        crate::vcs::forge::ForgeKind::GitHub | crate::vcs::forge::ForgeKind::GitHubEnterprise => {
+            Some(CI_GITHUB)
+        }
+        crate::vcs::forge::ForgeKind::Gitea => Some(CI_GITEA),
+        crate::vcs::forge::ForgeKind::GitLab => Some(CI_GITLAB),
+    }
+}
+
+/// What writing the CI file did.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CiWrite {
+    Written(String),
+    UpToDate(String),
+    /// A file of the same name that joy did not write: never touched.
+    Foreign(String),
+}
+
+/// Write the CI file for `template`, unless a foreign file of that name
+/// is in the way. Ours carries the joy marker, so a second run updates
+/// it and anything else is left alone.
+pub fn write_ci_template(root: &Path, template: &CiTemplate) -> Result<CiWrite, JoyError> {
+    let path = root.join(template.target);
+    let target = template.target.to_string();
+    if path.exists() {
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        if !existing.contains(CI_TEMPLATE_MARKER) {
+            return Ok(CiWrite::Foreign(target));
+        }
+        if existing == template.content {
+            return Ok(CiWrite::UpToDate(target));
+        }
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, template.content)?;
+    crate::git_ops::auto_git_add(root, &[template.target]);
+    Ok(CiWrite::Written(target))
+}
+
 pub const MERGE_DRIVER_NAME_KEY: &str = "merge.joy-yaml.name";
 pub const MERGE_DRIVER_NAME_VALUE: &str = "Joy YAML merge driver";
 pub const MERGE_DRIVER_CMD_KEY: &str = "merge.joy-yaml.driver";
@@ -818,6 +923,62 @@ fn register_merge_driver(root: &Path) -> Result<(), JoyError> {
         vcs.config_set(root, MERGE_DRIVER_CMD_KEY, MERGE_DRIVER_CMD_VALUE)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod ci_template_tests {
+    use super::*;
+
+    #[test]
+    fn the_forge_decides_which_file_is_written() {
+        assert_eq!(ci_template_for("github").unwrap().target, CI_GITHUB.target);
+        assert_eq!(ci_template_for("Forgejo").unwrap().target, CI_GITEA.target);
+        assert_eq!(ci_template_for("gitlab").unwrap().target, CI_GITLAB.target);
+        assert!(ci_template_for("sourcehut").is_none());
+    }
+
+    #[test]
+    fn every_template_calls_joy_and_carries_the_marker() {
+        for template in [CI_GITHUB, CI_GITEA, CI_GITLAB] {
+            assert!(
+                template.content.starts_with(CI_TEMPLATE_MARKER),
+                "{} misses the marker",
+                template.target
+            );
+            assert!(
+                template.content.contains("joy merge ci"),
+                "{} calls nothing",
+                template.target
+            );
+        }
+    }
+
+    #[test]
+    fn a_file_of_someone_else_is_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("joy-ci-tpl-{}", std::process::id()));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(dir.join(".github/workflows")).unwrap();
+        let path = dir.join(CI_GITHUB.target);
+
+        // ours goes in, and a second run finds it up to date
+        assert_eq!(
+            write_ci_template(&dir, &CI_GITHUB).unwrap(),
+            CiWrite::Written(CI_GITHUB.target.to_string())
+        );
+        assert_eq!(
+            write_ci_template(&dir, &CI_GITHUB).unwrap(),
+            CiWrite::UpToDate(CI_GITHUB.target.to_string())
+        );
+
+        // a workflow of the person's own with that name stays as it is
+        std::fs::write(&path, "name: mine\n").unwrap();
+        assert_eq!(
+            write_ci_template(&dir, &CI_GITHUB).unwrap(),
+            CiWrite::Foreign(CI_GITHUB.target.to_string())
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "name: mine\n");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
 
 #[cfg(test)]
