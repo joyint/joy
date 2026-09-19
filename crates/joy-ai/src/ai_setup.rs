@@ -367,6 +367,34 @@ fn detect_copilot() -> bool {
     crate::adapters::by_adapter("copilot")
         .and_then(|spec| spec.usable_launch(which, command_succeeds))
         .is_some()
+        // Copilot is not only a CLI. An editor of the VS Code family has
+        // Copilot Chat built in (VS Code 1.116) and reads the very files
+        // this tool writes, so somebody who never installed a binary is
+        // still a Copilot user — and used to be told to register a member
+        // by hand instead.
+        || editor_reads_copilot_instructions(std::env::var_os("TERM_PROGRAM").as_deref())
+}
+
+/// Is joy running in an editor terminal whose assistant reads the files
+/// `configure_copilot` writes?
+///
+/// `TERM_PROGRAM=vscode` is the ONE documented signal (VS Code's own shell
+/// integration docs tell people to gate on it) and the same string on all
+/// three platforms, which is why nothing here looks at an OS, a path or an
+/// installed application.
+///
+/// It says "a VS Code FAMILY terminal": Cursor, Windsurf, VSCodium and
+/// Positron all set the same value and cannot be told apart by any
+/// documented means. That is why the answer only ever gets a tool OFFERED,
+/// never silently configured — `joy ai init` asks per tool, and an editor
+/// that does not build on the Copilot instructions gets a No. Guessing
+/// harder here would buy nothing: the person knows, and we do not.
+///
+/// It is a floor, not a ceiling. tmux overwrites `TERM_PROGRAM`, `sudo`
+/// clears it and `ssh` does not forward it, so a No here never means "no
+/// Copilot", and `joy ai init --tool copilot` stays the direct answer.
+fn editor_reads_copilot_instructions(term_program: Option<&std::ffi::OsStr>) -> bool {
+    term_program.is_some_and(|value| value.eq_ignore_ascii_case("vscode"))
 }
 
 pub type ToolEntry = (
@@ -1738,5 +1766,32 @@ mod setup_tests {
         assert!(content.contains("new content"));
         assert!(!content.contains("old"));
         assert!(content.trim_end().ends_with("user footer"));
+    }
+
+    /// The editor signal is one documented string, the same on Windows,
+    /// macOS and Linux. It is taken from a value handed in, never from
+    /// the ambient environment, so the rule is testable and no test can
+    /// disturb another by exporting a variable.
+    #[test]
+    fn a_vscode_family_terminal_is_a_copilot_surface() {
+        use std::ffi::OsStr;
+        assert!(editor_reads_copilot_instructions(Some(OsStr::new(
+            "vscode"
+        ))));
+        // VS Code writes it lowercase; a fork that shouts is still one
+        assert!(editor_reads_copilot_instructions(Some(OsStr::new(
+            "vsCode"
+        ))));
+
+        // Every other terminal is just a terminal.
+        for other in ["tmux", "iTerm.app", "Apple_Terminal", "WezTerm", ""] {
+            assert!(
+                !editor_reads_copilot_instructions(Some(OsStr::new(other))),
+                "{other} is not an editor with Copilot in it"
+            );
+        }
+        // tmux overwrites TERM_PROGRAM and sudo drops it: a No is "we
+        // cannot tell", never "this machine has no Copilot".
+        assert!(!editor_reads_copilot_instructions(None));
     }
 }

@@ -420,10 +420,16 @@ This does four things:
 
 The tool-specific instruction files are intentionally short: they tell the AI its member ID, the correct `Co-Authored-By:` trailer for commits (with the canonical brand and email per tool), and point it at `joy ai tutorial` as the operational guide. `joy ai tutorial` covers the CLI surface, the authentication flow, the item lifecycle, commit conventions, and minimum hygiene rules; together with the project's authoritative docs, that is everything the AI needs.
 
-For AI tools that `joy ai init` cannot auto-detect (e.g. GitHub Copilot Chat in VS Code, Cursor's built-in chat, any other chat-only AI), register a member by hand:
+GitHub Copilot needs no special handling any more, in the editor or out of it. `joy ai init` finds it under `copilot`, under `gh copilot`, and in a VS Code-family editor even when neither command is installed: Copilot Chat is built into VS Code and reads the very files joy writes. All of it registers the one member `ai:copilot@joy`. If the run happens somewhere the editor cannot be seen from (inside tmux, over ssh, under sudo), name it directly:
 
 ```sh
-joy project member add ai:copilot-chat@joy
+joy ai init --tool copilot
+```
+
+For an AI joy genuinely cannot detect, such as a chat assistant with no CLI and no instruction files of its own, register a member by hand:
+
+```sh
+joy project member add ai:my-assistant@joy
 ```
 
 `joy project member add` for an `ai:` ID skips the OTP machinery and prints the next steps for issuing a delegation token.
@@ -442,7 +448,7 @@ AI tools are registered as project members with an `ai:` prefix:
 
 ```sh
 joy project member add ai:claude@joy          # detected automatically by `joy ai init`
-joy project member add ai:copilot-chat@joy    # manual entry for chat-only tools
+joy project member add ai:my-assistant@joy   # manual entry for an AI joy cannot detect
 ```
 
 When an AI runs a Joy command, it authenticates with the delegation token you handed it; the token tells the CLI which AI member is acting and which human delegated. There is no `--author` flag, and the AI does not need to repeat its identity per call. The event log traces accountability back to that human:

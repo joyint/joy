@@ -105,13 +105,15 @@ joy auth token add ai:<name>@joy
 If you do not see your row, you are not registered. Ask the operator to register you. The operator runs one of these:
 
 ```
-joy project member add ai:copilot-chat@joy --with-token
 joy ai init
+joy project member add ai:<name>@joy --with-token
 ```
 
-`member add --with-token` works for any tool, including chat-only tools like Copilot or Cursor. It registers you and prints a token in one step. `joy ai init` works only for tools Joy can detect. It writes instruction files and registers you. After `joy ai init`, the operator runs `joy auth token add ai:<name>@joy` to create the token.
+`joy ai init` is the one to ask for if Joy can detect you. It writes your instruction files and registers you; afterwards the operator runs `joy auth token add ai:<name>@joy` for the token. If you are GitHub Copilot, this covers you in every form: the `copilot` command, `gh copilot`, and Copilot Chat inside a VS Code-family editor, which reads the same files. All three are the one member `ai:copilot@joy`, so do not ask for `ai:copilot-chat@joy`.
 
-Suggest a name based on the tool you are, for example `ai:copilot-chat@joy` or `ai:cursor@joy`. This is only a suggestion. The real ID is returned with the token.
+`member add --with-token` is for an AI Joy cannot detect at all. It registers you and prints a token in one step, but writes no instruction files.
+
+Suggest a name based on the tool you are, for example `ai:cursor@joy`. This is only a suggestion. The real ID is returned with the token.
 
 The operator gives you a token starting with `joy_t_`. Redeem it yourself, one time:
 
@@ -124,7 +126,7 @@ The response contains three values:
 ```
 { "data": {
     "session_env": "joy_s_...",
-    "member": "ai:copilot-chat@joy",
+    "member": "ai:copilot@joy",
     "delegated_by": "operator@example.com"
 } }
 ```

@@ -50,8 +50,13 @@ SH
 }
 
 # </dev/null accepts every prompt's default, as in ai.bats.
+#
+# The editor signal is always stated, never inherited: run this suite
+# inside a real VS Code terminal and an inherited TERM_PROGRAM would make
+# every "no Copilot here" test detect one. $EDITOR_SIGNAL is what each
+# test decides.
 init_and_detect() {
-    joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
+    TERM_PROGRAM="${EDITOR_SIGNAL:-none}" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
 }
 
 @test "ai init detects Copilot under the plain copilot command" {
@@ -95,6 +100,35 @@ init_and_detect() {
     fake_gh without-copilot
 
     init_and_detect
+
+    [ ! -f .github/copilot-instructions.md ]
+    ! grep -q "ai:copilot@joy" .joy/project.yaml
+}
+
+# Copilot is not only a CLI. An editor of the VS Code family has Copilot
+# Chat built in and reads the very files this tool writes, so somebody who
+# never installed a binary is still a Copilot user. They used to be told
+# to register a member by hand; now `joy ai init` offers it where the
+# instructions actually apply.
+@test "ai init offers Copilot in a VS Code family terminal with no CLI at all" {
+    setup_human_auth
+    isolated_path
+    [ ! -e "$BIN_DIR/copilot" ]
+    [ ! -e "$BIN_DIR/gh" ]
+
+    EDITOR_SIGNAL=vscode init_and_detect
+
+    [ -f .github/copilot-instructions.md ]
+    grep -q "ai:copilot@joy" .joy/project.yaml
+}
+
+# The same run outside such an editor finds nothing: the signal is what
+# makes the difference, not a tool that was there all along.
+@test "no editor and no CLI means no Copilot" {
+    setup_human_auth
+    isolated_path
+
+    EDITOR_SIGNAL=tmux init_and_detect
 
     [ ! -f .github/copilot-instructions.md ]
     ! grep -q "ai:copilot@joy" .joy/project.yaml
