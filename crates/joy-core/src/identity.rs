@@ -22,11 +22,11 @@
 //! [`crate::privacy::member_key_for_any`], because a forge account can
 //! vouch for more than one address. A match is the member.
 //!
-//! The device pin that used to stand at step 2 before this correction
-//! ([`MEMBER_PIN_KEY`], [`pinned_member`]) is retired from here for
-//! good: it is never read to decide an identity again. Its writers
-//! ([`pin_acting_member`]) stay in place for the other things a pin is
-//! still used for on this device, but nothing in this function reads one.
+//! The device pin that used to stand at step 2 before this correction is
+//! gone from the whole module now, not only from this function: nothing
+//! in joy writes or reads one any more (a later addition to the same
+//! item, JOY-02AE-1A). [`acting_member`] follows this same order too,
+//! see its own doc for the one way it still differs from this function.
 //!
 //! A machine that answers none of the four, a fresh clone with no git
 //! config and no forge login, or a checkout whose git config and forge
@@ -170,12 +170,12 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                     } else if let Some(ref current_pid) = project_id {
                         // JOY_SESSION is a valid live AI session, but for a
                         // different project. Silently falling back to the
-                        // pinned identity would confuse the caller when
-                        // the subsequent guard denial names the human
-                        // instead of the AI they thought they were acting
-                        // as. Emit a one-line stderr hint and continue
-                        // with the fallback so read-only commands still
-                        // work.
+                        // identity below (git config or the forge account)
+                        // would confuse the caller when the subsequent guard
+                        // denial names the human instead of the AI they
+                        // thought they were acting as. Emit a one-line
+                        // stderr hint and continue with the fallback so
+                        // read-only commands still work.
                         hint_once(&cross_project_session_warning(
                             &sess.claims.project_id,
                             &sess.claims.member,
@@ -302,96 +302,6 @@ fn session_identity(root: &Path, member: &str, project: &Option<Project>) -> Opt
     })
 }
 
-/// The member this device acts as in this project, as
-/// [`pin_acting_member`] wrote it. `None` when nothing is pinned or the
-/// pinned member is no longer a member of the project (removed, or the
-/// project was rekeyed to anonymous mode).
-///
-/// [`resolve_identity`] does not call this any more (operator decision
-/// 2026-09-19, JOY-02AE-1A, correcting D3.9): the pin is never read to
-/// decide who is acting. What is left of it is the enrolment-time
-/// question [`acting_member`] still asks ("who does a bare `joy auth`
-/// authenticate as, before a git config or an explicit `--user` names
-/// somebody"), and the display line in `joy auth status` that names the
-/// pin as the reason a member was already known before this correction.
-pub fn pinned_member(root: &Path, project: &Project) -> Option<String> {
-    let pin = read_member_pin(root)?;
-    project.member_by_key(&pin).is_some().then_some(pin)
-}
-
-/// The raw pin, whether or not it still names a member.
-fn read_member_pin(root: &Path) -> Option<String> {
-    let path = crate::auth::session::app_state_project_file(root).ok()?;
-    let text = std::fs::read_to_string(path).ok()?;
-    let state: serde_json::Value = serde_json::from_str(&text).ok()?;
-    state
-        .get(MEMBER_PIN_KEY)?
-        .as_str()
-        .map(str::to_string)
-        .filter(|pin| !pin.is_empty())
-}
-
-/// The key of the pin inside the per-project app state file (ADR
-/// JAPP-02BD-56). The file is the person's own device state, never the
-/// repository: a pin is one person's choice on one machine and must not
-/// travel to the team through a committed file.
-const MEMBER_PIN_KEY: &str = "member";
-
-/// Remember `member` as the one this device acts as in this project.
-/// Called at the three moments where a person says who they are on this
-/// machine: founding the project, enrolling in it, and authenticating in
-/// it.
-///
-/// As of the operator's 2026-09-19 correction (JOY-02AE-1A) this write is
-/// no longer what makes an identity answer: [`resolve_identity`] reads
-/// git config and the forge account instead, and never this pin. The
-/// write stays because [`acting_member`] still reads it for the
-/// enrolment-time question ("who does a bare `joy auth` authenticate
-/// as"), and because `joy auth status` names it when it happens to be
-/// the reason a member was already known. A future cleanup may remove it
-/// once nothing reads it either; until then it costs nothing to keep.
-///
-/// `project` is the project the member belongs to; a pin is only worth
-/// keeping for a member it actually knows.
-///
-/// Best effort: a state directory that cannot be written costs a pin, not
-/// the enrolment that just succeeded.
-pub fn pin_acting_member(root: &Path, project: &Project, member: &str) {
-    if project.member_by_key(member).is_none() {
-        return;
-    }
-    if let Err(e) = set_member_pin(root, member) {
-        eprintln!("Warning: could not remember the acting member on this device: {e}");
-    }
-}
-
-/// Write the pin into the per-project app state file, keeping every other
-/// key in it (the forge login of D4.1c lives in the same object).
-fn set_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
-    let path = crate::auth::session::app_state_project_file(root)?;
-    let mut state: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .as_deref()
-        .and_then(|text| serde_json::from_str(text).ok())
-        .unwrap_or_else(|| serde_json::json!({}));
-    if !state.is_object() {
-        state = serde_json::json!({});
-    }
-    state[MEMBER_PIN_KEY] = serde_json::Value::String(member.to_string());
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| JoyError::CreateDir {
-            path: parent.to_path_buf(),
-            source: e,
-        })?;
-    }
-    let text = serde_json::to_string_pretty(&state)
-        .map_err(|e| JoyError::AuthFailed(format!("cannot write the member pin: {e}")))?;
-    std::fs::write(&path, text).map_err(|e| JoyError::WriteFile {
-        path: path.clone(),
-        source: e,
-    })
-}
-
 /// The at-rest member key the current command acts as (operator decision
 /// 2026-09-19, JOY-02AE-1A, correcting D3.9 of package J11). Every
 /// joy-cli command that needs to know who is acting asks this and
@@ -484,27 +394,31 @@ pub fn git_config_prefill() -> Option<String> {
         .filter(|email| !email.is_empty())
 }
 
-/// The member a local enrolment or authentication acts as, resolved
-/// WITHOUT demanding a git config (D3.9): the address the host named
-/// (`--user`, the app's mask), then the member pinned on this device,
-/// then git config as a prefill. The typed error when nothing answers.
+/// The member a bare `joy auth`, `joy auth init` or `joy auth --otp`
+/// acts as before anybody typed a name: the same order
+/// [`resolve_identity`] follows now that the device pin is gone from
+/// both of them (operator decision 2026-09-19, JOY-02AE-1A, correcting
+/// D3.9, completed in a later addition to the same item) -- an explicit
+/// name first, then this repository's own git config (local before
+/// global), then the account the forge tool for the remote's host
+/// reports -- and the typed error when none of the three answers.
 ///
-/// This is a different question from [`resolve_identity`]'s and the
-/// operator's 2026-09-19 correction (JOY-02AE-1A) leaves it as it was:
-/// this answers "who does a bare `joy auth` or enrolment act as before
-/// anybody typed a name", where offering the pin first and the git
-/// config only as a prefill is still right, because the person is being
-/// ASKED and can correct either.
+/// This still differs from [`resolve_identity`] in what it hands back:
+/// that function checks each candidate against `project.yaml` before
+/// answering, because it decides who IS acting; this one hands back the
+/// raw candidate, unchecked, because its callers ask the question
+/// earlier, before a member necessarily exists to check against (`joy
+/// auth init --user <address>` the very first time), or do their own
+/// check right after (every caller reports "X is not a registered
+/// project member" by name), or do a fuller check on top of this one
+/// (`joy auth`'s passphrase path also tries the forge-alias fallback of
+/// [`crate::privacy::member_key_for_email_or_forge`], which is how a
+/// forge alias sitting in git config still finds its member).
 ///
-/// These three are the whole list. Guessing a member from the project
-/// (for instance "it has only one human") is deliberately not in it: the
-/// project file travels with every clone, so a guess would let anyone who
-/// clones a project claim the member it guesses, while the pin is this
-/// device's own state and `--user` is a person speaking.
-///
-/// The git config address is returned raw, not resolved to a member key,
-/// so every existing "X is not a registered project member" text keeps
-/// naming what the person configured.
+/// The project is never guessed from (for instance "it has only one
+/// human"): the project file travels with every clone, so a guess would
+/// let anyone who clones an unenrolled project claim the member it
+/// guesses.
 pub fn acting_member(
     root: &Path,
     project: &Project,
@@ -513,10 +427,28 @@ pub fn acting_member(
     if let Some(named) = named.map(str::trim).filter(|n| !n.is_empty()) {
         return Ok(named.to_string());
     }
-    if let Some(pin) = pinned_member(root, project) {
-        return Ok(pin);
+    let (_, config_email) = crate::vcs::forge::user_identity(root);
+    if let Some(email) = config_email.filter(|s| !s.trim().is_empty()) {
+        return Ok(email);
     }
-    git_config_prefill().ok_or(JoyError::UnknownActingMember)
+    forge_account_candidate(root, project).ok_or(JoyError::UnknownActingMember)
+}
+
+/// The last of [`acting_member`]'s three sources: an address the account
+/// the forge tool for the remote's host reports vouches for, not yet
+/// checked against `project.yaml` (the caller does that). This asks the
+/// same plugin the same question [`member_key_from_forge_account`] does
+/// for [`resolve_identity`], stopped one step short of that function's
+/// own validation, because `acting_member`'s callers are not all sure a
+/// member exists yet either.
+fn forge_account_candidate(root: &Path, project: &Project) -> Option<String> {
+    let remotes = crate::vcs::default_vcs()
+        .all_remotes(root)
+        .unwrap_or_default();
+    let ctx = crate::forge_plugins::CallContext::in_project(root);
+    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
+    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
+    acting.emails.first().cloned()
 }
 
 /// The signature a commit of `member` carries in THIS checkout (D4.5).
@@ -541,7 +473,6 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
     let (config_name, config_email) = crate::vcs::forge::user_identity(root);
     let config_name = config_name.filter(|_| {
         config_name_belongs_to(
-            root,
             project.as_ref(),
             key.as_deref(),
             member,
@@ -555,27 +486,15 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
 /// of `member` (D4.5: "name is git config `user.name` when it maps to the
 /// acting member, else the member id").
 ///
-/// Two ways a name maps to a member, and the config decides which
-/// question is asked:
-///
-/// - With a `user.email`, that address answers it. A checkout configured
-///   for somebody else does not lend its display name to my commit, and
-///   an address the project cannot place lends nothing either.
-/// - With NO `user.email`, the config names nobody, and the member this
-///   device pinned answers instead (D3.9). This is the half of J11's
-///   acceptance that the email branch alone would break: removing ONLY
-///   `user.email` and keeping `user.name` used to drop the author's name
-///   from every commit joy writes, because the name was gated on the
-///   address. Now it does not, and the author line is byte identical
-///   before and after the removal.
-///
-///   This pin read is untouched by the operator's 2026-09-19 correction
-///   (JOY-02AE-1A): that correction is about [`resolve_identity`]
-///   deciding WHICH member acts, and this function answers a narrower,
-///   later question about a member already decided, whether ITS commit
-///   may also borrow this checkout's display name.
+/// The one way a name maps to a member: a `user.email` in the SAME git
+/// config resolves to it. A checkout configured for somebody else does
+/// not lend its display name to my commit, and an address the project
+/// cannot place lends nothing either. A config carrying `user.name` with
+/// NO `user.email` names nobody at all: the device pin that used to
+/// answer this case is gone (JOY-02AE-1A) and nothing replaces it, so
+/// the name in the same git config the member came from may be
+/// borrowed, and that is the whole rule now.
 fn config_name_belongs_to(
-    root: &Path,
     project: Option<&Project>,
     key: Option<&str>,
     member: &str,
@@ -588,10 +507,7 @@ fn config_name_belongs_to(
             }
             _ => email == member,
         },
-        None => match (project, key) {
-            (Some(project), Some(key)) => pinned_member(root, project).as_deref() == Some(key),
-            _ => false,
-        },
+        None => false,
     }
 }
 
