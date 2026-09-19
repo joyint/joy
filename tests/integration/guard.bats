@@ -237,16 +237,17 @@ EOF
 
 @test "unregistered member cannot perform actions" {
     setup_team_project
-    # Naming yourself is the only way to act as somebody in a project
-    # since package J11: git config decides nothing any more, so a
-    # stranger has to say who they are, and the project answers that it
-    # does not know them.
+    # --user always beats git config, so a stranger typing their own
+    # address is refused the same way whether or not this repository's
+    # git config names anyone (JOY-02AE-1A, correcting D3.9).
     run joy auth --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 
-    # And on a machine nobody has named themselves on, the write is
-    # refused outright rather than credited to whoever worked here last.
+    # And on a machine nobody has named themselves on -- no session, no
+    # git config either, since forget_this_device clears both now -- the
+    # write is refused outright rather than credited to whoever worked
+    # here last.
     forget_this_device
     run joy comment "$ITEM_ID" "Stranger comment"
     [ "$status" -ne 0 ]
