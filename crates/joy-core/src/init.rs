@@ -334,13 +334,6 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 
     store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
 
-    // This device founded the project, so this device acts as the founder
-    // until somebody says otherwise (D3.9). Without the pin, the next
-    // command on a machine with no git config would have to guess, and a
-    // guess read from the committed project file would let anyone who
-    // clones the project claim the founder's member.
-    crate::identity::pin_acting_member(root, &project, &founder_email);
-
     let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     let defaults_rel = format!("{}/{}", store::JOY_DIR, store::CONFIG_DEFAULTS_FILE);
     crate::git_ops::auto_git_add(root, &[&project_rel, &defaults_rel]);
@@ -508,7 +501,6 @@ pub fn ensure_founder(
         crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
     )?;
     store::write_yaml(&project_path, &project)?;
-    crate::identity::pin_acting_member(root, &project, &email);
     let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     crate::git_ops::auto_git_add(root, &[&rel]);
     Ok(FounderHeal::Registered(email))
