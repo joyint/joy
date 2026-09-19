@@ -3,25 +3,38 @@
 
 //! Identity resolution for Joy CLI operations.
 //!
-//! Resolves the acting user's identity from, in this order (D3.9):
-//! 1. The delegation session in `JOY_SESSION`
-//! 2. The member this device pinned, written when a person founded this
-//!    project, enrolled in it, or authenticated here
+//! Resolves the acting user's identity from, in this order (operator
+//! decision 2026-09-19, item JOY-02AE-1A, correcting D3.9 of
+//! docs/design/forge-connection-ng.md):
+//! 1. The delegation session in `JOY_SESSION` (unchanged: an AI's
+//!    identity has never come from anywhere else).
+//! 2. `git config user.email` of the repository (`--local`).
+//! 3. `git config user.email` global. One git2 read answers both: the
+//!    config git2 opens through the repository already tries local
+//!    before global before system (see
+//!    [`crate::vcs::forge::user_identity`]), so a value only the global
+//!    file carries is found the moment the local file has none.
+//! 4. The account the forge tool for the remote's host reports (`gh`,
+//!    `glab`, `tea`), matched by an address its own API vouches for.
 //!
-//! That is the whole list, and it is two items long. `git config
-//! user.email` is NOT in it: since package J11 no joy command decides an
-//! identity from it, which is what makes "removing `user.email` from git
-//! config in a joy project changes no joy command's behaviour" a true
-//! sentence. git config appears in exactly two places afterwards, both of
-//! them prefills: [`git_config_prefill`], the address joy OFFERS a person
-//! when it asks them who they are, and the display name in
-//! [`commit_signature`].
+//! That is the whole list. Steps 2 and 3 are held against `project.yaml`
+//! through [`crate::privacy::member_key_for_email`]; step 4 through
+//! [`crate::privacy::member_key_for_any`], because a forge account can
+//! vouch for more than one address. A match is the member.
 //!
-//! A machine that can answer neither question, a fresh clone or a second
-//! machine, is told so instead of being guessed at:
-//! [`acting_member_key`] and [`acting_human_key`] answer
-//! [`JoyError::UnknownActingMember`], whose text names the one command
-//! that settles it for good.
+//! The device pin that used to stand at step 2 before this correction
+//! ([`MEMBER_PIN_KEY`], [`pinned_member`]) is retired from here for
+//! good: it is never read to decide an identity again. Its writers
+//! ([`pin_acting_member`]) stay in place for the other things a pin is
+//! still used for on this device, but nothing in this function reads one.
+//!
+//! A machine that answers none of the four, a fresh clone with no git
+//! config and no forge login, or a checkout whose git config and forge
+//! account both name nobody the project knows, is told so instead of
+//! being guessed at: [`acting_member_key`] and [`acting_human_key`]
+//! answer [`JoyError::UnknownActingMember`], whose text names the git
+//! config the person can set. A read-only command keeps working with an
+//! EMPTY member, exactly as it did before this correction.
 //!
 //! AI members authenticate via `joy auth --token`, which creates a
 //! session. There is no self-declared identity override.
@@ -63,50 +76,30 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority (D3.9 of the forge connection NG design): the delegation
-/// session first, then the member this device pinned, and nothing else.
+/// Priority (operator decision 2026-09-19, item JOY-02AE-1A, correcting
+/// D3.9 of the forge connection NG design): the delegation session
+/// first, then git config, then the forge account, and nothing else.
 /// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
-/// 2. The member key: the member this device pinned
-/// 3. A human session for that member
-/// 4. Fallback: the same key, unauthenticated
+/// 2. The member key: `git config user.email`, repository then global
+///    (one read; see [`member_key_from_git_config`])
+/// 3. Failing that, the forge account for the remote's host (see
+///    [`member_key_from_forge_account`])
+/// 4. A human session for that member
+/// 5. Fallback: the same key, unauthenticated
 ///
-/// There is no git config step. A machine that pinned nobody answers with
-/// an EMPTY member, and the callers that need a name
-/// ([`acting_member_key`], [`acting_human_key`]) turn that into
+/// (Steps 2 and 3 are the module doc's steps 2 to 4; they are numbered
+/// together here because they fill the same variable below.)
+///
+/// A machine whose git config and forge account both name nobody the
+/// project knows answers with an EMPTY member, and the callers that need
+/// a name ([`acting_member_key`], [`acting_human_key`]) turn that into
 /// [`JoyError::UnknownActingMember`]; a read-only command keeps working
 /// with no member, exactly as it does on a machine with no git identity
-/// today. The prefill a person is OFFERED lives in
+/// at all. The prefill a person is OFFERED lives in
 /// [`git_config_prefill`], which only `--user`-shaped paths call.
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
-    // No git config is read here, in any branch: an identity is a session
-    // or a pin (D3.9, package J11). An AI identity comes entirely from
-    // JOY_SESSION and never needed one (JI-0175-B0); a human identity is
-    // the member this device pinned when the person said who they are.
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
-
-    // The device pin is the whole human answer (D3.9): it is what the
-    // person who founded, enrolled or authenticated on this machine
-    // chose, while git config is a machine setting that nobody promised
-    // joy anything about, and that a second person on the same machine or
-    // a fresh clone would answer wrongly. It is a key of the member map,
-    // so an anonymous project (ADR-042) needs no special case here.
-    //
-    // `acting_member` uses the same order and then falls back to the git
-    // config PREFILL, because it serves the paths where a person is being
-    // asked for an address and can correct the offer.
-    //
-    // The one deliberate difference between the two: a delegation session
-    // outranks both (step 1 below), and `acting_member` does not read it,
-    // because a session names an AI and the commands that call
-    // `acting_member` enrol or authenticate a human. A command that needs
-    // the human under a delegation session asks `acting_human_key`, which
-    // answers with the operator the session was signed for, so the two
-    // still agree about the person.
-    let member_key = project
-        .as_ref()
-        .and_then(|p| pinned_member(root, p))
-        .unwrap_or_default();
 
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
     //    the session (ADR-033). We derive the public key from it and match
@@ -194,20 +187,78 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         }
     }
 
-    // 2. The human session of the member the key names.
+    // 2 and 3. git config, then the forge account, tried only now: a
+    // delegated AI session already returned above, so this never reads a
+    // config file or spawns a plugin for a command JOY_SESSION already
+    // answered. `member_key_from_git_config` is one git2 read that
+    // answers the repository and the global step together (see the
+    // module doc); `member_key_from_forge_account` is asked only when
+    // that read names nobody the project knows.
+    let member_key = project
+        .as_ref()
+        .and_then(|p| {
+            member_key_from_git_config(root, p).or_else(|| member_key_from_forge_account(root, p))
+        })
+        .unwrap_or_default();
+
+    // 4. The human session of the member the key names: a passphrase
+    //    session (`joy auth --user <address>`) turns the resolved address
+    //    into an authenticated identity rather than a merely plausible
+    //    one.
     if let Some(session_identity) = session_identity(root, &member_key, &project) {
         return Ok(session_identity);
     }
 
-    // 3. Fallback: the pinned member key, not authenticated. Empty when
-    //    this device pinned nobody, which is a fresh clone or a second
-    //    machine; the callers that need a name say so (see the note on
-    //    this function).
+    // 5. Fallback: the resolved key, not authenticated. Empty when
+    //    nothing answered at all: no git config names a member and no
+    //    forge account does either, which is a fresh clone, a second
+    //    machine, or an address the project does not (yet) know. The
+    //    callers that need a name say so (see the note on this
+    //    function); a read-only command keeps working with no member.
     Ok(Identity {
         member: member_key.into(),
         delegated_by: None,
         authenticated: false,
     })
+}
+
+/// Steps 2 and 3 of [`resolve_identity`]'s order: the repository's own
+/// `user.email`, then the person's global one. `git2`'s own config
+/// layering already tries local before global before system when asked
+/// through the repository's `Config` ([`crate::vcs::forge::user_identity`]
+/// reads it exactly that way), so ONE read answers both steps: a value
+/// only the global file carries is found the moment the local file has
+/// none, and there is no separate "global only" reader to keep in step
+/// with git's own precedence.
+fn member_key_from_git_config(root: &Path, project: &Project) -> Option<String> {
+    let (_, email) = crate::vcs::forge::user_identity(root);
+    crate::privacy::member_key_for_email(project, &email?)
+}
+
+/// Step 4 of [`resolve_identity`]'s order, and the last one: the account
+/// the forge tool for the current remote's host reports, matched by an
+/// address its own API vouches for. Asked only when no git config named
+/// a member, because a forge login is a credential to ONE host, never a
+/// project wide identity (operator decision 2026-09-19, JOY-02AE-1A).
+///
+/// `None` on every one of: no remote configured, no installed connector
+/// claims the remote's host, the connector answers `known: false`
+/// (nobody signed in there), or none of the addresses it vouches for
+/// (`ForgeIdentity::emails`) is a member. This reuses
+/// [`crate::forge_plugins::responsible_plugin`] and
+/// [`crate::forge_plugins::identity`] exactly as
+/// [`crate::privacy::member_key_for_email_or_forge`] does, rather than
+/// duplicating them: joy-core holds no forge knowledge of its own, so
+/// "which plugin answers for this remote" and "who is signed in there"
+/// stay the plugin's judgement, never this function's.
+fn member_key_from_forge_account(root: &Path, project: &Project) -> Option<String> {
+    let remotes = crate::vcs::default_vcs()
+        .all_remotes(root)
+        .unwrap_or_default();
+    let ctx = crate::forge_plugins::CallContext::in_project(root);
+    let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
+    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
+    crate::privacy::member_key_for_any(project, &acting.emails)
 }
 
 /// Print one identity hint to stderr, at most once per process.
@@ -243,8 +294,7 @@ fn session_identity(root: &Path, member: &str, project: &Option<Project>) -> Opt
     // file alone (ADR-033), so this path never carries a delegation and
     // has nobody to name as the operator behind it. The AI branch of
     // `resolve_identity` above reads its operator out of the SIGNED
-    // session claims; the reading of `git config user.email` that used to
-    // stand here guessed one, and a guess is not an identity (D3.9).
+    // session claims instead.
     Some(Identity {
         member: member.into(),
         delegated_by: None,
@@ -256,6 +306,14 @@ fn session_identity(root: &Path, member: &str, project: &Option<Project>) -> Opt
 /// [`pin_acting_member`] wrote it. `None` when nothing is pinned or the
 /// pinned member is no longer a member of the project (removed, or the
 /// project was rekeyed to anonymous mode).
+///
+/// [`resolve_identity`] does not call this any more (operator decision
+/// 2026-09-19, JOY-02AE-1A, correcting D3.9): the pin is never read to
+/// decide who is acting. What is left of it is the enrolment-time
+/// question [`acting_member`] still asks ("who does a bare `joy auth`
+/// authenticate as, before a git config or an explicit `--user` names
+/// somebody"), and the display line in `joy auth status` that names the
+/// pin as the reason a member was already known before this correction.
 pub fn pinned_member(root: &Path, project: &Project) -> Option<String> {
     let pin = read_member_pin(root)?;
     project.member_by_key(&pin).is_some().then_some(pin)
@@ -284,18 +342,14 @@ const MEMBER_PIN_KEY: &str = "member";
 /// machine: founding the project, enrolling in it, and authenticating in
 /// it.
 ///
-/// The pin is written every time, whether or not git config happens to
-/// name the same person. That is what makes the second half of D3.9 true:
-/// once the member is known on this device, removing `user.email` changes
-/// no command's behaviour, because no command was standing on it. The
-/// alternative, dropping the pin whenever git config agrees with it, puts
-/// a joy project back on a git setting the moment that setting is
-/// removed, and leaves the person with nothing but their own memory.
-///
-/// The pin is read before git config (D3.9), so it also answers on a
-/// machine whose git config names somebody else. That is the point of it:
-/// a person who wants to act as somebody else here says so once
-/// (`--user`, or authenticating as them), and that re-pins.
+/// As of the operator's 2026-09-19 correction (JOY-02AE-1A) this write is
+/// no longer what makes an identity answer: [`resolve_identity`] reads
+/// git config and the forge account instead, and never this pin. The
+/// write stays because [`acting_member`] still reads it for the
+/// enrolment-time question ("who does a bare `joy auth` authenticate
+/// as"), and because `joy auth status` names it when it happens to be
+/// the reason a member was already known. A future cleanup may remove it
+/// once nothing reads it either; until then it costs nothing to keep.
 ///
 /// `project` is the project the member belongs to; a pin is only worth
 /// keeping for a member it actually knows.
@@ -338,11 +392,12 @@ fn set_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
     })
 }
 
-/// The at-rest member key the current command acts as (D3.9, package
-/// J11). Every joy-cli command that needs to know who is acting asks
-/// this and nothing else, so the order lives in one place:
-/// [`resolve_identity`] reads the delegation session first, then the
-/// member this device pinned, and nothing after that.
+/// The at-rest member key the current command acts as (operator decision
+/// 2026-09-19, JOY-02AE-1A, correcting D3.9 of package J11). Every
+/// joy-cli command that needs to know who is acting asks this and
+/// nothing else, so the order lives in one place: [`resolve_identity`]
+/// reads the delegation session first, then git config, then the forge
+/// account, and nothing after that.
 ///
 /// The answer is a key of the member map, never an address: an anonymous
 /// project (ADR-042) answers with its opaque `m-<hex>` id, so a caller
@@ -350,12 +405,11 @@ fn set_member_pin(root: &Path, member: &str) -> Result<(), JoyError> {
 /// trailer writes no cleartext address there by accident.
 ///
 /// [`JoyError::UnknownActingMember`] when nothing answers at all: no
-/// session and no pin, which is a fresh clone or a second machine. git
-/// config is not consulted, not even as a last resort, so a machine
-/// whose `user.email` happens to name a member is refused here as
-/// clearly as one with no git identity at all. A command that lets a
-/// person name somebody (`--user`) asks [`acting_member`] instead, which
-/// takes that name first and offers the git config as a prefill.
+/// session, no git config naming a member, and no forge account naming
+/// one either, which is a fresh clone or a second machine with neither
+/// configured. A command that lets a person name somebody (`--user`)
+/// asks [`acting_member`] instead, which takes that name first and
+/// offers the git config as a prefill.
 ///
 /// This answers with the AI member under a delegation session, because
 /// that is who is acting. A command that needs the human BEHIND the
@@ -415,10 +469,13 @@ pub fn acting_human_key(root: &Path) -> Result<String, JoyError> {
 /// The address joy OFFERS a person when it asks them who they are: git
 /// config `user.email`, empty treated as absent.
 ///
-/// This is the one use of git config that D3.9 keeps, and it is a
-/// prefill, never a source: the person at the terminal sees it and can
-/// type something else. Nothing that decides an identity on its own may
-/// call it; those call [`acting_member_key`] or [`acting_member`].
+/// This reads the CURRENT DIRECTORY's config, not `root`'s, because it
+/// serves interactive prompts that already run at the project root; it
+/// is a prefill, and the person at the terminal can type something else
+/// instead. [`resolve_identity`] does not call this: since the operator's
+/// 2026-09-19 correction (JOY-02AE-1A) git config IS a source there
+/// again, read directly and root-scoped through
+/// [`crate::vcs::forge::user_identity`], not through this offer.
 pub fn git_config_prefill() -> Option<String> {
     crate::vcs::default_vcs()
         .user_email()
@@ -431,6 +488,13 @@ pub fn git_config_prefill() -> Option<String> {
 /// WITHOUT demanding a git config (D3.9): the address the host named
 /// (`--user`, the app's mask), then the member pinned on this device,
 /// then git config as a prefill. The typed error when nothing answers.
+///
+/// This is a different question from [`resolve_identity`]'s and the
+/// operator's 2026-09-19 correction (JOY-02AE-1A) leaves it as it was:
+/// this answers "who does a bare `joy auth` or enrolment act as before
+/// anybody typed a name", where offering the pin first and the git
+/// config only as a prefill is still right, because the person is being
+/// ASKED and can correct either.
 ///
 /// These three are the whole list. Guessing a member from the project
 /// (for instance "it has only one human") is deliberately not in it: the
@@ -504,6 +568,12 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
 ///   from every commit joy writes, because the name was gated on the
 ///   address. Now it does not, and the author line is byte identical
 ///   before and after the removal.
+///
+///   This pin read is untouched by the operator's 2026-09-19 correction
+///   (JOY-02AE-1A): that correction is about [`resolve_identity`]
+///   deciding WHICH member acts, and this function answers a narrower,
+///   later question about a member already decided, whether ITS commit
+///   may also borrow this checkout's display name.
 fn config_name_belongs_to(
     root: &Path,
     project: Option<&Project>,

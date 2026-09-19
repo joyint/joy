@@ -15,25 +15,28 @@ pub enum JoyError {
     NoFounderIdentity,
 
     /// A write needs an acting member and none is known: no delegation
-    /// session and no member pinned on this device (D4.5). git config is
-    /// not consulted here since package J11, so a checkout whose
-    /// `user.email` names a member is refused as clearly as one with no
-    /// git identity at all.
+    /// session, no git config naming a member, and no forge account
+    /// naming one either (operator decision 2026-09-19, JOY-02AE-1A,
+    /// correcting D3.9 of package J11). A checkout whose `user.email`
+    /// names a member is answered by that address now; this error is for
+    /// the one that answers nothing at all.
     ///
     /// The first line is the sentence D4.5 writes, and it is the whole
     /// remedy in the app, whose host has a member picker. The rest is
     /// marked as the command line's own, because this error reaches the
     /// command line too, and from commands that take no `--user` of their
-    /// own (`joy crypt`, `joy deauth`, `joy auth passphrase`). The one
-    /// remedy that works for all of them is to authenticate once: that
-    /// pins the member on this device (D3.9), and every later command
-    /// knows them.
+    /// own (`joy crypt`, `joy deauth`, `joy auth passphrase`). Setting
+    /// `git config user.email` to a registered member's address is the
+    /// remedy that needs no further command; authenticating once
+    /// (`joy auth --user <address>`) works on a checkout with no git
+    /// config at all.
     #[error(
         "this project does not know who you are, pick your member\n\
-         In the app that is the member picker. On the command line, name \
-         yourself once: joy auth --user <address>, or joy auth init --user \
-         <address> when this member has no passphrase here yet. Either way, \
-         this device remembers the member afterwards."
+         In the app that is the member picker. On the command line, set \
+         git config user.email to a registered member's address \
+         (git config user.email <address>), or name yourself once: joy \
+         auth --user <address>, or joy auth init --user <address> when \
+         this member has no passphrase here yet."
     )]
     UnknownActingMember,
 
