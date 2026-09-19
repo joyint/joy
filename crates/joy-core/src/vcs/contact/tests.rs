@@ -1378,6 +1378,39 @@ fn an_https_remote_without_a_credential_is_polled_every_fifteen_minutes() {
     set_gaps("");
 }
 
+/// A public repository answers the first request, so a poll that carried
+/// a token never had to present it. The leg loop then says the token was
+/// in hand, and the host is not polled anonymously on the strength of a
+/// challenge that never came (JOY-02AC-C3, the case behind "Nobody is
+/// signed in for github.com" on a signed in machine).
+#[test]
+fn a_token_in_hand_keeps_a_public_repository_out_of_the_anonymous_lane() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_limits();
+    reset_throttle();
+    reset_anonymous_polls();
+    reset_credential_memory();
+    reset_token_memory();
+    set_gaps("default=0");
+
+    // the poll goes out with a token and comes back without a challenge
+    run_poll("https://public.test/o/r", "ls-remote", true, || Ok(())).unwrap();
+    assert!(
+        !credential_answers("public.test", Transport::Https, true),
+        "`run` alone reads a contact without a challenge as nothing presented"
+    );
+    // ...which is what the leg loop corrects for a leg built around a token
+    note_credential_in_hand("public.test", Transport::Https);
+    assert!(credential_answers("public.test", Transport::Https, true));
+    assert_eq!(
+        poll_period("public.test", "ls-remote", Transport::Https, true),
+        Duration::from_secs(1),
+        "the budget's period, not fifteen minutes"
+    );
+    run_poll("https://public.test/o/r", "ls-remote", true, || Ok(()))
+        .expect("the next poll is not held");
+}
+
 /// The ssh leg of D1.2 says nothing about the https twin behind it
 /// (JOY-02AC-C3). Horst met this on Windows on 2026-09-19: an ssh
 /// remote whose key libgit2 could not use, a connector that had a

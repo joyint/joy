@@ -1924,6 +1924,15 @@ pub fn credential_answers(host: &str, transport: Transport, claimed: bool) -> bo
             .unwrap_or(true)
 }
 
+/// The caller HAD a credential for this host over this transport, and
+/// the contact went through: the fact of D1.9, said by the one place that
+/// knows it (the leg loop, for a leg built around a forge token). A forge
+/// that never asked for the credential is not a forge nobody is signed in
+/// to.
+pub fn note_credential_in_hand(host: &str, transport: Transport) {
+    note_credential_answer(host, transport, true);
+}
+
 fn note_credential_answer(host: &str, transport: Transport, presented: bool) {
     if host.is_empty() {
         return;
