@@ -758,14 +758,15 @@ pub fn remove_legacy_ai_artifacts(root: &Path) -> Vec<String> {
     removed
 }
 
+/// Is this program installed on this machine?
+///
+/// Kept as the name everything here already asks by, but it no longer
+/// runs `which`: that is a unix program, so on Windows the probe failed
+/// for every tool and a machine with the tool installed was told it had
+/// none (JOY-0290-EA). The lookup now lives in joy-process, which is
+/// where the spawn that follows it lives too.
 pub fn which(binary: &str) -> bool {
-    joy_process::command("which")
-        .arg(binary)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    joy_process::resolve(binary).is_some()
 }
 
 /// Variables that make a launcher believe it may act unattended. `gh`
@@ -806,6 +807,12 @@ pub fn command_succeeds(argv: &str) -> bool {
 fn run_probe(argv: &str) -> bool {
     let mut parts = argv.split_whitespace();
     let Some(program) = parts.next() else {
+        return false;
+    };
+    // The resolved path, not the bare name: on Windows a bare name only
+    // ever finds an `.exe`, so a launcher installed as a `.cmd` shim
+    // would look absent while it works in the person's own terminal.
+    let Some(program) = joy_process::resolve(program) else {
         return false;
     };
     let mut command = joy_process::command(program);
