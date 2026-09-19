@@ -161,3 +161,43 @@ SH
     # and the honest answer survives the stripping: Copilot IS here
     grep -q "ai:copilot@joy" .joy/project.yaml
 }
+
+# Copilot reads skills now, so joy writes one instead of the `/joy` prompt
+# file it used to write. The prompt file only ever worked in VS Code's
+# Local agent: the Copilot CLI never read it, and GitHub has deprecated it
+# (JOY-02AD-69). A project set up by an older joy must be carried over,
+# not left with both.
+@test "an older copilot setup is migrated from the prompt file to the skill" {
+    setup_human_auth
+    isolated_path
+    fake_copilot
+
+    # what an older joy left behind
+    mkdir -p .github/prompts
+    cat > .github/prompts/joy.prompt.md <<'OLD'
+# Joy product management assistant
+OLD
+    init_and_detect
+
+    [ -f .github/skills/joy/SKILL.md ]
+    [ -f .github/skills/joy/setup.md ]
+    # the leftover is gone, so it cannot answer for the skill
+    [ ! -f .github/prompts/joy.prompt.md ]
+    # the skill announces itself the way Copilot expects
+    grep -q "^name: joy$" .github/skills/joy/SKILL.md
+    # and the instructions now point at the skill, not at bare commands
+    grep -q "/joy" .github/copilot-instructions.md
+}
+
+@test "a fresh copilot setup writes the skill and no prompt file" {
+    setup_human_auth
+    isolated_path
+    fake_copilot
+
+    init_and_detect
+
+    [ -f .github/skills/joy/SKILL.md ]
+    [ ! -e .github/prompts ]
+    # the same skill the other tools get, under Copilot's own folder
+    grep -q "^name: joy$" .github/skills/joy/SKILL.md
+}

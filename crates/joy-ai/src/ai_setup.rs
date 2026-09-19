@@ -56,6 +56,10 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
             (".github/copilot-instructions.md", "GitHub Copilot"),
             (".github/copilot/", "GitHub Copilot"),
             (".github/agents/", "GitHub Copilot"),
+            (".github/skills/", "GitHub Copilot"),
+            // joy no longer writes `.github/prompts/`; the entry stays so
+            // a project set up before the skill does not suddenly show
+            // the leftover as untracked before a reset clears it.
             (".github/prompts/", "GitHub Copilot"),
         ],
     ),
@@ -223,11 +227,14 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
     let workflow = crate::ai_templates::load_workflow()?;
     let agents = crate::ai_templates::load_agents()?;
 
-    // Check SKILL.md (all tools except copilot)
+    // Check SKILL.md. Copilot joined the others once it learned to read
+    // skills: its old `/joy` prompt file only ever worked in VS Code's
+    // Local agent, never in the CLI or over ACP (JOY-02AD-69).
     let skill_path = match tool {
         "claude" => Some(root.join(".claude/skills/joy/SKILL.md")),
         "qwen" => Some(root.join(".qwen/skills/joy/SKILL.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/SKILL.md")),
+        "copilot" => Some(root.join(".github/skills/joy/SKILL.md")),
         _ => None,
     };
     if let Some(path) = skill_path {
@@ -237,11 +244,12 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         }
     }
 
-    // Check setup.md (all tools except copilot)
+    // Check setup.md
     let setup_path = match tool {
         "claude" => Some(root.join(".claude/skills/joy/setup.md")),
         "qwen" => Some(root.join(".qwen/skills/joy/setup.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/setup.md")),
+        "copilot" => Some(root.join(".github/skills/joy/setup.md")),
         _ => None,
     };
     if let Some(path) = setup_path {
@@ -258,19 +266,17 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         _ => None,
     };
     if let Some(path) = block_path {
-        let has_skill = tool != "copilot";
-        let expected_block = render_managed_block(root, member_id, has_skill, tool)?;
+        let expected_block = render_managed_block(root, member_id, true, tool)?;
         if !joy_block_matches(&path, &expected_block) {
             return Ok(true);
         }
     }
 
-    // Check copilot prompt
-    if tool == "copilot" {
-        let expected = crate::ai_templates::render_copilot_prompt(&workflow)?;
-        if !file_matches(&root.join(".github/prompts/joy.prompt.md"), &expected) {
-            return Ok(true);
-        }
+    // A project set up before Copilot could read skills still carries the
+    // `/joy` prompt file. It is stale by its mere existence: the skill has
+    // taken its place and the leftover would answer for it in VS Code.
+    if tool == "copilot" && root.join(".github/prompts/joy.prompt.md").is_file() {
+        return Ok(true);
     }
 
     // Check agent files
@@ -635,23 +641,30 @@ fn configure_copilot(root: &Path, member_id: &str, report: Report) -> Result<boo
     }
     let github_dir = root.join(".github");
     fs::create_dir_all(&github_dir)?;
-    clean_managed_dirs(root, &[".github/agents", ".github/prompts"]);
+    // `.github/prompts` is swept for its REMOVAL: joy used to put the
+    // `/joy` entry point there, and a leftover would shadow the skill
+    // that replaced it (JOY-02AD-69).
+    clean_managed_dirs(
+        root,
+        &[".github/agents", ".github/prompts", ".github/skills/joy"],
+    );
     let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
     changed |= update_with_joy_block(
         root,
         &instructions_md,
-        &render_managed_block(root, member_id, false, "copilot")?,
+        &render_managed_block(root, member_id, true, "copilot")?,
     )?;
     report(".github/copilot-instructions.md".into());
 
-    // Copilot skill wrapper
-    let workflow = crate::ai_templates::load_workflow()?;
-    let prompt = crate::ai_templates::render_copilot_prompt(&workflow)?;
-    let prompt_path = github_dir.join("prompts/joy.prompt.md");
-    changed |= write_if_changed(root, &prompt_path, &prompt)?;
-    report(".github/prompts/joy.prompt.md".into());
+    let skill_path = github_dir.join("skills/joy/SKILL.md");
+    changed |= write_if_changed(root, &skill_path, &render_skill()?)?;
+    report(".github/skills/joy/SKILL.md".into());
+
+    let setup_path = github_dir.join("skills/joy/setup.md");
+    changed |= write_if_changed(root, &setup_path, crate::ai_templates::setup_instructions())?;
+    report(".github/skills/joy/setup.md".into());
 
     changed |= generate_agents(root, "copilot", ".github/agents", report)?;
     changed |= update_copilot_permissions(root, member_id, report)?;
@@ -867,7 +880,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
         "claude" => root.join(".claude/skills/joy/SKILL.md").is_file(),
         "qwen" => root.join(".qwen/skills/joy/SKILL.md").is_file(),
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
-        "copilot" => root.join(".github/agents/conceiver.agent.md").is_file(),
+        "copilot" => root.join(".github/skills/joy/SKILL.md").is_file(),
         _ => false,
     }
 }
@@ -1053,7 +1066,9 @@ const RESET_PATHS: &[(&str, &str, &[&str])] = &[
         "copilot",
         &[
             ".github/copilot-instructions.md",
+            ".github/skills/joy/",
             ".github/agents/",
+            // written by an older joy; reset still takes it away
             ".github/prompts/",
         ],
     ),

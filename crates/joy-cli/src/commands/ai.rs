@@ -674,7 +674,9 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             "copilot",
             &[
                 ".github/copilot-instructions.md",
+                ".github/skills/joy/",
                 ".github/agents/",
+                // written by an older joy; reset still takes it away
                 ".github/prompts/",
             ],
         ),
