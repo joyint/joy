@@ -19,6 +19,7 @@ This tutorial covers a complete project setup, from `joy init` through encryptio
 - [10. Updating joy](#10-updating-joy) - `update`
 - [11. Encryption with Crypt](#11-encryption-with-crypt) - `crypt`
 - [12. Chats](#12-chats) - `chat`
+- [13. Merging branches](#13-merging-branches) - pull requests, forges
 - [Bonus: Cross-Directory Queries](#bonus-cross-directory-queries-w)
 - [Bonus: Shell Completions](#bonus-shell-completions)
 - [Bonus: Machine-Readable Output](#bonus-machine-readable-output)
@@ -1057,6 +1058,41 @@ Reading fetches the chat from the forge first, so `show` and `ls` always print t
 An AI answers a mention (`@vibe ...` at the start of a message) only in the apps, and only under a delegation from the person addressing it: the app that sends the message starts the turn, on the platform for a platform project and on your machine for a local one, with your delegation, your key and your budget. The CLI has no chat session and no turn host, so `joy chat send` refuses a message that opens with the mention of an AI member and says why. A mention later in the text only refers to the AI and is sent as it is.
 
 An AI can send from the CLI itself: with its session (`--session`, or `JOY_SESSION`) the message is posted as the AI member, marked as delegated by the person whose token the session came from.
+
+## 13. Merging branches
+
+Your items, comments and logs are files in your repository, so they take part in every merge. Two branches that touch the same item are a merge like any other, and joy resolves it: a status from one side and a comment from the other end up in one item, and the day log keeps both sides' lines.
+
+Locally this happens by itself. `joy init` teaches your clone the rules (`.gitattributes` plus a merge driver in your git config), and every `git merge`, `git pull` and `git rebase` uses them.
+
+### Why the button on your forge needs help
+
+GitHub, GitLab and Gitea merge on their servers with plain git, and they do not run your merge driver: GitHub ignores the repository's `.gitattributes` altogether, GitLab reads only the built in rules, and Gitea would need joy installed on the server. So a pull request whose branch touched the same item as the target branch shows a conflict, and the merge button stays locked. What you would see there are conflict markers inside an item file, which is no place to decide anything.
+
+### What joy does about it
+
+`joy init` writes a small CI file for your forge, so the merge happens where joy is installed:
+
+| Forge | File |
+|---|---|
+| GitHub | `.github/workflows/joy-merge.yml` |
+| Gitea, Forgejo | `.gitea/workflows/joy-merge.yml` |
+| GitLab | `.joy/ci/gitlab.yml`, included from your `.gitlab-ci.yml` |
+
+You do not call anything. On a pull request the job merges the target branch into your branch, resolves the Joy files by Joy's rules and pushes the result. The forge then only has to fast forward, which cannot fail, and the button turns green. If both sides really changed the same field, the job stops and names the file, because that decision is yours.
+
+Adding it later, or in a repository that has no forge yet:
+
+```sh
+joy init ci                      # for the forge your remote points at
+joy init ci --forge github       # or name it: github, gitlab, gitea
+```
+
+Joy never touches a file it did not write: a workflow of your own with the same name is left alone, and joy says so.
+
+### Without CI
+
+Nothing breaks. Merge the pull request in your clone, the way the forge's own instructions describe. Your local joy resolves the item files while doing so.
 
 ## Bonus: Cross-Directory Queries (`-w`)
 

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Args;
 
 use joy_core::error::JoyError;
@@ -20,6 +20,9 @@ If no git repository exists, one is initialized.
 If the project is already initialized, sets up your local environment
 (git hooks, etc.) without modifying project data.")]
 pub struct InitArgs {
+    #[command(subcommand)]
+    pub command: Option<InitCommand>,
+
     /// Project name (defaults to directory name)
     #[arg(long)]
     pub name: Option<String>,
@@ -54,7 +57,47 @@ pub struct InitArgs {
     pub passphrase_stdin: bool,
 }
 
+#[derive(clap::Subcommand)]
+pub enum InitCommand {
+    /// Add the CI file that keeps this project mergeable in the forge
+    Ci(InitCiArgs),
+}
+
+/// `joy init ci` (JOY-02AC-53): the same file `joy init` writes, for a
+/// repository that had no forge yet or was set up before this existed.
+#[derive(clap::Args)]
+pub struct InitCiArgs {
+    /// Which forge: github, gitlab, gitea. Read from the remote if omitted.
+    #[arg(long)]
+    pub forge: Option<String>,
+}
+
+fn run_init_ci(args: InitCiArgs) -> Result<()> {
+    let root = joy_core::store::find_project_root(&std::env::current_dir()?)
+        .context("no Joy project here")?;
+    let template = match &args.forge {
+        Some(name) => joy_core::init::ci_template_for(name)
+            .with_context(|| format!("unknown forge {name}: github, gitlab or gitea"))?,
+        None => joy_core::init::ci_template_for_remote(&root)
+            .context("no forge in the remote: name one with --forge github|gitlab|gitea")?,
+    };
+    match joy_core::init::write_ci_template(&root, &template)? {
+        joy_core::init::CiWrite::Written(path) => println!("wrote {path}"),
+        joy_core::init::CiWrite::UpToDate(path) => println!("{path} is up to date"),
+        joy_core::init::CiWrite::Foreign(path) => {
+            println!("{path} exists and is not joy's, left untouched")
+        }
+    }
+    if let Some(note) = template.note {
+        println!("{note}");
+    }
+    Ok(())
+}
+
 pub fn run(args: InitArgs) -> Result<()> {
+    if let Some(InitCommand::Ci(ci)) = args.command {
+        return run_init_ci(ci);
+    }
     let root = std::env::current_dir()?;
     // The host kind was decided once, at the entry point (D1.1); this
     // command only reads it. A person at a terminal may be asked for the

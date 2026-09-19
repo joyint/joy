@@ -825,6 +825,7 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
 
     println!();
     init_cmd::run(InitArgs {
+        command: None,
         name: Some(name),
         acronym: Some(acronym),
         user: Some(user),

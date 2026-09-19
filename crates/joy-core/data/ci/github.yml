@@ -1,0 +1,44 @@
+# joy:start -- managed by joy, do not edit manually (JOY-02AC-53)
+# Joy stores its items, comments and logs as files in this repository.
+# When two branches touch the same item, the forge cannot put them back
+# together: it merges with plain git, which does not run Joy's merge
+# rules. This job does that merge here, where joy is installed, and
+# publishes the result. The merge button then only fast forwards, which
+# cannot fail.
+#
+# Nobody needs to run anything: the job starts on its own. On a real
+# disagreement, when both sides changed the same field, it stops and says
+# so, because that belongs to a person.
+name: joy merge
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  group: joy-merge-${{ github.event.pull_request.number }}
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+      - name: Install joy
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joyint/joy/releases/latest/download/joy-cli-installer.sh | sh
+      # A pull request from a fork lives in someone else's repository and
+      # this job may only read there. So it asks instead of pushing.
+      - name: Ask the contributor when this is a fork
+        if: github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --body \
+            "This project keeps its items and logs in the repository. Please merge \`${{ github.event.pull_request.base.ref }}\` into your branch once and push: your local joy resolves the item files, and the merge button here turns green."
+      - name: Merge the target branch in
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: joy merge ci --target "${{ github.event.pull_request.base.ref }}"
+# joy:end
