@@ -1,0 +1,14 @@
+id: JOY-02B0-F7
+title: Decouple crates.io publishing from tag-triggered CI
+type: rework
+status: new
+priority: high
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-20T10:21:01.628394Z
+updated: 2026-09-20T10:21:01.628394Z
+updated_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+description: Prevent duplicate crates.io publish races between local release-all and GitHub Actions. Keep crates publishing local via just release/release-all, change joy/jyn publish workflows from tag-triggered to manual dispatch, keep release.yml tag-triggered binary/GitHub release pipeline unchanged, and document how to continue partial releases after crates.io 429 limits.

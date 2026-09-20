@@ -1,1 +1,5 @@
 2026-09-20T02:46:30.403Z v0.21.0 release.created [horst.schwarz@joydev.com]
+2026-09-20T10:20:56.046Z auth auth.session_created "session created for ai:copilot@joy via delegation token" [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-20T10:21:01.649Z JOY-02B0-F7 item.created [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-20T10:22:29.863Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
+2026-09-20T10:22:41.943Z release guard.denied "AI member ai:copilot@joy cannot perform manage actions" [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]

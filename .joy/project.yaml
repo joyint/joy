@@ -48,6 +48,7 @@ members:
       create: {}
       assign: {}
     adapter: copilot
+    verify_key: 48fc28af23c5ff2683ba80609ca31f7369c29b83a5ade3c4ec62441af770f9a0
     attestation:
       attester: horst.schwarz@joydev.com
       signed_fields:
@@ -132,6 +133,10 @@ members:
         delegation_salt: 707f1b543eb35285e922b61d64ac01a0292d68dd5b48b97cc7d791a2bbce7018
         created: 2026-04-21T15:59:22.223224422Z
         rotated: 2026-05-05T21:04:20.367172Z
+      ai:copilot@joy:
+        delegation_verifier: 48fc28af23c5ff2683ba80609ca31f7369c29b83a5ade3c4ec62441af770f9a0
+        delegation_salt: 1a5025ad892b39051cbf224c863d93196b571bff399862033c717523db41dd1d
+        created: 2026-09-20T10:20:11.208051Z
   philipp@joyint.com:
     capabilities: all
     enrollment_verifier: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
