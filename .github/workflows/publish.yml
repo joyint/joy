@@ -1,4 +1,4 @@
-# Upload workspace crates to crates.io on a version tag push.
+# Manual workspace crates publish to crates.io.
 # Uses just publish-crates which only touches the registry, not the
 # forge release (that is created by the local `joy release publish`
 # before this workflow runs). See ADR-032 for the local-first
@@ -14,12 +14,10 @@
 name: Publish to crates.io
 
 on:
-  push:
-    tags:
-      # Stable releases only. Pre-release tags like vX.Y.Z-rc1 or vX.Y.Z-test1
-      # do not trigger this workflow so they cannot pollute crates.io
-      # (published crate versions are permanent, only yankable).
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+  # Local-first release flow: crates are published by `just publish`/
+  # `just release-all`, so this workflow stays manual to avoid
+  # duplicate local+CI uploads racing each other into crates.io limits.
+  workflow_dispatch:
 
 # Read-only access is enough: publishing is to crates.io via
 # CARGO_REGISTRY_TOKEN, no GitHub release or branch update needed.
