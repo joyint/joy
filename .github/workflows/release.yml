@@ -638,6 +638,8 @@ jobs:
           # The fork of microsoft/winget-pkgs lives under the joyint org, not
           # under the token owner's personal account.
           fork-user: joyint
-          # Classic PAT (public_repo) with write access to joyint/winget-pkgs.
-          # The default GITHUB_TOKEN cannot push to a fork in another org.
+          # Classic PAT with public_repo and workflow scopes. The workflow
+          # scope is needed when komac syncs the fork across upstream workflow
+          # changes before creating the submission branch. The default
+          # GITHUB_TOKEN cannot push to a fork in another org.
           token: ${{ secrets.WINGET_TOKEN }}
