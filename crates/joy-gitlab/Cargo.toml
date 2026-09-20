@@ -1,6 +1,6 @@
 [package]
 name = "joy-gitlab"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2021"
 license = "MIT"
 description = "Joy forge connector for GitLab: claims, identity, store, files over the REST API"

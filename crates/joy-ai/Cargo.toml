@@ -1,6 +1,6 @@
 [package]
 name = "joy-ai"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2021"
 license = "MIT"
 description = "AI integration layer for Joy product management"
@@ -16,13 +16,13 @@ dist = false
 
 [dependencies]
 joy-process = { workspace = true }
-joy-core = { version = "0.20.0", path = "../joy-core" }
+joy-core = { version = "0.21.0", path = "../joy-core" }
 # The lane records its session-mode decisions (JOY-0280-A5); the same
 # subscriber joy-core feeds. Unconditional, so the `acp` feature builds
 # wherever the crate does.
 tracing = "0.1"
-joy-chat = { version = "0.20.0", path = "../joy-chat" }
-joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
+joy-chat = { version = "0.21.0", path = "../joy-chat" }
+joy-chat-store = { version = "0.21.0", path = "../joy-chat-store" }
 joy-crypt = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

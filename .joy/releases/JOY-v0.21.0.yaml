@@ -1,0 +1,279 @@
+version: v0.21.0
+date: 2026-09-20
+previous: v0.20.0
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 536
+  items: 129
+- id: horst.schwarz@joydev.com
+  events: 74
+  items: 70
+- id: ai:claude@joy delegated-by:cx-test@example.com
+  events: 1
+  items: 1
+items:
+  epics:
+  - id: JOY-01F9-9E
+    title: AI members participate in chats (turn rules in joy-core)
+  - id: JOY-0251-AA
+    title: 'Forge plugins: joy-<forge> binaries with a question contract'
+  - id: JOY-01FF-9D
+    title: Jobs as first-class items (JOY-01FE-37)
+  - id: JOY-0029
+    title: 'Joy process: capability model and member management'
+  - id: JOY-01FB-42
+    title: 'Chats are always encrypted: crypt zones for .joy/chats'
+  stories:
+  - id: JOY-024C-97
+    title: Typed message parts and sealed attachments in the chat model and store
+  - id: JOY-0252-1A
+    title: The plugin question contract and the forge plugin registry
+  - id: JOY-0253-8A
+    title: 'joy-core: alias resolution as a no-match fallback'
+  - id: JOY-0254-3C
+    title: 'joy-github: erstes Forge-Plugin'
+  - id: JOY-0255-B3
+    title: 'joy-gitlab: zweiter Beweis des Vertrags'
+  - id: JOY-0256-64
+    title: Move the release path into the forge contract
+  - id: JOY-0257-FC
+    title: The OTP finds its member by itself
+  - id: JOY-0258-59
+    title: A magic-link e-mail as a door into the account
+  - id: JOY-025B-F6
+    title: 'joy-gitea: the third forge plugin (Codeberg and Forgejo)'
+  - id: JOY-021D-F4
+    title: 'Whole-file sealed chats: event log + anonymous wraps (core)'
+  - id: JOY-0266-CA
+    title: 'Telemetry core (Rust): tracing-based OTel records for CLI and desktop backend, file sink, settings.toml level'
+  - id: JOY-0268-2A
+    title: 'Local sync: chats keep the 1 s poll, everything else within a forge budget with 429 backoff and a span per contact'
+  - id: JOY-026B-E7
+    title: 'Chat ids people can use: a running number like jyn, a joy-style id, and the name as address'
+  - id: JOY-026C-34
+    title: 'joy chat writes make ONE forge contact: push first, fetch and unite only when refused'
+  - id: JOY-0031
+    title: Job tracking with automatic lifecycle
+  - id: JOY-0032
+    title: AI cost tracking per job
+  - id: JOY-00B7-E6
+    title: 'joy sync: push and pull via Git'
+  - id: JOY-014F-D4
+    title: Crypt block on Job records with state-based validity
+  - id: JOY-0150-B0
+    title: WebUI Crypt parity via Web Crypto API
+  - id: JOY-0233-44
+    title: One shared writer for an AI turn execution record
+  - id: JOY-0234-CD
+    title: 'The chat turn engine: one loop in joy-ai for every host'
+  - id: JOY-0235-42
+    title: One permission policy for agent tool calls
+  - id: JOY-0236-87
+    title: The activity block has one producer, in joy-ai
+  - id: JOY-0237-7C
+    title: 'Live turn activity: one vocabulary for every host'
+  - id: JOY-0238-34
+    title: 'The parity script: one conversation, one golden, every host'
+  - id: JOY-0285-DB
+    title: 'A retry outranks the first attempt: the attempt counter on a chat message'
+  - id: JOY-0280-A5
+    title: The level chosen for a turn reaches the agent through the ACP session mode
+  - id: JOY-0282-E8
+    title: The chat lane ends a turn on silence, not on the clock, and keeps what streamed
+  - id: JOY-0283-1B
+    title: Each tool's own way of handing over a plan is normalised into the one record
+  - id: JOY-0284-75
+    title: A running AI turn is a fact of the chat, persisted and visible to everyone
+  - id: JOY-0287-16
+    title: A host cannot ask a forge plugin whether a repository holds a joy store
+  - id: JOY-0288-72
+    title: joy init needs the git binary, so a host without it cannot create a project
+  - id: JOY-0289-FA
+    title: A host cannot list a repository's files or learn its default branch through a forge plugin
+  - id: JOY-028A-DC
+    title: A chat turn cannot ask the person it runs for before a denied tool call
+  - id: JOY-0295-36
+    title: 'J5: contact discipline in requests, and the classifier vocabulary'
+  - id: JOY-0297-1A
+    title: 'J9: init, identity and the CLI founder'
+  - id: JOY-0294-D5
+    title: 'J4a: credential helper runner, ssh chain, credential shapes'
+  - id: JOY-0296-64
+    title: 'J7: repository maintenance'
+  - id: JOY-0293-12
+    title: 'J1: plugin runner v2, protocol v2, resolution'
+  - id: JOY-0299-98
+    title: 'J4h: host key verification and the one certificate callback (new)'
+  - id: JOY-0298-E4
+    title: 'J2: connector consolidation, HTTP client, instance configuration, scopes'
+  - id: JOY-029A-5A
+    title: 'J4p: proxies and the trust store (new)'
+  - id: JOY-029B-B0
+    title: 'J3: sign in verbs, keychain, OAuth, refresh lock'
+  - id: JOY-029E-9D
+    title: 'J8: distribution shape'
+  - id: JOY-029C-01
+    title: 'J4b: resolver assembly'
+  - id: JOY-029D-3E
+    title: 'J10: the CLI forge command group and the interactive gate (new)'
+  - id: JOY-029F-ED
+    title: 'J6: git2 only in the CLI (JOY-01FD-ED)'
+  - id: JOY-02A0-6E
+    title: 'J11: the remaining identity call sites in the CLI (new)'
+  - id: JOY-01FD-ED
+    title: Migrate the whole joy-core git layer (GitVcs) from CLI subprocess to git2
+  tasks:
+  - id: JOY-024A-39
+    title: 'One chat-turn codebase: shared per-turn core, ordered live wire, corpses removed'
+  - id: JOY-0250-48
+    title: 'Interim: non-text agent content leaves a visible fact instead of vanishing'
+  - id: JOY-025A-3A
+    title: 'Publish the plugin crates: joy-github, joy-gitlab, joy-bi'
+  - id: JOY-025D-99
+    title: 'Documentation: forge plugins on a workstation'
+  - id: JOY-025F-0B
+    title: The forge alias suite covers the open customer cases
+  - id: JOY-0260-1A
+    title: Bats cover the chat store, the plugin contract and the release notes
+  - id: JOY-026A-F2
+    title: joy chat send answers 'message sent (N ms)' instead of 'sent to <chat title>'
+  - id: JOY-0272-CC
+    title: The tutorial has no chapter on chats
+  - id: JOY-0273-7C
+    title: 'Reading a chat takes two commands: show prints, read marks'
+  - id: JOY-0274-A8
+    title: joy chat ls shows the long chat id first; the short form people type is missing
+  - id: JOY-0275-63
+    title: joy chat ls does not look like joy ls
+  - id: JOY-007A
+    title: Extend integration tests for core workflows
+  - id: JOY-009F
+    title: Split AI instructions into tool and automation mode
+  - id: JOY-00A1
+    title: Define interaction level behavior for tool context
+  - id: JOY-00A2
+    title: Define interaction level behavior for automation context
+  - id: JOY-00B8-95
+    title: 'joy clone: clone project from remote'
+  - id: JOY-00BA-93
+    title: Local key management for E2E encryption
+  - id: JOY-00CC-67
+    title: Create joy-plugins crate for shared plugin system
+  - id: JOY-00CE-40
+    title: Add --app flag to launch native app plugin
+  - id: JOY-0208-CF
+    title: retire legacy job store (jobs.rs, model/job.rs)
+  - id: JOY-023F-7B
+    title: Unit tests for the sealed chat cycle
+  - id: JOY-027D-E2
+    title: The registry names the install command apart from the prose
+  - id: JOY-0276-FA
+    title: A silent forge holds a contact for as long as it likes
+  - id: JOY-02A1-FF
+    title: 'J0: design document forge connection NG in joy/docs/design'
+  - id: JOY-02A2-27
+    title: 'J0b: one HostKind and one remote URL parser after the Wave 0 merge'
+  - id: JOY-02A3-E4
+    title: 'J0c: one NO_PROXY matcher, and the chat ref sync carries the contact verdict'
+  - id: JOY-02A4-89
+    title: 'J0d: publishable crate set after the rebuild, and the design touch ups from Wave 2'
+  - id: JOY-02A5-10
+    title: 'JC1: Wave 3 closeout in joy (bats suite green, anonymous AI token, engine half of A4, design lines)'
+  - id: JOY-02A6-88
+    title: 'J10b: joy forge logout under a delegation session prints the connector''s refusal'
+  - id: JOY-02A7-A2
+    title: 'JW1: Windows findings of the release check (GCM child PATH, silent forge bound, agent pipe timeout, maintenance on read-only objects, sentences)'
+  - id: JOY-02A8-F4
+    title: 'JM1: macOS findings of the release check (unreachable forge reported as rejected token, connector stderr lost, status help, /proc test, unsigned macOS CLI binaries)'
+  - id: JOY-02A9-48
+    title: 'JO1: needs_org_approval is unreachable from a one shot CLI process, and the login probe reads an organisation wall as no login for repo'
+  - id: JOY-02AA-ED
+    title: 'JK1: a locked OS keyring blocks the connector forever instead of falling back to the token file'
+  - id: JOY-028E-4F
+    title: joy-core names no directory for an app's local state
+  - id: JOY-02AE-1A
+    title: Who I am in a project comes from git config again, local before global, the forge account last, and no pin
+  bugs:
+  - id: JOY-0264-89
+    title: 'gitignore managed block flip-flops between machines: tool-configured signal is machine-local'
+  - id: JOY-026D-C5
+    title: joy chat send refuses a chat that was just created in the app
+  - id: JOY-023B-7E
+    title: The chat ref is written without a compare-and-swap, so concurrent saves orphan each other
+  - id: JOY-0247-E1
+    title: 'Crate publish misses the crates added since 0.19: model, chat, chat-store, token'
+  - id: JOY-023C-1E
+    title: Chat writes never pack or prune, so the store only grows
+  - id: JOY-0246-B7
+    title: 'Release bump misses the chat crates: version-files list incomplete'
+  - id: JOY-0248-AE
+    title: Forge release keeps an empty changelog when the dist workflow wins the race
+  - id: JOY-0249-D2
+    title: Live stream shows a stray second answer bubble that the store never gets
+  - id: JOY-0259-44
+    title: An enrolled member is hidden behind an open invitation
+  - id: JOY-025C-A7
+    title: The forge plugins know only the product domains, not their own instances
+  - id: JOY-021C-81
+    title: Chat-ref commits leak the writer identity
+  - id: JOY-021E-B0
+    title: Job session files accumulate across rounds (stale-session replay)
+  - id: JOY-023D-21
+    title: A permission is counted and shown as a tool step of its own
+  - id: JOY-0269-BC
+    title: joy chat asks for the passphrase on every command although a session is active
+  - id: JOY-026E-0F
+    title: joy chat send --session posts as the local login, not as the delegated AI member
+  - id: JOY-026F-63
+    title: The chats poll pushes after every fast-forward pull, delivering nothing
+  - id: JOY-0270-40
+    title: joy chat send accepts an @mention of an AI member that nobody will answer
+  - id: JOY-0271-34
+    title: joy chat show does not accept the short chat id that ls, info and send accept
+  - id: JOY-01C9-EA
+    title: joy project token redeem only on time
+  - id: JOY-0230-F0
+    title: 'Anonymous mode: app-issued delegation tokens never redeem'
+  - id: JOY-023E-68
+    title: An AI member on the CLI cannot read or write sealed chats
+  - id: JOY-0278-85
+    title: A forge that exceeds the wait bound reports an SSL syscall error, not a timeout
+  - id: JOY-0279-8D
+    title: A pre-sealing chat must not stall every clone's chat sync
+  - id: JOY-027C-14
+    title: forge-net links the system OpenSSL, so a signed desktop cannot start
+  - id: JOY-0286-01
+    title: A streamed turn event carries no identity of its turn
+  - id: JOY-0277-F2
+    title: A fortune names its author behind a double hyphen
+  - id: JOY-027E-D6
+    title: A newline inside an argument makes a joy call stop being one
+  - id: JOY-027F-EB
+    title: The chats poll holds the checkout gate across the forge contact; every desktop write waits behind it
+  - id: JOY-0290-EA
+    title: ai_setup probes tool binaries with which, which does not exist on Windows
+  - id: JOY-028D-46
+    title: joy reads the system git identity even with GIT_CONFIG_NOSYSTEM set
+  - id: JOY-02AC-C3
+    title: A public repository makes joy believe nobody is signed in, so the host falls into the 15 minute lane
+  - id: JOY-028F-0B
+    title: Child processes flash console windows under a GUI host on Windows
+  reworks:
+  - id: JOY-0265-D7
+    title: Four places touch git instead of one engine
+  - id: JOY-00CA-0F
+    title: Create joy-connect commercial wrapper crate
+  decisions:
+  - id: JOY-01FE-37
+    title: 'ADR: job as a first-class item type (multi-item scope, attempts, jobs capability)'
+  - id: JOY-0267-55
+    title: 'Observability rules: the ADR lives in the platform backlog (JP-00ED-EE)'
+  ideas:
+  - id: JOY-0044
+    title: 'Forge: GitLab implementation'
+  - id: JOY-0045
+    title: 'Forge: Gitea implementation'
+  - id: JOY-00BB-B9
+    title: Client-side crypto via shared Rust/WASM crate
+  - id: JOY-020D-D4
+    title: session keep-alive for rapid feedback cycles

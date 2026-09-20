@@ -1,6 +1,6 @@
 [package]
 name = "joy-cli"
-version = "0.20.0"
+version = "0.21.0"
 edition = "2021"
 license = "MIT"
 description = "CLI for Joy product management - Git-native, terminal-first"
@@ -37,7 +37,7 @@ joy-process = { workspace = true }
 # `error` and no person can act on. The cost is stated rather than
 # hidden: on unix this pulls vendored OpenSSL into every CLI build and
 # into `cargo install joy-cli`.
-joy-core = { version = "0.20.0", path = "../joy-core", features = ["tutorial", "interactive", "forge-net"] }
+joy-core = { version = "0.21.0", path = "../joy-core", features = ["tutorial", "interactive", "forge-net"] }
 # The forge connectors, linked as LIBRARIES into the `joy-forge` bin
 # above. `joy` itself never calls them: nothing in its call graph
 # references these crates, so the linker drops them from that binary.
@@ -46,10 +46,10 @@ joy-github = { workspace = true }
 joy-gitlab = { workspace = true }
 joy-gitea = { workspace = true }
 tempfile = "3"
-joy-chat = { version = "0.20.0", path = "../joy-chat" }
-joy-chat-store = { version = "0.20.0", path = "../joy-chat-store" }
-joy-ai = { version = "0.20.0", path = "../joy-ai" }
-joy-telemetry = { version = "0.20.0", path = "../joy-telemetry" }
+joy-chat = { version = "0.21.0", path = "../joy-chat" }
+joy-chat-store = { version = "0.21.0", path = "../joy-chat-store" }
+joy-ai = { version = "0.21.0", path = "../joy-ai" }
+joy-telemetry = { version = "0.21.0", path = "../joy-telemetry" }
 joy-crypt = { workspace = true }
 minijinja = { workspace = true }
 clap = { workspace = true }
