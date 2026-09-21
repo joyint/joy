@@ -1,16 +1,18 @@
 id: JOY-02AE-84
 title: A prerelease version breaks the next bump and the release order
 type: bug
-status: open
+status: in-progress
 priority: high
+assignees:
+- member: ai:agy@joy
 capabilities:
 - implement
 - review
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T23:34:55.627415246Z
-updated: 2026-09-19T23:35:00.127865211Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-09-21T11:10:02.378348Z
+updated_by: ai:agy@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy release bump accepts an explicit prerelease version such as 0.30.0-beta and writes it correctly into the version files, the release record and the tag. What happens afterwards is wrong.
 
@@ -33,3 +35,32 @@ description: |-
   - [ ] A prerelease sorts before its own release, so latest_version is deterministic
   - [ ] An explicit version that is not a version is refused with a sentence that says what a version looks like
   - [ ] Tests cover 0.30.0-beta, 0.30.0-beta.1 and 1.2.3-rc1 for bump and for ordering
+comments:
+- author: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-21T10:42:18.975367Z
+  text: |-
+    Plan:
+    1. SemVer-Parsing & Bumping (crates/joy-core/src/model/release.rs, crates/joy-core/src/releases.rs):
+       - Robustes SemVer 2.0 Parsing und Bumping (unter Einbindung des semver Crates).
+       - Unterstützung eines optionalen Prerelease-Labels (z. B. 'alpha', 'beta', 'rc1') bei Keyword-Bumps:
+         - '0.4.0' + minor + 'alpha' -> 'v0.5.0-alpha'
+         - Wenn die Basis bereits ein Prerelease ist (z. B. 'v0.5.0-alpha' oder 'v0.5.0-rc1') und ein Keyword-Bump ohne Prerelease aufgerufen wird (z. B. patch/minor): Graduierung zur stabilen Version 'v0.5.0'.
+         - Wenn ein neues Prerelease-Label übergeben wird: Übergang z. B. zu 'v0.5.0-beta'.
+    2. SemVer Sortierung & Precedence (crates/joy-core/src/releases.rs):
+       - Upgrade von semver_key auf SemVer 2.0 Rangfolge (Normalversion > Prerelease: 0.5.0 > 0.5.0-rc1 > 0.5.0-beta > 0.5.0-alpha).
+       - Garantiert deterministische Sortierung für latest_version, joy release ls und joy release show.
+    3. Strikte Validierung expliziter Versionen (crates/joy-core/src/releases.rs):
+       - Validierung expliziter Versionen mit klarer Fehlermeldung bei ungültigem Format (z. B. '9lives').
+    4. CLI-Erweiterung (crates/joy-cli/src/commands/release.rs):
+       - 'joy release bump <bump> [prerelease]' und 'joy release record <bump> [prerelease]' unterstützen optionales Prerelease-Argument.
+    5. Item-Rollup bei finalem Release Record (crates/joy-cli/src/commands/release.rs & event_log):
+       - Bei der Aufzeichnung eines finalen Releases nach vorangegangenen Prereleases desselben Zyklus (z. B. 0.5.0 nach 0.5.0-rc1): Ermittlung des Cutoffs vor dem ersten Prerelease des Zyklus, sodass alle geschlossenen Items und Contributors der Alpha-/Beta-/RC-Phasen vollständig im finalen Release-Record enthalten sind.
+    6. Justfile-Anpassungen (joy/justfile, umbrella justfile):
+       - 'release bump="patch" prerelease="":' und 'release-all bump="patch" prerelease="":'
+       - Weiterleitung des prerelease-Parameters an joy release bump und joy release record.
+    7. Tests & Verifikation:
+       - Umfangreiche Tests für Bump-Logik, Prereleases, Graduierung, Sortierung und Item-Rollup.
+       - Verifikation mit 'just check'.
+- author: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-21T11:10:02.378347Z
+  text: 'Fortsetzung der Umsetzung (ai:agy@joy): Justfile-Erweiterung (Punkt 6) ergaenzt: ''release''/''release-all'' in joy/justfile und der Umbrella-justfile nehmen jetzt einen optionalen prerelease-Parameter und reichen ihn an ''joy release bump''/''joy release record'' durch. Tutorial.md um den Prerelease-Workflow ergaenzt. Neue bats-Suite tests/integration/release_prerelease.bats deckt: Prerelease-Label-Bump, --prerelease-Flag, Alpha-Zaehler-Inkrement, Graduierung von Prerelease zu stabil, Ablehnung ungueltiger expliziter Versionen, SemVer-2.0-Sortierung in ''joy release ls'' und Item-Rollup ueber mehrere Prerelease-Phasen in die finale stabile Release. Verifiziert: ''just fmt-check'', ''just lint'' (clippy -D warnings), ''just check-windows'', ''cargo test --workspace'' (719 von 720 bestehen; die eine bekannte, unabhaengige Fehlschlag ist vcs::credential_helper::tests::a_quiet_host_disarms_the_helpers_own_prompts_and_an_interactive_one_does_not, reproduzierbar auch ohne diese Aenderungen auf demselben Branch-Stand), ''cargo test -p joy-cli --test cmd'' (Snapshots unveraendert), sowie alle release-bezogenen bats-Tests inkl. der 7 neuen.'

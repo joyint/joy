@@ -79,18 +79,115 @@ pub struct Release {
     pub items: ReleaseItems,
 }
 
+/// Parse a version string into (major, minor, patch, Option<prerelease>).
+pub fn parse_version_parts(v: &str) -> (u64, u64, u64, Option<String>) {
+    let trimmed = v.strip_prefix('v').unwrap_or(v);
+    if let Ok(sem) = semver::Version::parse(trimmed) {
+        let pre = if sem.pre.is_empty() {
+            None
+        } else {
+            Some(sem.pre.to_string())
+        };
+        return (sem.major, sem.minor, sem.patch, pre);
+    }
+    let (core, pre) = match trimmed.split_once(['-', '+']) {
+        Some((c, p)) => (c, Some(p.to_string())),
+        None => (trimmed, None),
+    };
+    let parts: Vec<&str> = core.split('.').collect();
+    let major = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
+    let minor = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+    let patch = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+    (major, minor, patch, pre)
+}
+
 /// Compute the next semver version from a current version string.
 pub fn bump_version(current: &str, bump: Bump) -> String {
-    let v = current.strip_prefix('v').unwrap_or(current);
-    let parts: Vec<&str> = v.splitn(3, '.').collect();
-    let major: u32 = parts.first().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let minor: u32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-    let patch: u32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+    bump_version_with_pre(current, bump, None)
+}
 
-    match bump {
-        Bump::Major => format!("v{}.0.0", major + 1),
-        Bump::Minor => format!("v{}.{}.0", major, minor + 1),
-        Bump::Patch => format!("v{}.{}.{}", major, minor, patch + 1),
+/// Compute the next semver version with an optional prerelease label (e.g. "alpha", "beta", "rc1").
+pub fn bump_version_with_pre(current: &str, bump: Bump, prerelease: Option<&str>) -> String {
+    let (major, minor, patch, cur_pre) = parse_version_parts(current);
+    let target_pre = prerelease
+        .filter(|p| !p.trim().is_empty())
+        .map(|p| p.trim().strip_prefix('-').unwrap_or(p.trim()));
+
+    match target_pre {
+        None => {
+            // Target is a stable version.
+            if cur_pre.is_some() {
+                // When current is already a prerelease (e.g. 0.30.0-beta or 1.2.3-rc1),
+                // graduating keyword bumps strip the prerelease without skipping a version:
+                match bump {
+                    Bump::Patch => format!("v{major}.{minor}.{patch}"),
+                    Bump::Minor => {
+                        if patch == 0 {
+                            format!("v{major}.{minor}.0")
+                        } else {
+                            format!("v{major}.{}.0", minor + 1)
+                        }
+                    }
+                    Bump::Major => {
+                        if minor == 0 && patch == 0 {
+                            format!("v{major}.0.0")
+                        } else {
+                            format!("v{}.0.0", major + 1)
+                        }
+                    }
+                }
+            } else {
+                match bump {
+                    Bump::Major => format!("v{}.0.0", major + 1),
+                    Bump::Minor => format!("v{}.{}.0", major, minor + 1),
+                    Bump::Patch => format!("v{}.{}.{}", major, minor, patch + 1),
+                }
+            }
+        }
+        Some(label) => {
+            let (next_maj, next_min, next_pat) = if cur_pre.is_some() {
+                match bump {
+                    Bump::Patch => (major, minor, patch),
+                    Bump::Minor => {
+                        if patch == 0 {
+                            (major, minor, 0)
+                        } else {
+                            (major, minor + 1, 0)
+                        }
+                    }
+                    Bump::Major => {
+                        if minor == 0 && patch == 0 {
+                            (major, 0, 0)
+                        } else {
+                            (major + 1, 0, 0)
+                        }
+                    }
+                }
+            } else {
+                match bump {
+                    Bump::Major => (major + 1, 0, 0),
+                    Bump::Minor => (major, minor + 1, 0),
+                    Bump::Patch => (major, minor, patch + 1),
+                }
+            };
+
+            let next_pre = match cur_pre {
+                Some(ref cp) if cp == label => {
+                    format!("{label}.1")
+                }
+                Some(ref cp) if cp.starts_with(&format!("{label}.")) => {
+                    let suffix = &cp[label.len() + 1..];
+                    if let Ok(n) = suffix.parse::<u64>() {
+                        format!("{label}.{}", n + 1)
+                    } else {
+                        label.to_string()
+                    }
+                }
+                _ => label.to_string(),
+            };
+
+            format!("v{next_maj}.{next_min}.{next_pat}-{next_pre}")
+        }
     }
 }
 
@@ -142,6 +239,44 @@ mod tests {
         assert_eq!(bump_version("v0.0.0", Bump::Patch), "v0.0.1");
         assert_eq!(bump_version("v0.0.0", Bump::Minor), "v0.1.0");
         assert_eq!(bump_version("v0.0.0", Bump::Major), "v1.0.0");
+    }
+
+    #[test]
+    fn bump_prerelease_bases_graduate_to_stable() {
+        // JOY-02AE-84: keyword bump from prerelease base does not skip or go backwards
+        assert_eq!(bump_version("v0.30.0-beta", Bump::Patch), "v0.30.0");
+        assert_eq!(bump_version("0.30.0-beta", Bump::Patch), "v0.30.0");
+        assert_eq!(bump_version("v0.30.0-beta.1", Bump::Patch), "v0.30.0");
+        assert_eq!(bump_version("v1.2.3-rc1", Bump::Patch), "v1.2.3");
+        assert_eq!(bump_version("v0.30.0-beta", Bump::Minor), "v0.30.0");
+    }
+
+    #[test]
+    fn bump_with_prerelease_labels() {
+        assert_eq!(
+            bump_version_with_pre("0.4.0", Bump::Minor, Some("alpha")),
+            "v0.5.0-alpha"
+        );
+        assert_eq!(
+            bump_version_with_pre("v0.5.0-alpha", Bump::Minor, Some("beta")),
+            "v0.5.0-beta"
+        );
+        assert_eq!(
+            bump_version_with_pre("v0.5.0-beta", Bump::Minor, None),
+            "v0.5.0"
+        );
+        assert_eq!(
+            bump_version_with_pre("v0.5.0", Bump::Patch, Some("beta")),
+            "v0.5.1-beta"
+        );
+        assert_eq!(
+            bump_version_with_pre("v0.5.0-alpha", Bump::Minor, Some("alpha")),
+            "v0.5.0-alpha.1"
+        );
+        assert_eq!(
+            bump_version_with_pre("v0.5.0-alpha.1", Bump::Minor, Some("alpha")),
+            "v0.5.0-alpha.2"
+        );
     }
 
     #[test]

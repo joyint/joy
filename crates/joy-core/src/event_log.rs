@@ -462,6 +462,50 @@ pub fn last_release_timestamp(root: &Path) -> Result<Option<String>, JoyError> {
     Ok(last.map(|e| e.timestamp.clone()))
 }
 
+/// Find the event log cutoff timestamp for a release being recorded.
+///
+/// For normal releases or when the previous release was a different base version,
+/// the cutoff is the timestamp of the last release.
+///
+/// If `version` is a stable release (no prerelease suffix, e.g. "v0.5.0") and
+/// preceding releases were prereleases of the same base version (e.g. "v0.5.0-alpha",
+/// "v0.5.0-rc1"), the cutoff is walked back to before the first prerelease of
+/// that series (e.g. "v0.4.0", or None if none existed).
+/// This rolls up all closed items from the prereleases into the final release record.
+pub fn release_cutoff_timestamp(root: &Path, version: &str) -> Result<Option<String>, JoyError> {
+    let events = read_all_events(root)?;
+    let release_events: Vec<_> = events
+        .iter()
+        .filter(|e| e.event_type == "release.created")
+        .collect();
+
+    if release_events.is_empty() {
+        return Ok(None);
+    }
+
+    let (target_maj, target_min, target_pat, target_pre) =
+        crate::model::release::parse_version_parts(version);
+
+    if target_pre.is_none() {
+        let mut skipped_any_prerelease = false;
+        for event in release_events.iter().rev() {
+            let (e_maj, e_min, e_pat, e_pre) =
+                crate::model::release::parse_version_parts(&event.target);
+            if e_maj == target_maj && e_min == target_min && e_pat == target_pat && e_pre.is_some()
+            {
+                skipped_any_prerelease = true;
+                continue;
+            }
+            return Ok(Some(event.timestamp.clone()));
+        }
+        if skipped_any_prerelease {
+            return Ok(None);
+        }
+    }
+
+    Ok(release_events.last().map(|e| e.timestamp.clone()))
+}
+
 /// Collect unique item IDs that were closed after a given timestamp.
 /// If cutoff is None, returns all items ever closed.
 /// Returns deduplicated item IDs (an item closed multiple times appears once).
@@ -758,6 +802,64 @@ mod tests {
         assert!(!is_valid_timestamp(">"));
         assert!(!is_valid_timestamp("not-a-timestamp"));
         assert!(!is_valid_timestamp("2026"));
+    }
+
+    #[test]
+    fn release_cutoff_timestamp_rolls_up_prereleases() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        // 1. No releases yet
+        assert_eq!(
+            release_cutoff_timestamp(dir.path(), "v0.1.0").unwrap(),
+            None
+        );
+
+        // Append release.created events
+        let t1 = "2026-09-01T10:00:00.000Z";
+        let t2 = "2026-09-10T10:00:00.000Z";
+        let t3 = "2026-09-15T10:00:00.000Z";
+        let t4 = "2026-09-18T10:00:00.000Z";
+
+        let log_dir = dir.path().join(".joy/logs");
+        fs::create_dir_all(&log_dir).unwrap();
+        let log_file = log_dir.join(format!("{}.log", &t1[..10]));
+        fs::write(
+            &log_file,
+            format!("{t1} v0.4.0 release.created [horst@joydev.com]\n"),
+        )
+        .unwrap();
+
+        // 2. Normal next release: v0.4.1 cutoff is v0.4.0
+        assert_eq!(
+            release_cutoff_timestamp(dir.path(), "v0.4.1").unwrap(),
+            Some(t1.to_string())
+        );
+
+        // Add prereleases
+        let mut content = fs::read_to_string(&log_file).unwrap();
+        content.push_str(&format!(
+            "{t2} v0.5.0-alpha release.created [horst@joydev.com]\n"
+        ));
+        content.push_str(&format!(
+            "{t3} v0.5.0-beta release.created [horst@joydev.com]\n"
+        ));
+        content.push_str(&format!(
+            "{t4} v0.5.0-rc1 release.created [horst@joydev.com]\n"
+        ));
+        fs::write(&log_file, content).unwrap();
+
+        // 3. For another prerelease (e.g. v0.5.0-rc2), cutoff is the immediate last release (t4)
+        assert_eq!(
+            release_cutoff_timestamp(dir.path(), "v0.5.0-rc2").unwrap(),
+            Some(t4.to_string())
+        );
+
+        // 4. For stable v0.5.0, cutoff rolls back past rc1, beta, alpha to v0.4.0 (t1)
+        assert_eq!(
+            release_cutoff_timestamp(dir.path(), "v0.5.0").unwrap(),
+            Some(t1.to_string())
+        );
     }
 }
 

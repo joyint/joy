@@ -25,6 +25,7 @@ joy-token = { workspace = true }
 # error output stays byte-identical; new joy-core modules should still
 # prefer JoyError / plain std error types.
 anyhow = { workspace = true }
+semver = { workspace = true }
 # Glob expansion for release.version-files patterns (version_bump).
 glob = "0.3.3"
 serde = { workspace = true }

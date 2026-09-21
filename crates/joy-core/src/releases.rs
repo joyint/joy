@@ -65,13 +65,33 @@ pub fn load_releases(root: &Path) -> Result<Vec<Release>, JoyError> {
     }
 
     // Sort by parsed semver descending (newest first). A lexicographic
-    // compare would put "v0.9.0" above "v0.10.0".
-    releases.sort_by_key(|r| std::cmp::Reverse(semver_key(&r.version)));
+    // compare would put "v0.9.0" above "v0.10.0". SemVer 2.0 precedence ensures
+    // that a release sorts after its own prereleases (e.g. 0.30.0 > 0.30.0-beta.1 > 0.30.0-beta).
+    releases.sort_by(|a, b| compare_versions(&b.version, &a.version));
     Ok(releases)
+}
+
+/// Compare two version strings according to SemVer 2.0 precedence.
+pub fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    let va = parse_semver(a);
+    let vb = parse_semver(b);
+    match (va, vb) {
+        (Some(va), Some(vb)) => va.cmp(&vb),
+        (Some(_), None) => std::cmp::Ordering::Greater,
+        (None, Some(_)) => std::cmp::Ordering::Less,
+        (None, None) => a.cmp(b),
+    }
+}
+
+/// Parse a version string for semver ordering.
+pub fn parse_semver(v: &str) -> Option<semver::Version> {
+    let trimmed = v.strip_prefix('v').unwrap_or(v);
+    semver::Version::parse(trimmed).ok()
 }
 
 /// Turn a version string like "v0.10.0" or "1.2.3" into a tuple of
 /// integers for numeric ordering. Non-numeric parts sort as 0.
+#[allow(dead_code)]
 fn semver_key(v: &str) -> (u64, u64, u64) {
     let trimmed = v.strip_prefix('v').unwrap_or(v);
     // Drop pre-release suffixes ("-rc1", "+build") for the primary ordering.
@@ -215,20 +235,12 @@ fn looks_like_explicit(s: &str) -> bool {
 }
 
 /// Compute `(current, next)` version from the bump argument (`patch`,
-/// `minor`, `major`, an explicit `X.Y.Z`/`vX.Y.Z`, or None = patch) and
-/// the previous release. Deterministic: `joy release bump` and
-/// `joy release record` call this with the same argument and land on
-/// the same version. When `baseline_override` is set, that value
-/// replaces the ledger / tag lookup (used by `bump --adopt`).
-///
-/// `latest_tag_fallback` supplies the newest local `v*` version tag and
-/// is only consulted when the release ledger has no entry: the CLI and
-/// the desktop pass `vcs::default_vcs().latest_version_tag`, which
-/// reaches `vcs::forge::describe_version_tag` and spawns nothing since
-/// D3.2, and the platform answers from its own git2 layer.
+/// `minor`, `major`, an explicit `X.Y.Z`/`vX.Y.Z`, or None = patch), optional
+/// prerelease tag (e.g. `alpha`, `beta`), and the previous release.
 pub fn resolve_version(
     root: &Path,
     arg: Option<&str>,
+    prerelease: Option<&str>,
     baseline_override: Option<String>,
     latest_tag_fallback: impl FnOnce() -> Option<String>,
 ) -> Result<(String, String), ResolveVersionError> {
@@ -250,17 +262,30 @@ pub fn resolve_version(
 
     let next = match arg {
         Some(v) if looks_like_explicit(v) => {
-            if v.starts_with('v') {
+            let trimmed = v.strip_prefix('v').unwrap_or(v);
+            if semver::Version::parse(trimmed).is_err() {
+                return Err(ResolveVersionError::InvalidBump(format!(
+                    "invalid version: '{v}' is not a valid semver version (expected X.Y.Z, e.g. 1.2.3 or 1.2.3-beta)"
+                )));
+            }
+            let formatted = if v.starts_with('v') {
                 v.to_string()
             } else {
                 format!("v{v}")
+            };
+            if let Some(pre) = prerelease.filter(|p| !p.trim().is_empty()) {
+                let (maj, min, pat, _) = crate::model::release::parse_version_parts(&formatted);
+                let label = pre.trim().strip_prefix('-').unwrap_or(pre.trim());
+                format!("v{maj}.{min}.{pat}-{label}")
+            } else {
+                formatted
             }
         }
         Some(b) => {
             let bump: Bump = b.parse().map_err(ResolveVersionError::InvalidBump)?;
-            crate::model::release::bump_version(&current, bump)
+            crate::model::release::bump_version_with_pre(&current, bump, prerelease)
         }
-        None => crate::model::release::bump_version(&current, Bump::Patch),
+        None => crate::model::release::bump_version_with_pre(&current, Bump::Patch, prerelease),
     };
     Ok((current, next))
 }
@@ -543,19 +568,99 @@ mod tests {
         save_release(dir.path(), "TP", &release).unwrap();
 
         // ledger present: the fallback must not run
-        let (current, next) =
-            resolve_version(dir.path(), None, None, || panic!("fallback consulted")).unwrap();
+        let (current, next) = resolve_version(dir.path(), None, None, None, || {
+            panic!("fallback consulted")
+        })
+        .unwrap();
         assert_eq!((current.as_str(), next.as_str()), ("v0.3.0", "v0.3.1"));
 
-        let (_, next) = resolve_version(dir.path(), Some("minor"), None, || None).unwrap();
+        let (_, next) = resolve_version(dir.path(), Some("minor"), None, None, || None).unwrap();
         assert_eq!(next, "v0.4.0");
 
-        let (_, next) = resolve_version(dir.path(), Some("1.2.3"), None, || None).unwrap();
+        let (_, next) = resolve_version(dir.path(), Some("1.2.3"), None, None, || None).unwrap();
         assert_eq!(next, "v1.2.3");
 
-        let err = resolve_version(dir.path(), Some("bogus"), None, || None).unwrap_err();
+        let err = resolve_version(dir.path(), Some("bogus"), None, None, || None).unwrap_err();
         assert!(matches!(err, ResolveVersionError::InvalidBump(_)));
         assert!(err.to_string().contains("invalid bump: bogus"));
+    }
+
+    #[test]
+    fn resolve_version_rejects_invalid_explicit_version() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let err = resolve_version(dir.path(), Some("9lives"), None, None, || None).unwrap_err();
+        assert!(matches!(err, ResolveVersionError::InvalidBump(_)));
+        assert!(err
+            .to_string()
+            .contains("invalid version: '9lives' is not a valid semver version"));
+    }
+
+    #[test]
+    fn resolve_version_prerelease_and_ordering() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        // Bump with prerelease: minor alpha from v0.0.0
+        let (_, next) =
+            resolve_version(dir.path(), Some("minor"), Some("alpha"), None, || None).unwrap();
+        assert_eq!(next, "v0.1.0-alpha");
+
+        // When current is a prerelease, patch bumps graduate to stable
+        let (_, next) = resolve_version(
+            dir.path(),
+            Some("patch"),
+            None,
+            Some("0.30.0-beta".into()),
+            || None,
+        )
+        .unwrap();
+        assert_eq!(next, "v0.30.0");
+
+        let (_, next) = resolve_version(
+            dir.path(),
+            Some("patch"),
+            None,
+            Some("1.2.3-rc1".into()),
+            || None,
+        )
+        .unwrap();
+        assert_eq!(next, "v1.2.3");
+
+        let (_, next) = resolve_version(
+            dir.path(),
+            Some("patch"),
+            None,
+            Some("0.30.0-beta.1".into()),
+            || None,
+        )
+        .unwrap();
+        assert_eq!(next, "v0.30.0");
+    }
+
+    #[test]
+    fn releases_sort_order_with_prereleases() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+
+        for v in &["v0.30.0-beta", "v0.30.0-beta.1", "v0.30.0"] {
+            let release = Release {
+                version: (*v).into(),
+                title: None,
+                description: None,
+                date: NaiveDate::from_ymd_opt(2026, 3, 22).unwrap(),
+                previous: None,
+                contributors: Vec::new(),
+                items: ReleaseItems::default(),
+            };
+            save_release(dir.path(), "TP", &release).unwrap();
+        }
+
+        let loaded = load_releases(dir.path()).unwrap();
+        let versions: Vec<&str> = loaded.iter().map(|r| r.version.as_str()).collect();
+        // SemVer 2.0 precedence: 0.30.0 > 0.30.0-beta.1 > 0.30.0-beta
+        assert_eq!(versions, vec!["v0.30.0", "v0.30.0-beta.1", "v0.30.0-beta"]);
+        assert_eq!(latest_version(dir.path()).unwrap(), Some("v0.30.0".into()));
     }
 
     #[test]
@@ -564,15 +669,15 @@ mod tests {
         setup_project(dir.path());
 
         let (current, _) =
-            resolve_version(dir.path(), None, None, || Some("v0.9.0".into())).unwrap();
+            resolve_version(dir.path(), None, None, None, || Some("v0.9.0".into())).unwrap();
         assert_eq!(current, "v0.9.0");
 
-        let (current, next) = resolve_version(dir.path(), None, None, || None).unwrap();
+        let (current, next) = resolve_version(dir.path(), None, None, None, || None).unwrap();
         assert_eq!((current.as_str(), next.as_str()), ("v0.0.0", "v0.0.1"));
 
         // --adopt: the baseline override wins and gets the v prefix
         let (current, next) =
-            resolve_version(dir.path(), None, Some("2.0.0".into()), || None).unwrap();
+            resolve_version(dir.path(), None, None, Some("2.0.0".into()), || None).unwrap();
         assert_eq!((current.as_str(), next.as_str()), ("v2.0.0", "v2.0.1"));
     }
 
