@@ -1,7 +1,7 @@
 id: JOY-02AE-84
 title: A prerelease version breaks the next bump and the release order
 type: bug
-status: in-progress
+status: closed
 priority: high
 assignees:
 - member: ai:agy@joy
@@ -11,7 +11,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-19T23:34:55.627415246Z
-updated: 2026-09-21T11:10:02.378348Z
+updated: 2026-09-21T14:25:17.382302Z
 updated_by: ai:agy@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   joy release bump accepts an explicit prerelease version such as 0.30.0-beta and writes it correctly into the version files, the release record and the tag. What happens afterwards is wrong.
@@ -64,3 +64,6 @@ comments:
 - author: ai:agy@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-09-21T11:10:02.378347Z
   text: 'Fortsetzung der Umsetzung (ai:agy@joy): Justfile-Erweiterung (Punkt 6) ergaenzt: ''release''/''release-all'' in joy/justfile und der Umbrella-justfile nehmen jetzt einen optionalen prerelease-Parameter und reichen ihn an ''joy release bump''/''joy release record'' durch. Tutorial.md um den Prerelease-Workflow ergaenzt. Neue bats-Suite tests/integration/release_prerelease.bats deckt: Prerelease-Label-Bump, --prerelease-Flag, Alpha-Zaehler-Inkrement, Graduierung von Prerelease zu stabil, Ablehnung ungueltiger expliziter Versionen, SemVer-2.0-Sortierung in ''joy release ls'' und Item-Rollup ueber mehrere Prerelease-Phasen in die finale stabile Release. Verifiziert: ''just fmt-check'', ''just lint'' (clippy -D warnings), ''just check-windows'', ''cargo test --workspace'' (719 von 720 bestehen; die eine bekannte, unabhaengige Fehlschlag ist vcs::credential_helper::tests::a_quiet_host_disarms_the_helpers_own_prompts_and_an_interactive_one_does_not, reproduzierbar auch ohne diese Aenderungen auf demselben Branch-Stand), ''cargo test -p joy-cli --test cmd'' (Snapshots unveraendert), sowie alle release-bezogenen bats-Tests inkl. der 7 neuen.'
+- author: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-21T14:25:17.261743Z
+  text: 'PR joyint/joy#22 wurde gemerged (Commit 684cdcac). Item wird auf review->closed nachgezogen, da die Bookkeeping-Transition zuvor uncommitted im Arbeitsverzeichnis liegen geblieben war (nur als git stash vorhanden, nie gepusht). Zusätzlich: der Merge löste einen CI-Fehlschlag auf windows-latest aus (vcs::maintenance Test), Root Cause war ein zu knappes 1s keep_set_budget im eager()-Test-Helper, nicht mein Code -- Fix in PR joyint/joy#23 (JOY-02B1-56). Und der platform-Submodul-Build brach, weil resolve_version dort noch mit der alten 4-Parameter-Signatur aufgerufen wurde (JOY-02B2-3B, gefixt und gemerged).'
