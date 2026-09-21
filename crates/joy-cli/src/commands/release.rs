@@ -43,6 +43,15 @@ enum ReleaseCommand {
 struct BumpArgs {
     /// Version bump: patch (default), minor, major, or an explicit X.Y.Z
     bump: Option<String>,
+
+    /// Prerelease identifier (e.g. alpha, beta, rc1)
+    #[arg(value_name = "PRERELEASE")]
+    prerelease: Option<String>,
+
+    /// Optional prerelease identifier (alias for second positional argument)
+    #[arg(long = "pre", long = "prerelease")]
+    pre_flag: Option<String>,
+
     /// Use the version currently written in the configured files as
     /// the baseline, instead of the latest release / git tag. Useful
     /// when a scaffolded template was published with a non-default
@@ -57,6 +66,14 @@ struct RecordArgs {
     /// Version bump: patch (default), minor, major, or an explicit X.Y.Z.
     /// Must match what was used for `joy release bump`.
     bump: Option<String>,
+
+    /// Prerelease identifier (e.g. alpha, beta, rc1)
+    #[arg(value_name = "PRERELEASE")]
+    prerelease: Option<String>,
+
+    /// Optional prerelease identifier (alias for second positional argument)
+    #[arg(long = "pre", long = "prerelease")]
+    pre_flag: Option<String>,
 
     /// Release title
     #[arg(long)]
@@ -107,9 +124,10 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
 fn resolve_version(
     root: &std::path::Path,
     arg: Option<&str>,
+    prerelease: Option<&str>,
     baseline_override: Option<String>,
 ) -> Result<(String, String)> {
-    releases::resolve_version(root, arg, baseline_override, || {
+    releases::resolve_version(root, arg, prerelease, baseline_override, || {
         joy_core::vcs::default_vcs()
             .latest_version_tag(root)
             .ok()
@@ -126,8 +144,9 @@ fn bump(args: BumpArgs) -> Result<()> {
     ctx.enforce(&Action::CreateRelease, "release")?;
 
     let version_files = read_version_files(&ctx.root);
+    let pre = args.prerelease.as_deref().or(args.pre_flag.as_deref());
     if version_files.is_empty() {
-        let (_, next) = resolve_version(&ctx.root, args.bump.as_deref(), None)?;
+        let (_, next) = resolve_version(&ctx.root, args.bump.as_deref(), pre, None)?;
         println!("No release.version-files configured in project.yaml -- nothing to patch.");
         println!("Next version will be {next}.");
         return Ok(());
@@ -141,7 +160,7 @@ fn bump(args: BumpArgs) -> Result<()> {
         None
     };
 
-    let (current, next) = resolve_version(&ctx.root, args.bump.as_deref(), baseline_override)?;
+    let (current, next) = resolve_version(&ctx.root, args.bump.as_deref(), pre, baseline_override)?;
     let current_semver = current.strip_prefix('v').unwrap_or(&current);
     let next_semver = next.strip_prefix('v').unwrap_or(&next);
 
@@ -164,10 +183,13 @@ fn bump(args: BumpArgs) -> Result<()> {
             if r.replacements == 1 { "" } else { "s" }
         );
     }
-    println!(
-        "\nNext: run lockfile refresh if needed, then `joy release record {}`.",
-        args.bump.as_deref().unwrap_or("patch")
-    );
+    let record_cmd = match (&args.bump, pre) {
+        (Some(b), Some(p)) => format!("joy release record {b} {p}"),
+        (Some(b), None) => format!("joy release record {b}"),
+        (None, Some(p)) => format!("joy release record patch {p}"),
+        (None, None) => "joy release record".to_string(),
+    };
+    println!("\nNext: run lockfile refresh if needed, then `{record_cmd}`.");
     Ok(())
 }
 
@@ -192,7 +214,8 @@ fn record(args: RecordArgs) -> Result<()> {
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
-    let (previous, version) = resolve_version(&ctx.root, args.bump.as_deref(), None)?;
+    let pre = args.prerelease.as_deref().or(args.pre_flag.as_deref());
+    let (previous, version) = resolve_version(&ctx.root, args.bump.as_deref(), pre, None)?;
     let previous_opt = if previous == "v0.0.0" {
         None
     } else {
@@ -203,7 +226,7 @@ fn record(args: RecordArgs) -> Result<()> {
         anyhow::bail!("Release {} already exists", version);
     }
 
-    let cutoff = event_log::last_release_timestamp(&ctx.root)?;
+    let cutoff = event_log::release_cutoff_timestamp(&ctx.root, &version)?;
     let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
     let is_empty_release = closed_ids.is_empty();
 
@@ -457,7 +480,8 @@ fn show(args: ShowArgs) -> Result<()> {
             }
         }
         None => {
-            let cutoff = event_log::last_release_timestamp(&ctx.root)?;
+            let (_, next_version) = resolve_version(&ctx.root, None, None, None)?;
+            let cutoff = event_log::release_cutoff_timestamp(&ctx.root, &next_version)?;
             let closed_ids = event_log::closed_item_ids_since(&ctx.root, cutoff.as_deref())?;
 
             let previous = releases::latest_version(&ctx.root)?;

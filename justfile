@@ -448,8 +448,8 @@ auto-commit:
 # Local-only release: bump version files, refresh Cargo.lock, record,
 # commit, tag. No push, no crates.io publish, no forge release.
 # Follow with `just publish` once this succeeds.
-# Release (bump: patch, minor, or major)
-release bump="patch":
+# Release (bump: patch, minor, or major; prerelease: e.g. alpha, beta, rc1)
+release bump="patch" prerelease="":
     #!/usr/bin/env bash
     set -euo pipefail
     if git describe --tags --exact-match HEAD >/dev/null 2>&1; then
@@ -478,7 +478,7 @@ release bump="patch":
     cargo update
     just auto-commit
     echo "Bumping version files..."
-    joy release bump "{{bump}}"
+    joy release bump "{{bump}}" "{{prerelease}}"
     echo "Refreshing Cargo.lock..."
     cargo update --workspace
     echo "Checking (format, lint, test)..."
@@ -496,7 +496,7 @@ release bump="patch":
         git restore Cargo.toml crates/ Cargo.lock
         exit 1
     fi
-    joy release record "{{bump}}"
+    joy release record "{{bump}}" "{{prerelease}}"
     tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "unknown")
     echo "Tagged ${tag} locally. Run 'just publish' to ship."
 

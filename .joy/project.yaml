@@ -7,6 +7,34 @@ docs:
   architecture: ARCHITECTURE.md
   vision: VISION.md
 members:
+  ai:agy@joy:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    verify_key: 240ae695e06234e0017baa776d0520c6d6effc3b1c050922db52c294c8fee1b0
+    attestation:
+      attester: horst.schwarz@joydev.com
+      signed_fields:
+        email: ai:agy@joy
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+      signed_at: 2026-09-21T10:41:08.493094Z
+      signature: 174d49d51a3132fd30b5e059c7d2ab2c8539e2398aa06b6077b3b51ebc6a07f9a2fd663f894b078aaa9039b3e082c0505d521838d355908737c09c8c963dfb02
   ai:claude@joy:
     capabilities:
       conceive: {}
@@ -128,6 +156,10 @@ members:
     seed_wrap_passphrase: 57402a95dfc0d886011aec14ef266b42663669b215520b29907370ce2f8fb0b8f3f7bd633f4a00b2408abd1507200f937065df532b8b55d42bfc5c34
     seed_wrap_recovery: f602d41850606de032cc021b95efbc4dff69669a976c9da8e69eb6214613d6fa265a279cfaedf8af39e9b47f74ded2598268bce30e3cd67d840476bc
     ai_delegations:
+      ai:agy@joy:
+        delegation_verifier: 240ae695e06234e0017baa776d0520c6d6effc3b1c050922db52c294c8fee1b0
+        delegation_salt: 05bacbf4cf95e050bf1237472665c3da02b3681d1e1bfc4fd61d5f5e65981bbf
+        created: 2026-09-21T10:41:27.473161Z
       ai:claude@joy:
         delegation_verifier: 5b231331bf36f1f00c2348576a0c70c42f03056730bcee8560acf5c20e68c03b
         delegation_salt: 707f1b543eb35285e922b61d64ac01a0292d68dd5b48b97cc7d791a2bbce7018
