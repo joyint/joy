@@ -1200,8 +1200,23 @@ mod tests {
         // The grace window is a parameter exactly so a test can ask for
         // "everything old enough"; the product constants are 14 days and
         // 24 hours and are asserted in their own cases below.
+        //
+        // The keep set budget is also widened here, away from the
+        // product's 1 second: that number is sized for a chat write on
+        // a person's own machine, not for a CI runner under load, where
+        // the walk over a handful of refs in a fresh test repository can
+        // still be pushed past 1 second by scheduling jitter or antivirus
+        // scanning of the temp directory (seen on windows-latest), and
+        // `abandoned_keep_set_budget` then answers `true` for a keep set
+        // that was never actually too big to walk. The budget's own
+        // behaviour is asserted deterministically, with an explicit
+        // `Duration::ZERO`, by
+        // `a_keep_set_over_budget_abandons_the_run_instead_of_sweeping_blind`;
+        // every other test that calls `eager()` is testing something
+        // else and must not be timing dependent.
         Options {
             grace: Duration::ZERO,
+            keep_set_budget: Duration::from_secs(60),
             ..Options::foreign_checkout()
         }
     }

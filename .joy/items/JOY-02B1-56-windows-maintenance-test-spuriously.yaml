@@ -1,0 +1,16 @@
+id: JOY-02B1-56
+title: Windows maintenance test spuriously abandons on a too-tight keep set budget
+type: bug
+status: in-progress
+priority: medium
+assignees:
+- member: ai:agy@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-21T14:12:31.463495Z
+updated: 2026-09-21T14:12:33.832480Z
+updated_by: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+description: 'vcs::maintenance::tests::a_damaged_object_is_skipped_instead_of_ending_maintenance fails intermittently on windows-latest CI (first seen after PR #22 merged, unrelated diff: tree hashes identical between branch and merge commit). Root cause: keep_set() enforces a 1 second wall clock budget (KEEP_SET_BUDGET) inherited unmodified by the eager() test helper from Options::foreign_checkout(). On a loaded/slow Windows CI runner, scheduling jitter or antivirus scanning of the temp checkout can push the walk (or even just the time between repo setup and maintain()) past 1 second before any real work happens, so keep_set() returns None and maintain() reports abandoned_keep_set_budget=true instead of doing anything -- observed directly in the CI log: Outcome { loose_seen: 0, keep_set: 0, ..., abandoned_keep_set_budget: true }. This is not a functional flake: the dedicated budget test (a_keep_set_over_budget_abandons_the_run_instead_of_sweeping_blind) already covers the abandon behaviour deterministically via an explicit Duration::ZERO override, so eager() carrying the production 1s budget served no test purpose and only added timing sensitivity.'
