@@ -1,8 +1,10 @@
 id: JOY-02B2-80
 title: Support Antigravity in joy ai init
 type: story
-status: new
+status: in-progress
 priority: medium
+assignees:
+- member: ai:copilot@joy
 deps:
 - JOY-02B1-6B
 capabilities:
@@ -12,6 +14,10 @@ capabilities:
 effort: 5
 created_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-25T20:31:02.876520327Z
-updated: 2026-09-25T20:31:02.876520327Z
+updated: 2026-09-25T21:10:20.541909397Z
 updated_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
 description: 'Detect the agy launcher and offer Google Antigravity in joy ai init; permit explicit selection when auto-detection is unavailable. Register its own ai:agy@joy member, without assuming that existing Vibe configuration or an AGENTS.md file proves Antigravity setup. Generate the Joy /joy skill at .agents/skills/joy/SKILL.md with setup.md and applicable capability agent definitions in the supported .agents/agents/<name>/agent.md format, using the existing shared source data and templates. Integrate the tool with setup, stale/idempotent regeneration, settings and detection surfaces, managed ignore entries, and joy ai reset while preserving user-owned files. Ensure the shared root AGENTS.md gives neither Vibe nor Antigravity the wrong identity or tool-specific instructions; use the tool-neutral token-based rules from prerequisite JOY-02B1-6B and put any necessary Antigravity-specific rules in a documented supported path. Cover detection, setup, multi-tool coexistence, reset, and regeneration with tests, and update related user and architecture documentation. Acceptance: when agy is installed or Antigravity is selected explicitly, joy ai init creates a discoverable /joy skill and correct member setup; Vibe and Antigravity coexist without conflicting identities; repeated init is stable and reset removes only Joy-owned Antigravity artifacts.'
+comments:
+- author: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-25T21:10:20.313452142Z
+  text: 'Plan: Detect agy in joy ai init and update surfaces, generate a shared neutral AGENTS.md plus a discoverable .agents/skills/joy skill and namespaced capability agents, preserve shared/user-owned files on refresh/reset, document paths and test detection, coexistence, idempotence and reset.'
