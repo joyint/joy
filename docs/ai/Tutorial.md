@@ -82,7 +82,7 @@ After session start:
 2. For changes: obtain a session if missing (see [Authentication](#authentication)), find or create the relevant Joy item.
 3. Plan-comment, `joy start <ID>`, do the work.
 4. Result-comment, `joy close <ID>` (or `joy submit <ID>` per your interaction level).
-5. Commit with `[JOY-XXXX-XX]` in the subject and the `Co-Authored-By:` + `Delegated-By:` trailers (see [Commit messages](#commit-messages)).
+5. Commit with `[JOY-XXXX-XX]` in the subject and the `Delegated-By:` trailer (see [Commit messages](#commit-messages)).
 
 ## Authentication
 
@@ -131,7 +131,7 @@ The response contains three values:
 } }
 ```
 
-`session_env` is your session credential. Pass it as `--session` on every write. `member` is your real ID. Use it in commit trailers and item references. `delegated_by` goes into the `Delegated-By:` trailer of every commit.
+`session_env` is your session credential. Pass it as `--session` on every write. `member` is your real ID; use it in item references and when describing your actions. Never infer your Joy identity from an instruction file or another tool's configuration. `delegated_by` goes into the `Delegated-By:` trailer of every delegated commit.
 
 Reuse the same `session_env` for the whole session. Redeeming the token again creates a new session and makes the old `session_env` invalid. The old one then fails with "guard denied".
 
@@ -297,14 +297,13 @@ Conventional Commits: `type(scope): short imperative description`. Types: `feat`
 
 The subject line must reference at least one Joy item, e.g. `[JOY-0042-AB]`. Multiple references are allowed: `[JOY-0042-AB] [JOY-0043-CD]`. `[no-item]` is the explicit escape for infrastructure commits with no logical backlog item, for example release version bumps, regenerated artefacts, or CI workflow setup. If unsure, create an item.
 
-End every commit message with two trailers:
+For an AI-delegated commit, end the commit message with this trailer:
 
 ```
-Co-Authored-By: <YOUR-TOOL-NAME> <YOUR-TOOL-EMAIL>
 Delegated-By: <data.delegated_by from your token redemption>
 ```
 
-The exact `Co-Authored-By:` line is set in your tool-specific instruction file (e.g. `Co-Authored-By: Claude <noreply@anthropic.com>` for Claude Code). The `Delegated-By:` line names the human operator who delegated to you for this session, taken from `data.delegated_by` of the token redemption JSON.
+The `Delegated-By:` line names the human operator who delegated to you for this session, taken from `data.delegated_by` of the token redemption JSON. `Co-Authored-By:` is optional: an AI tool may add its own attribution, but Joy does not require or generate it.
 
 ## Minimum AI hygiene
 

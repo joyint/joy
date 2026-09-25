@@ -12,7 +12,7 @@ load setup
 # Mirrors the joy-managed gitignore block; if joy ever ships new
 # AI-tool patterns, extend this list too.
 _ai_tool_staged() {
-    git diff --name-only --cached | grep -E '^(\.claude/|\.qwen/|\.vibe/|\.github/copilot|\.github/copilot-instructions\.md|\.github/prompts/|\.github/agents/|AGENTS\.md)' || true
+    git diff --name-only --cached | grep -E '^(\.claude/|\.qwen/|\.vibe/|\.agents/(skills/joy/|agents/joy-)|\.github/copilot|\.github/copilot-instructions\.md|\.github/prompts/|\.github/agents/|AGENTS\.md)' || true
 }
 
 @test "joy ai init does not stage gitignored AI-tool files" {
@@ -77,7 +77,7 @@ _ai_tool_staged() {
 
     # Mark every rendered AI-tool file as stale so joy update has
     # to rewrite each one.
-    find .claude .vibe .github -type f 2>/dev/null \
+    find .claude .vibe .agents .github -type f 2>/dev/null \
         | while read -r f; do echo "" >> "$f"; done
     [ -f AGENTS.md ] && echo "" >> AGENTS.md
 

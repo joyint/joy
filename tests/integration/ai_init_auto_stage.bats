@@ -14,7 +14,7 @@ load setup
     #   .gitignore, .gitattributes
     #   SECURITY.md, CONTRIBUTING.md
     #   VISION.md, ARCHITECTURE.md
-    #   At least one tool config dir (.claude/, .qwen/, .vibe/, AGENTS.md,
+    #   At least one tool config dir (.claude/, .qwen/, .vibe/, .agents/, AGENTS.md,
     #     .github/copilot-instructions.md) depending on what was detected.
     local staged
     staged=$(git diff --name-only --cached)
@@ -37,7 +37,7 @@ load setup
     local leak=""
     for f in $untracked; do
         case "$f" in
-            .joy/*|.claude/*|.qwen/*|.vibe/*|.github/*|AGENTS.md|SECURITY.md|CONTRIBUTING.md|docs/dev/*)
+            .joy/*|.claude/*|.qwen/*|.vibe/*|.agents/*|.github/*|AGENTS.md|SECURITY.md|CONTRIBUTING.md|docs/dev/*)
                 leak="$leak $f"
                 ;;
         esac

@@ -7,8 +7,8 @@ use std::path::Path;
 
 use joy_ai::ai_setup::{
     is_tool_configured, is_tool_stale, plan_member_reset, remove_joy_block_or_file,
-    remove_legacy_ai_artifacts, untrack_gitignored_tool_files, update_gitignore, MemberResetPlan,
-    TOOLS as ALL_TOOLS,
+    remove_legacy_ai_artifacts, shared_agents_md_needed, untrack_gitignored_tool_files,
+    update_gitignore, MemberResetPlan, TOOLS as ALL_TOOLS,
 };
 
 use std::sync::atomic::AtomicBool;
@@ -50,7 +50,7 @@ const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 #[derive(clap::Args)]
 #[command(
-    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as ai:copilot@joy. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
+    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as ai:copilot@joy. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nGoogle Antigravity is found under `agy`; when using only its editor, name it: joy ai init --tool agy.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
 )]
 pub struct AiArgs {
     #[command(subcommand)]
@@ -101,7 +101,7 @@ struct InitArgs {
     #[arg(long = "passphrase-stdin")]
     passphrase_stdin: bool,
 
-    /// Only set up a specific tool (claude, qwen, vibe, copilot) — even
+    /// Only set up a specific tool (claude, qwen, vibe, agy, copilot) — even
     /// when it is not auto-detected. Skips the docs prompts.
     #[arg(long)]
     tool: Option<String>,
@@ -109,7 +109,7 @@ struct InitArgs {
 
 #[derive(clap::Args)]
 struct ResetArgs {
-    /// Only reset a specific tool (claude, qwen, vibe, copilot)
+    /// Only reset a specific tool (claude, qwen, vibe, agy, copilot)
     #[arg(long)]
     tool: Option<String>,
 
@@ -307,7 +307,7 @@ pub(crate) fn tool_display_name(id: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn tool_ids() -> &'static [&'static str] {
-    &["claude", "qwen", "vibe", "copilot"]
+    &["claude", "qwen", "vibe", "agy", "copilot"]
 }
 
 /// Is the tool on this machine? For the READ-ONLY surfaces (`joy update
@@ -671,6 +671,22 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             &[".vibe/skills/joy/", ".vibe/agents/", "AGENTS.md"],
         ),
         (
+            "Google Antigravity",
+            "agy",
+            &[
+                ".agents/skills/joy/SKILL.md",
+                ".agents/skills/joy/setup.md",
+                ".agents/agents/joy-conceiver/agent.md",
+                ".agents/agents/joy-planner/agent.md",
+                ".agents/agents/joy-designer/agent.md",
+                ".agents/agents/joy-implementer/agent.md",
+                ".agents/agents/joy-tester/agent.md",
+                ".agents/agents/joy-reviewer/agent.md",
+                ".agents/agents/joy-documenter/agent.md",
+                "AGENTS.md",
+            ],
+        ),
+        (
             "GitHub Copilot",
             "copilot",
             &[
@@ -697,11 +713,16 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     };
 
     // Collect the local config files that exist for the selected tools.
+    let resetting: Vec<&str> = tools.iter().map(|(_, id, _)| *id).collect();
+    let keep_shared = shared_agents_md_needed(&root, &resetting);
     let mut to_remove: Vec<(&str, &str)> = Vec::new();
     for (name, _, paths) in &tools {
         for path in *paths {
             let full = root.join(path);
-            if full.exists() {
+            if (*path != "AGENTS.md" || !keep_shared)
+                && !to_remove.iter().any(|(_, existing)| *existing == *path)
+                && full.exists()
+            {
                 to_remove.push((name, path));
             }
         }
@@ -978,11 +999,16 @@ fn setup_new_tools(
         let should_register;
 
         if already {
+            if is_tool_stale(root, id, &member_id)? {
+                let mut report = |line: String| qprintln!("    {}{}", color::check_mark(), line);
+                configure(root, &member_id, &mut report)?;
+                newly_configured += 1;
+            }
             dprintln!(
                 "  {}{:<24} {}",
                 color::check_mark(),
                 name,
-                color::inactive("already configured")
+                color::inactive("configured")
             );
             configured_tools.push(*id);
             // Backfill the member entry when the tool was configured outside
@@ -1077,7 +1103,9 @@ fn setup_new_tools(
         dprintln!("  {}No supported AI tools detected.", color::warn_mark());
         dprintln!(
             "  {}",
-            color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot")
+            color::inactive(
+                "Supported: Claude Code, Qwen Code, Mistral Vibe, Google Antigravity, GitHub Copilot"
+            )
         );
         dprintln!(
             "  {}",

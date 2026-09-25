@@ -25,6 +25,8 @@ Two MIT-licensed crates (`crates/`):
 
 AI members use Joy the way humans do: an AI agent (for example Claude Code) invokes the `joy` CLI for its work on the item store - `joy show`, `joy ls`, `joy add`, `joy comment` - and `joy-core` governs those calls exactly as it governs a human caller (capabilities, status gates and `allow_ai`, signed delegation, and the audit log). The agent's execution sandbox and orchestration, and the platform's server side, live in the separate, commercially licensed [platform](https://github.com/joyint/platform) and [app](https://github.com/joyint/app) projects.
 
+For Antigravity, `joy ai init` detects the `agy` launcher and generates a project skill in `.agents/skills/joy/` plus namespaced capability agents in `.agents/agents/joy-*/`. Antigravity and Vibe share a tool-neutral root `AGENTS.md`; authentication, not this shared file, determines each agent's Joy identity.
+
 ```mermaid
 graph TD
     CORE[joy-core<br/>data model, storage, status + gates,<br/>identity/auth, vcs/forge, audit log]

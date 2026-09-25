@@ -51,6 +51,7 @@ const QWEN_AGENT_TMPL: &str = include_str!("../templates/ai/tools/qwen-code/agen
 const VIBE_AGENT_TMPL: &str = include_str!("../templates/ai/tools/mistral-vibe/agent.toml");
 const COPILOT_AGENT_TMPL: &str =
     include_str!("../templates/ai/tools/github-copilot/agent.agent.md");
+const AGY_AGENT_TMPL: &str = include_str!("../templates/ai/tools/antigravity/agent.md");
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -74,12 +75,8 @@ pub fn load_agents() -> Result<Vec<serde_json::Value>, JoyError> {
     Ok(agents)
 }
 
-// The co-author trailer helpers moved to `commit_msg` (ADR-043): the
-// commit-message layer owns them so it stays AI-free at the crate level.
-use joy_core::commit_msg::coauthor_line_for_tool;
-
-/// Render the joy-block (identity section inserted between markers in tool instruction files).
-pub fn render_joy_block(member_id: &str, has_skill: bool, tool: &str) -> Result<String, JoyError> {
+/// Render the tool-neutral Joy block inserted between instruction markers.
+pub fn render_joy_block(has_skill: bool) -> Result<String, JoyError> {
     let mut env = Environment::new();
     env.add_template("joy-block", JOY_BLOCK_TMPL)
         .map_err(|e| JoyError::Template(e.to_string()))?;
@@ -87,11 +84,7 @@ pub fn render_joy_block(member_id: &str, has_skill: bool, tool: &str) -> Result<
         .get_template("joy-block")
         .map_err(|e| JoyError::Template(e.to_string()))?;
     let rendered = tmpl
-        .render(context! {
-            member_id => member_id,
-            has_skill => has_skill,
-            coauthor_line => coauthor_line_for_tool(tool),
-        })
+        .render(context! { has_skill => has_skill })
         .map_err(|e| JoyError::Template(e.to_string()))?;
     Ok(rendered.trim().to_string())
 }
@@ -144,6 +137,7 @@ fn agent_template_for_tool(tool: &str) -> Option<(&'static str, &'static str)> {
         "qwen" => Some(("qwen-agent", QWEN_AGENT_TMPL)),
         "vibe" => Some(("vibe-agent", VIBE_AGENT_TMPL)),
         "copilot" => Some(("copilot-agent", COPILOT_AGENT_TMPL)),
+        "agy" => Some(("agy-agent", AGY_AGENT_TMPL)),
         _ => None,
     }
 }
@@ -195,6 +189,7 @@ pub fn agent_filename(agent: &serde_json::Value, tool: &str) -> Option<String> {
         "qwen" => Some(format!("{name}.md")),
         "vibe" => Some(format!("{name}.toml")),
         "copilot" => Some(format!("{name}.agent.md")),
+        "agy" => Some(format!("joy-{name}/agent.md")),
         _ => None,
     }
 }
@@ -221,35 +216,32 @@ mod tests {
     }
 
     #[test]
-    fn render_joy_block_contains_member_id() {
-        let block = render_joy_block("ai:claude@joy", true, "claude").unwrap();
-        assert!(block.contains("ai:claude@joy"));
+    fn render_joy_block_uses_redeemed_identity() {
+        let block = render_joy_block(true).unwrap();
+        assert!(block.contains("data.member"));
+        assert!(block.contains("data.session_env"));
+        assert!(!block.contains("ai:claude@joy"));
         assert!(block.contains("/joy"));
     }
 
     #[test]
     fn render_joy_block_without_skill() {
-        let block = render_joy_block("ai:copilot@joy", false, "copilot").unwrap();
+        let block = render_joy_block(false).unwrap();
         assert!(block.contains("Joy CLI commands"));
         assert!(!block.contains("`/joy` skill"));
     }
 
     #[test]
-    fn render_joy_block_coauthor_per_tool() {
-        let claude = render_joy_block("ai:claude@joy", true, "claude").unwrap();
-        assert!(claude.contains("Claude <noreply@anthropic.com>"));
-        let copilot = render_joy_block("ai:copilot@joy", false, "copilot").unwrap();
-        assert!(copilot.contains("Copilot <copilot@github.com>"));
-        let qwen = render_joy_block("ai:qwen@joy", true, "qwen").unwrap();
-        assert!(qwen.contains("Qwen-Coder <qwen-coder@alibabacloud.com>"));
-        let vibe = render_joy_block("ai:vibe@joy", true, "vibe").unwrap();
-        assert!(vibe.contains("Mistral Vibe <vibe@mistral.ai>"));
+    fn render_joy_block_does_not_require_coauthor() {
+        let block = render_joy_block(true).unwrap();
+        assert!(!block.contains("Co-Authored-By: Claude"));
+        assert!(block.contains("does not require one"));
     }
 
     #[test]
     fn render_joy_block_includes_delegated_by_trailer() {
-        let block = render_joy_block("ai:claude@joy", true, "claude").unwrap();
-        assert!(block.contains("Delegated-By:"));
+        let block = render_joy_block(true).unwrap();
+        assert!(block.contains("Delegated-By: <operator email from data.delegated_by"));
     }
 
     #[test]
@@ -318,7 +310,7 @@ mod tests {
     // Integration tests: verify all generated files for all tools
     // -----------------------------------------------------------------------
 
-    const ALL_TOOLS: &[&str] = &["claude", "qwen", "vibe", "copilot"];
+    const ALL_TOOLS: &[&str] = &["claude", "qwen", "vibe", "copilot", "agy"];
     const WORK_AGENTS: &[&str] = &[
         "conceiver",
         "planner",
@@ -504,7 +496,7 @@ mod tests {
     fn md_agents_start_with_yaml_frontmatter() {
         let wf = load_workflow().unwrap();
         let agents = load_agents().unwrap();
-        for tool in ["claude", "qwen"] {
+        for tool in ["claude", "qwen", "agy"] {
             for agent in &agents {
                 if !agent_applicable_to_tool(agent, tool) {
                     continue;
@@ -546,6 +538,7 @@ mod tests {
                 ("qwen", ".md"),
                 ("vibe", ".toml"),
                 ("copilot", ".agent.md"),
+                ("agy", "/agent.md"),
             ] {
                 if !agent_applicable_to_tool(agent, tool) {
                     continue;
@@ -662,7 +655,7 @@ mod tests {
             "rendered output must not contain version comments"
         );
 
-        let block = render_joy_block("ai:test@joy", true, "claude").unwrap();
+        let block = render_joy_block(true).unwrap();
         assert!(
             !block.contains("Generated by Joy"),
             "joy-block must not contain version comments"
@@ -678,7 +671,7 @@ mod tests {
     #[test]
     fn rendered_instructions_under_200_lines() {
         let wf = load_workflow().unwrap();
-        let block = render_joy_block("ai:test@joy", true, "claude").unwrap();
+        let block = render_joy_block(true).unwrap();
         let instructions = render_instructions(&wf).unwrap();
         let combined = format!("{}\n\n{}", block, instructions);
         let lines = combined.lines().count();
