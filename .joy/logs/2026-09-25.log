@@ -1,0 +1,3 @@
+2026-09-25T20:30:20.509Z auth auth.session_created "session created for ai:copilot@joy via delegation token" [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-25T20:30:29.473Z JOY-02B1-6B item.created [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-25T20:31:02.907Z JOY-02B2-80 item.created [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
