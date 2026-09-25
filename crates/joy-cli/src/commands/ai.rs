@@ -978,11 +978,16 @@ fn setup_new_tools(
         let should_register;
 
         if already {
+            if is_tool_stale(root, id, &member_id)? {
+                let mut report = |line: String| qprintln!("    {}{}", color::check_mark(), line);
+                configure(root, &member_id, &mut report)?;
+                newly_configured += 1;
+            }
             dprintln!(
                 "  {}{:<24} {}",
                 color::check_mark(),
                 name,
-                color::inactive("already configured")
+                color::inactive("configured")
             );
             configured_tools.push(*id);
             // Backfill the member entry when the tool was configured outside

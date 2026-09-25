@@ -104,7 +104,7 @@ fn return_joy_paths(root: &Path, paths: Vec<String>) {
 /// if auto-git >= Commit.
 ///
 /// `summary` is the commit subject line (e.g. "add JOY-005D Auto-add...").
-/// `identity` is the Joy identity string for Co-Authored-By, as
+/// `identity` is the Joy identity string for the commit signature and delegation, as
 /// [`crate::identity::Identity::log_user`] writes it: the acting member,
 /// optionally followed by `delegated-by:<human>`.
 ///
@@ -124,10 +124,13 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
     let vcs = default_vcs();
     let project = store::load_project(root).ok();
 
-    let message = format!(
-        "joy: {summary}\n\nCo-Authored-By: {}",
-        at_rest_identity(identity, project.as_ref())
-    );
+    let resolved = at_rest_identity(identity, project.as_ref());
+    let message = match resolved.split_once(" delegated-by:") {
+        Some((member, delegator)) if member.starts_with("ai:") => {
+            format!("joy: {summary}\n\nDelegated-By: {delegator}")
+        }
+        _ => format!("joy: {summary}"),
+    };
     warn_about_a_missing_item(&message, project.as_ref());
     let signature = match acting_signature(root, identity, project.as_ref()) {
         Ok(signature) => signature,
@@ -234,7 +237,7 @@ fn acting_signature(
 }
 
 /// The acting member as this project writes it down (ADR-042), for the
-/// trailer of a commit message.
+/// signature and delegation trailer of a commit message.
 ///
 /// `identity` is usually already at rest, because
 /// [`crate::identity::Identity::log_user`] writes the member's id. The

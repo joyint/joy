@@ -262,6 +262,7 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
     let block_path = match tool {
         "claude" => Some(root.join(".claude/CLAUDE.md")),
         "qwen" => Some(root.join(".qwen/QWEN.md")),
+        "vibe" => Some(root.join("AGENTS.md")),
         "copilot" => Some(root.join(".github/copilot-instructions.md")),
         _ => None,
     };
@@ -464,19 +465,10 @@ fn render_managed_block(
     tool: &str,
 ) -> Result<String, JoyError> {
     let workflow = crate::ai_templates::load_workflow()?;
-    let joy_block = crate::ai_templates::render_joy_block(member_id, has_skill, tool)?;
-    // The member's enforced levels live inside the managed block, so
-    // `is_tool_stale` re-renders every tool artefact when a level changes
-    // in project.yaml (JOY-0222-4E).
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
-    let levels_section = crate::level_enforcement::managed_block_section(&levels, tool);
+    let joy_block = crate::ai_templates::render_joy_block(has_skill)?;
     let instructions = crate::ai_templates::render_instructions(&workflow)?;
-    Ok(format!(
-        "{}\n\n{}\n\n{}",
-        joy_block,
-        levels_section.trim_end(),
-        instructions
-    ))
+    let _ = (root, member_id, tool);
+    Ok(format!("{joy_block}\n\n{instructions}"))
 }
 
 /// Render SKILL.md with workflow context.
@@ -1544,20 +1536,19 @@ mod setup_tests {
     }
 
     #[test]
-    fn managed_block_carries_levels_and_tracks_changes() {
+    fn managed_block_is_independent_of_tool_and_member_levels() {
         let tmp = tempfile::tempdir().unwrap();
         write_level_defaults(tmp.path(), "proposing");
         let before = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
-        assert!(before.contains("## Interaction levels"));
-        assert!(before.contains("Your interaction level: proposing"));
-        assert!(before.contains("permission mode `plan`"));
-
-        // A level change in the project data re-renders the block, which is
-        // what makes is_tool_stale pick it up.
+        assert!(before.contains("joy project member show <data.member>"));
+        assert!(!before.contains("ai:test@joy"));
         write_level_defaults(tmp.path(), "autonomous");
         let after = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
-        assert_ne!(before, after);
-        assert!(after.contains("permission mode `bypassPermissions`"));
+        assert_eq!(before, after);
+        assert_eq!(
+            before,
+            render_managed_block(tmp.path(), "ai:vibe@joy", true, "vibe").unwrap()
+        );
     }
 
     #[test]

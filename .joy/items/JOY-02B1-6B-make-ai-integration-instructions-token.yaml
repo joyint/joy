@@ -1,14 +1,23 @@
 id: JOY-02B1-6B
 title: Make AI integration instructions token-based and tool-neutral
 type: rework
-status: new
+status: closed
 priority: medium
+assignees:
+- member: ai:copilot@joy
 capabilities:
 - implement
 - review
 effort: 4
 created_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-25T20:30:29.453757189Z
-updated: 2026-09-25T20:30:29.453757189Z
+updated: 2026-09-25T21:08:44.526490644Z
 updated_by: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
 description: 'Rework the AI integration instructions generated for all supported tools so the acting Joy identity is taken exclusively from data.member returned by joy auth --token --json, and write commands use data.session_env. Delegation attribution uses data.delegated_by from that redemption; before redemption the agent must obtain a token and must not assume an identity from project instructions. Remove mandatory Co-Authored-By attribution from Joy policy and templates; tools may add their own attribution. Preserve Delegated-By on AI commits and align commit-message preparation and Joy auto-Git output with the new policy. Keep shared AGENTS.md usable by multiple tools: do not embed Vibe-specific identity, interaction levels, permission mode, or Co-Authored-By there; retrieve effective member-specific capabilities and levels via Joy after authentication. Update joy ai tutorial, CONTRIBUTING.md, generated templates, relevant lifecycle behavior, and tests. Acceptance: re-running init regenerates consistent instructions for existing tools; Vibe and another reader of AGENTS.md receive no conflicting identities or tool-specific requirements; token redemption is the source of truth; existing tool skills and delegated commit attribution still work.'
+comments:
+- author: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-25T20:33:10.621784240Z
+  text: 'Plan: Make generated instructions token-based and tool-neutral; retain Delegated-By but make Co-Authored-By optional across tutorial, templates, docs and commit creation, then test regeneration and attribution.'
+- author: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-25T21:08:44.177507940Z
+  text: '[x] Generated instructions now use redeemed member/session/delegator, Vibe shared AGENTS.md is neutral, Co-Authored-By is optional, and commit paths preserve Delegated-By. Updated tutorial and tests; full suite passes with host Git environment overrides.'
