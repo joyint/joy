@@ -3,9 +3,6 @@ acronym: JOY
 description: Terminal-native product management
 language: en
 forge: github
-docs:
-  architecture: ARCHITECTURE.md
-  vision: VISION.md
 members:
   ai:agy@joy:
     capabilities:
@@ -192,6 +189,9 @@ members:
       signed_at: 2026-08-23T16:48:27.477491580Z
       signature: ed1a3496f185ff00bef08cf9d28791db2531a724d0e9cfb743dcd9e4a4973a39cf55ea3c156fde73c8c903375f4f7b8d871aad806190134e05163ad0608e4b0f
 created: 2026-03-09T23:57:36.761964460Z
+docs:
+  architecture: ARCHITECTURE.md
+  vision: VISION.md
 release:
   version-files:
   - crates/joy-core/Cargo.toml
