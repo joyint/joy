@@ -51,6 +51,7 @@ const QWEN_AGENT_TMPL: &str = include_str!("../templates/ai/tools/qwen-code/agen
 const VIBE_AGENT_TMPL: &str = include_str!("../templates/ai/tools/mistral-vibe/agent.toml");
 const COPILOT_AGENT_TMPL: &str =
     include_str!("../templates/ai/tools/github-copilot/agent.agent.md");
+const AGY_AGENT_TMPL: &str = include_str!("../templates/ai/tools/antigravity/agent.md");
 
 // ---------------------------------------------------------------------------
 // Public API
@@ -136,6 +137,7 @@ fn agent_template_for_tool(tool: &str) -> Option<(&'static str, &'static str)> {
         "qwen" => Some(("qwen-agent", QWEN_AGENT_TMPL)),
         "vibe" => Some(("vibe-agent", VIBE_AGENT_TMPL)),
         "copilot" => Some(("copilot-agent", COPILOT_AGENT_TMPL)),
+        "agy" => Some(("agy-agent", AGY_AGENT_TMPL)),
         _ => None,
     }
 }
@@ -187,6 +189,7 @@ pub fn agent_filename(agent: &serde_json::Value, tool: &str) -> Option<String> {
         "qwen" => Some(format!("{name}.md")),
         "vibe" => Some(format!("{name}.toml")),
         "copilot" => Some(format!("{name}.agent.md")),
+        "agy" => Some(format!("joy-{name}/agent.md")),
         _ => None,
     }
 }
@@ -307,7 +310,7 @@ mod tests {
     // Integration tests: verify all generated files for all tools
     // -----------------------------------------------------------------------
 
-    const ALL_TOOLS: &[&str] = &["claude", "qwen", "vibe", "copilot"];
+    const ALL_TOOLS: &[&str] = &["claude", "qwen", "vibe", "copilot", "agy"];
     const WORK_AGENTS: &[&str] = &[
         "conceiver",
         "planner",
@@ -493,7 +496,7 @@ mod tests {
     fn md_agents_start_with_yaml_frontmatter() {
         let wf = load_workflow().unwrap();
         let agents = load_agents().unwrap();
-        for tool in ["claude", "qwen"] {
+        for tool in ["claude", "qwen", "agy"] {
             for agent in &agents {
                 if !agent_applicable_to_tool(agent, tool) {
                     continue;
@@ -535,6 +538,7 @@ mod tests {
                 ("qwen", ".md"),
                 ("vibe", ".toml"),
                 ("copilot", ".agent.md"),
+                ("agy", "/agent.md"),
             ] {
                 if !agent_applicable_to_tool(agent, tool) {
                     continue;

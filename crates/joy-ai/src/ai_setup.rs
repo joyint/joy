@@ -51,6 +51,29 @@ const TOOL_GITIGNORE_ENTRIES: &[(&str, &[(&str, &str)])] = &[
         &[(".vibe/", "Mistral Vibe"), ("AGENTS.md", "Mistral Vibe")],
     ),
     (
+        "agy",
+        &[
+            (".agents/skills/joy/SKILL.md", "Google Antigravity"),
+            (".agents/skills/joy/setup.md", "Google Antigravity"),
+            (
+                ".agents/agents/joy-conceiver/agent.md",
+                "Google Antigravity",
+            ),
+            (".agents/agents/joy-planner/agent.md", "Google Antigravity"),
+            (".agents/agents/joy-designer/agent.md", "Google Antigravity"),
+            (
+                ".agents/agents/joy-implementer/agent.md",
+                "Google Antigravity",
+            ),
+            (".agents/agents/joy-tester/agent.md", "Google Antigravity"),
+            (".agents/agents/joy-reviewer/agent.md", "Google Antigravity"),
+            (
+                ".agents/agents/joy-documenter/agent.md",
+                "Google Antigravity",
+            ),
+        ],
+    ),
+    (
         "copilot",
         &[
             (".github/copilot-instructions.md", "GitHub Copilot"),
@@ -223,7 +246,7 @@ fn existing_managed_block_entries(root: &Path) -> Vec<String> {
 /// One line per touched file/action, for the caller to render.
 pub type Report<'a> = &'a mut dyn FnMut(String);
 
-pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, JoyError> {
+pub fn is_tool_stale(root: &Path, tool: &str, _member_id: &str) -> Result<bool, JoyError> {
     let workflow = crate::ai_templates::load_workflow()?;
     let agents = crate::ai_templates::load_agents()?;
 
@@ -235,6 +258,7 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         "qwen" => Some(root.join(".qwen/skills/joy/SKILL.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/SKILL.md")),
         "copilot" => Some(root.join(".github/skills/joy/SKILL.md")),
+        "agy" => Some(root.join(".agents/skills/joy/SKILL.md")),
         _ => None,
     };
     if let Some(path) = skill_path {
@@ -250,6 +274,7 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         "qwen" => Some(root.join(".qwen/skills/joy/setup.md")),
         "vibe" => Some(root.join(".vibe/skills/joy/setup.md")),
         "copilot" => Some(root.join(".github/skills/joy/setup.md")),
+        "agy" => Some(root.join(".agents/skills/joy/setup.md")),
         _ => None,
     };
     if let Some(path) = setup_path {
@@ -264,10 +289,11 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
         "qwen" => Some(root.join(".qwen/QWEN.md")),
         "vibe" => Some(root.join("AGENTS.md")),
         "copilot" => Some(root.join(".github/copilot-instructions.md")),
+        "agy" => Some(root.join("AGENTS.md")),
         _ => None,
     };
     if let Some(path) = block_path {
-        let expected_block = render_managed_block(root, member_id, true, tool)?;
+        let expected_block = render_managed_block(true)?;
         if !joy_block_matches(&path, &expected_block) {
             return Ok(true);
         }
@@ -292,6 +318,7 @@ pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, J
                 "qwen" => ".qwen/agents",
                 "vibe" => ".vibe/agents",
                 "copilot" => ".github/agents",
+                "agy" => ".agents/agents",
                 _ => continue,
             };
             if !file_matches(&root.join(agents_dir).join(&filename), &expected) {
@@ -358,6 +385,10 @@ fn detect_qwen() -> bool {
 
 fn detect_vibe() -> bool {
     which("vibe")
+}
+
+fn detect_agy() -> bool {
+    which("agy")
 }
 
 fn detect_copilot() -> bool {
@@ -449,6 +480,7 @@ pub const TOOLS: &[ToolEntry] = &[
     ("Claude Code", "claude", detect_claude, configure_claude),
     ("Qwen Code", "qwen", detect_qwen, configure_qwen),
     ("Mistral Vibe", "vibe", detect_vibe, configure_vibe),
+    ("Google Antigravity", "agy", detect_agy, configure_agy),
     (
         "GitHub Copilot",
         "copilot",
@@ -458,16 +490,10 @@ pub const TOOLS: &[ToolEntry] = &[
 ];
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
-fn render_managed_block(
-    root: &Path,
-    member_id: &str,
-    has_skill: bool,
-    tool: &str,
-) -> Result<String, JoyError> {
+fn render_managed_block(has_skill: bool) -> Result<String, JoyError> {
     let workflow = crate::ai_templates::load_workflow()?;
     let joy_block = crate::ai_templates::render_joy_block(has_skill)?;
     let instructions = crate::ai_templates::render_instructions(&workflow)?;
-    let _ = (root, member_id, tool);
     Ok(format!("{joy_block}\n\n{instructions}"))
 }
 
@@ -523,11 +549,7 @@ fn configure_claude(root: &Path, member_id: &str, report: Report) -> Result<bool
     let mut changed = false;
 
     let claude_md = claude_dir.join("CLAUDE.md");
-    changed |= update_with_joy_block(
-        root,
-        &claude_md,
-        &render_managed_block(root, member_id, true, "claude")?,
-    )?;
+    changed |= update_with_joy_block(root, &claude_md, &render_managed_block(true)?)?;
     report(".claude/CLAUDE.md".into());
 
     let skill_path = claude_dir.join("skills/joy/SKILL.md");
@@ -603,11 +625,7 @@ fn configure_qwen(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     let mut changed = false;
 
     let qwen_md = qwen_dir.join("QWEN.md");
-    changed |= update_with_joy_block(
-        root,
-        &qwen_md,
-        &render_managed_block(root, member_id, true, "qwen")?,
-    )?;
+    changed |= update_with_joy_block(root, &qwen_md, &render_managed_block(true)?)?;
     report(".qwen/QWEN.md".into());
 
     let skill_path = qwen_dir.join("skills/joy/SKILL.md");
@@ -637,11 +655,7 @@ fn configure_vibe(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     // prompt (see mistral-vibe vibe/core/config/harness_files). `.vibe/AGENTS.md`
     // is NOT scanned, so the file must live at the workspace root.
     let agents_md = root.join("AGENTS.md");
-    changed |= update_with_joy_block(
-        root,
-        &agents_md,
-        &render_managed_block(root, member_id, true, "vibe")?,
-    )?;
+    changed |= update_with_joy_block(root, &agents_md, &render_managed_block(true)?)?;
     report("AGENTS.md".into());
 
     let skill_path = vibe_dir.join("skills/joy/SKILL.md");
@@ -661,6 +675,27 @@ fn configure_vibe(root: &Path, member_id: &str, report: Report) -> Result<bool, 
     Ok(changed)
 }
 
+fn configure_agy(root: &Path, member_id: &str, report: Report) -> Result<bool, JoyError> {
+    if !is_tool_stale(root, "agy", member_id)? {
+        return Ok(false);
+    }
+    let mut changed =
+        update_with_joy_block(root, &root.join("AGENTS.md"), &render_managed_block(true)?)?;
+    report("AGENTS.md".into());
+
+    let skill = root.join(".agents/skills/joy");
+    changed |= write_if_changed(root, &skill.join("SKILL.md"), &render_skill()?)?;
+    report(".agents/skills/joy/SKILL.md".into());
+    changed |= write_if_changed(
+        root,
+        &skill.join("setup.md"),
+        crate::ai_templates::setup_instructions(),
+    )?;
+    report(".agents/skills/joy/setup.md".into());
+    changed |= generate_agents(root, "agy", ".agents/agents", report)?;
+    Ok(changed)
+}
+
 fn configure_copilot(root: &Path, member_id: &str, report: Report) -> Result<bool, JoyError> {
     if !is_tool_stale(root, "copilot", member_id)? {
         return Ok(false);
@@ -677,11 +712,7 @@ fn configure_copilot(root: &Path, member_id: &str, report: Report) -> Result<boo
     let mut changed = false;
 
     let instructions_md = github_dir.join("copilot-instructions.md");
-    changed |= update_with_joy_block(
-        root,
-        &instructions_md,
-        &render_managed_block(root, member_id, true, "copilot")?,
-    )?;
+    changed |= update_with_joy_block(root, &instructions_md, &render_managed_block(true)?)?;
     report(".github/copilot-instructions.md".into());
 
     let skill_path = github_dir.join("skills/joy/SKILL.md");
@@ -907,6 +938,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
         "qwen" => root.join(".qwen/skills/joy/SKILL.md").is_file(),
         "vibe" => root.join(".vibe/skills/joy/SKILL.md").is_file(),
         "copilot" => root.join(".github/skills/joy/SKILL.md").is_file(),
+        "agy" => root.join(".agents/skills/joy/SKILL.md").is_file(),
         _ => false,
     }
 }
@@ -926,6 +958,13 @@ pub fn is_tool_active(root: &Path, tool: &str) -> bool {
         .map(|p| p.has_member_key(&member))
         .unwrap_or(false)
         || is_tool_configured(root, tool)
+}
+
+/// Keep shared root instructions while either reader will still use them.
+pub fn shared_agents_md_needed(root: &Path, resetting: &[&str]) -> bool {
+    ["vibe", "agy"]
+        .iter()
+        .any(|tool| !resetting.contains(tool) && is_tool_active(root, tool))
 }
 
 /// Repo-portable "any AI tool is configured" signal: true when
@@ -1088,6 +1127,22 @@ const RESET_PATHS: &[(&str, &str, &[&str])] = &[
         &[".vibe/skills/joy/", ".vibe/agents/", "AGENTS.md"],
     ),
     (
+        "Google Antigravity",
+        "agy",
+        &[
+            ".agents/skills/joy/SKILL.md",
+            ".agents/skills/joy/setup.md",
+            ".agents/agents/joy-conceiver/agent.md",
+            ".agents/agents/joy-planner/agent.md",
+            ".agents/agents/joy-designer/agent.md",
+            ".agents/agents/joy-implementer/agent.md",
+            ".agents/agents/joy-tester/agent.md",
+            ".agents/agents/joy-reviewer/agent.md",
+            ".agents/agents/joy-documenter/agent.md",
+            "AGENTS.md",
+        ],
+    ),
+    (
         "GitHub Copilot",
         "copilot",
         &[
@@ -1124,10 +1179,15 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
         }
         None => RESET_PATHS.to_vec(),
     };
+    let resetting: Vec<&str> = tools.iter().map(|(_, id, _)| *id).collect();
+    let keep_shared = shared_agents_md_needed(root, &resetting);
     let mut files = Vec::new();
     for (name, _, paths) in &tools {
         for path in *paths {
-            if root.join(path).exists() {
+            if (*path != "AGENTS.md" || !keep_shared)
+                && !files.iter().any(|(_, existing)| *existing == *path)
+                && root.join(path).exists()
+            {
                 files.push((*name, *path));
             }
         }
@@ -1539,16 +1599,12 @@ mod setup_tests {
     fn managed_block_is_independent_of_tool_and_member_levels() {
         let tmp = tempfile::tempdir().unwrap();
         write_level_defaults(tmp.path(), "proposing");
-        let before = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
+        let before = render_managed_block(true).unwrap();
         assert!(before.contains("joy project member show <data.member>"));
         assert!(!before.contains("ai:test@joy"));
         write_level_defaults(tmp.path(), "autonomous");
-        let after = render_managed_block(tmp.path(), "ai:test@joy", true, "claude").unwrap();
+        let after = render_managed_block(true).unwrap();
         assert_eq!(before, after);
-        assert_eq!(
-            before,
-            render_managed_block(tmp.path(), "ai:vibe@joy", true, "vibe").unwrap()
-        );
     }
 
     #[test]
@@ -1609,6 +1665,33 @@ mod setup_tests {
         assert!(is_tool_active(tmp.path(), "claude"));
         assert!(!is_tool_active(tmp.path(), "qwen"));
         assert!(has_ai_member(tmp.path()));
+    }
+
+    #[test]
+    fn resetting_one_shared_instruction_reader_preserves_the_other() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::create_dir_all(root.join(".vibe/skills/joy")).unwrap();
+        fs::create_dir_all(root.join(".agents/skills/joy")).unwrap();
+        fs::write(root.join(".vibe/skills/joy/SKILL.md"), "vibe").unwrap();
+        fs::write(root.join(".agents/skills/joy/SKILL.md"), "agy").unwrap();
+        fs::write(root.join("AGENTS.md"), "shared").unwrap();
+
+        let agy = plan_reset(root, Some("agy")).unwrap();
+        assert!(!agy.files.iter().any(|(_, path)| *path == "AGENTS.md"));
+        assert!(agy
+            .files
+            .iter()
+            .any(|(_, path)| *path == ".agents/skills/joy/SKILL.md"));
+
+        let all = plan_reset(root, None).unwrap();
+        assert_eq!(
+            all.files
+                .iter()
+                .filter(|(_, path)| *path == "AGENTS.md")
+                .count(),
+            1
+        );
     }
 
     #[test]

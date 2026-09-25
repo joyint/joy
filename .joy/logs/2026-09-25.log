@@ -10,3 +10,5 @@
 2026-09-25T21:22:50.647Z release guard.denied "AI member ai:copilot@joy cannot perform manage actions" [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-25T21:25:37.733Z release guard.denied "horst.schwarz@joydev.com must authenticate to perform this action. Run `joy auth`." [horst.schwarz@joydev.com]
 2026-09-25T21:26:36.757Z v0.21.1 release.created [horst.schwarz@joydev.com]
+2026-09-25T21:42:54.350Z JOY-02B2-80 comment.added [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-25T21:42:54.614Z JOY-02B2-80 item.status_changed "in-progress -> review" [ai:copilot@joy delegated-by:horst.schwarz@joydev.com]

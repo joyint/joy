@@ -417,6 +417,7 @@ Supported tools for tool mode:
 | GitHub Copilot (GitHub) | `github-copilot` | `.github/copilot-instructions.md` |
 | Mistral Vibe (Mistral) | `mistral-vibe` | Project instructions |
 | Qwen Code (Alibaba) | `qwen-code` | Project instructions |
+| Google Antigravity (Google) | `agy` | Shared `AGENTS.md` + `.agents/skills/joy/` |
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything - Joy just provides the product management interface.
 
@@ -432,7 +433,7 @@ Files managed by Joy fall into two lifecycle groups:
 **AI-bound** - created by `joy ai init`, removed when the last AI tool is reset via `joy ai reset`:
 - `.joy/ai/` (instructions, skills, setup guides)
 - `.joy/capabilities/` (capability definition files)
-- Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.github/copilot*`)
+- Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.agents/skills/joy/`, `.agents/agents/joy-*/`, `.github/copilot*`)
 
 When adding new AI-related files, decide which group they belong to. If the file is only useful when at least one AI tool is configured, it belongs to the AI-bound group. The `.gitignore` block is also updated dynamically - only configured tools get gitignore entries.
 
@@ -440,7 +441,7 @@ When adding new AI-related files, decide which group they belong to. If the file
 
 Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy ai init`. Each file describes one of Joy's seven fixed capabilities (conceive, plan, design, implement, test, review, document) with human-readable descriptions, a constraints table, and a machine-parseable YAML block defining permissions and applicable tools.
 
-For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
+For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe, Google Antigravity), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
 
 ### Interaction levels
 

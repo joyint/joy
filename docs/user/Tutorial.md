@@ -418,7 +418,7 @@ This does four things:
 
 1. Checks if your project has the Vision, Architecture, and Contributing docs (offers to create templates if missing).
 2. Bootstraps your authentication inline if `joy auth init` has not run yet, so the whole setup is one passphrase.
-3. Detects your installed AI tools (Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot CLI) and writes their tool-specific instruction files (`.claude/CLAUDE.md`, `.qwen/QWEN.md`, `AGENTS.md`, `.github/copilot-instructions.md`) plus the `/joy` skill where the tool supports skills.
+3. Detects your installed AI tools (Claude Code, Qwen Code, Mistral Vibe, Google Antigravity's `agy`, GitHub Copilot CLI) and writes their instructions (`.claude/CLAUDE.md`, `.qwen/QWEN.md`, shared `AGENTS.md`, `.github/copilot-instructions.md`) plus the `/joy` skill where the tool supports skills. Antigravity discovers the skill at `.agents/skills/joy/SKILL.md` and its Joy capability agents under `.agents/agents/joy-*/agent.md`.
 4. Registers each detected tool as an `ai:<name>@joy` member with attested capabilities.
 
 The generated instructions point agents at `joy ai tutorial` and tell them to use the `member`, `session_env`, and `delegated_by` fields returned by token redemption. No tool-specific identity or co-author attribution is required in shared instructions. `joy ai tutorial` covers the CLI surface, authentication, the item lifecycle, commit conventions, and minimum hygiene rules; together with the project's authoritative docs, that is everything the AI needs.
@@ -428,6 +428,8 @@ GitHub Copilot needs no special handling any more, in the editor or out of it. `
 ```sh
 joy ai init --tool copilot
 ```
+
+If `agy` is not on your shell's PATH (for example, you only use the Antigravity editor), configure it explicitly with `joy ai init --tool agy`. It registers `ai:agy@joy`. The shared root `AGENTS.md` contains no tool identity; each agent uses the member and delegator returned by its own token redemption. Resetting one of Antigravity or Vibe keeps that block while the other still uses it.
 
 For an AI joy genuinely cannot detect, such as a chat assistant with no CLI and no instruction files of its own, register a member by hand:
 
