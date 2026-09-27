@@ -1,0 +1,14 @@
+id: JOY-02B3-5D
+title: Bind a joy identity to a forge account so a forge login opens the project without the passphrase
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-27T09:19:03.685654621Z
+updated: 2026-09-27T09:19:03.685654621Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Asked by users repeatedly: why can the GitHub (GitLab, Gitea) login not be reused, so that neither the CLI nor the app asks for the passphrase while the person is signed in at the forge. Technically possible, with one honest limit: a forge login is a revocable bearer credential, not key material; no forge hands out a stable secret the identity seed could be wrapped under, so the binding cannot be cryptographic. What works: the forge login is the gate, and the seed is held by the device. Explicit connect per project through the forge plugins (D2.x, the identity/resolve/login verbs), never implicit: ''joy forge connect [--host H]'' (and a Connect button on the member card in the app) asks the passphrase once, verifies the signed-in account through the responsible plugin''s identity verb (login, user_id, verified emails), records the binding on the member in project.yaml as an attested field (forge host + user_id, never the token), and wraps the seed under a device key kept in the OS keystore (the app already uses keyring for its remember; login_with_seed exists in joy-core for exactly this entry). Afterwards, whenever the plugin reports that bound account as signed in on this device, joy opens a session without asking (session step of resolve_identity, JOY-02B1-45); signed out at the forge, or after ''joy forge disconnect'', the passphrase is asked again. One binding per member and project, so a person signed in at several forges picks the one this project uses; the project''s forge/remote host decides which plugin is asked. Recovery key and passphrase stay unchanged; the device wrap is one more wrap, removable, never a replacement. Out of scope here; depends on the one-gate task (session, else passphrase, then a session) being in place.'
