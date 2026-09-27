@@ -1,9 +1,10 @@
 #!/usr/bin/env bats
 #
-# Two writers on one chat ref (JOY-023B-7E): chats live on refs/joy/chats,
-# and a write is read-tip, build, move-ref. Without a compare-and-swap the
-# loser silently overwrites the winner, so messages vanish from a chat
-# that looks healthy and the overwritten commits linger unreachable.
+# Twelve writers on one chat ref (JOY-023B-7E, JOY-02AB-F3): chats live on
+# refs/joy/chats, and a write is read-tip, build, move-ref. Writers on one
+# checkout queue behind the store's write lock, so every send lands and
+# nobody is told to try again; the compare-and-swap underneath stays as
+# the safety net, so a message can still never vanish silently.
 #
 # Nothing is faked here: real joy, real git, real parallel processes.
 
@@ -11,7 +12,7 @@ load setup
 
 MESSAGES=12
 
-@test "parallel sends never lose a message silently" {
+@test "parallel sends all land and none is refused" {
     setup_human_auth
 
     for i in $(seq 1 $MESSAGES); do
@@ -24,31 +25,21 @@ MESSAGES=12
     wait
 
     joy chat show general --passphrase "$TEST_PASSPHRASE" > "$TEST_DIR/shown"
-    local sent=0
     for i in $(seq 1 $MESSAGES); do
-        if [ "$(cat "$TEST_DIR/rc-$i")" = "0" ]; then
-            # a send that reported success IS in the chat
-            grep -q "msg-$i-end" "$TEST_DIR/shown" || {
-                echo "msg-$i-end reported success but is missing" >&2
-                false
-            }
-            sent=$((sent + 1))
-        else
-            # and a send that lost the race says so, in the words a
-            # person can act on
-            grep -q "try again" "$TEST_DIR/out-$i"
-            run -1 grep -q "msg-$i-end" "$TEST_DIR/shown"
+        # every send succeeds: the writers queue, they do not race
+        if [ "$(cat "$TEST_DIR/rc-$i")" != "0" ]; then
+            echo "send $i failed:" >&2
+            cat "$TEST_DIR/out-$i" >&2
+            false
         fi
+        # and nobody was asked to do the person's work again
+        run -1 grep -q "try again" "$TEST_DIR/out-$i"
+        # and what reported success IS in the chat
+        grep -q "msg-$i-end" "$TEST_DIR/shown" || {
+            echo "msg-$i-end reported success but is missing" >&2
+            false
+        }
     done
-    # at least one writer got through, or the run proves nothing. How
-    # MANY survive depends on machine load, so it is deliberately not
-    # asserted: what is under test is that failure is never silent.
-    [ "$sent" -ge 1 ]
-
-    # (a writer that lost the race has already built its commit; that
-    # object stays behind unreachable by design and is what the
-    # maintenance pass of JOY-023C-1E collects, so it is not asserted
-    # here)
 }
 
 @test "a second writer folds onto the winner instead of replacing it" {
