@@ -267,26 +267,57 @@ pub(crate) fn commit_root(
         .write(ObjectType::Commit, &buffer)
         .map_err(git)?;
     let created_here = !existed_before && oid == predicted;
-    let moved = match parent {
+    let refused = match parent {
         // The ref must still be exactly where the caller read it.
         Some(base) => repo
             .reference_matching(CHATS_REF, oid, true, base.id(), message)
-            .is_ok(),
+            .err(),
         // No parent means we believe the ref does not exist yet; creating
         // it non-forced fails if someone else got there first.
-        None => repo.reference(CHATS_REF, oid, false, message).is_ok(),
+        None => repo.reference(CHATS_REF, oid, false, message).err(),
     };
-    if moved {
+    let Some(refusal) = refused else {
         maintain_occasionally(repo);
         return Ok(Some(oid));
+    };
+    // WHY the swap was refused decides what happens to the object
+    // (JOY-02AB-F3). "The ref is not where you read it" (Modified, or
+    // Exists for a ref believed unborn) makes the commit nobody's: the
+    // ref never comes back to this parent, so no writer holding this
+    // parent can publish it, and it is unlinked under the two
+    // protections a deletion outside the sweep carries: this attempt
+    // created the object, and the live history does not reach it. Every
+    // other answer leaves the ref where it was. Locked above all: another
+    // process sits between its validity check of the SAME object and its
+    // rename (libgit2 checks the target before it takes the ref lock,
+    // and a contender is told Locked at once), and a twin that built the
+    // byte-identical commit may be about to put it on the ref. Unlinking
+    // it then left `refs/joy/chats` naming an object the store no
+    // longer had, four CI nights in a row. The object stays; the sweep
+    // collects it if it really is nobody's.
+    if matches!(refusal.code(), ErrorCode::Modified | ErrorCode::Exists) {
+        discard_lost_commit(repo, oid, created_here);
     }
-    // Lost the race in the window between the check and the swap, so the
-    // commit is nobody's. It is unlinked only under both protections a
-    // deletion outside the sweep has to carry: this
-    // attempt created the object (nobody else's copy), and the live
-    // history does not reach it (not the tip, not an ancestor of it).
-    discard_lost_commit(repo, oid, created_here);
     Ok(None)
+}
+
+/// The write lock of this store's chats ref (JOY-02AB-F3): every writer
+/// on one checkout takes it around read-tip, build, move-ref, so nobody
+/// loses the swap to a neighbour and nobody retries. Twelve people
+/// sending at once used to be twelve processes racing one ref, up to
+/// eight rounds each with no pause, and under load one send in ten gave
+/// up with "try again". Cross-process, through joy's one file lock
+/// ([`joy_core::util::file_lock`]), in the git dir beside the refs it
+/// protects; the swap in [`commit_root`] stays as the safety net for a
+/// writer that did not take it. Never held across a call that takes it
+/// again: [`sync_with_forge`] takes it inside [`reconcile_with_tracking`]
+/// and nowhere else.
+pub(crate) fn write_lock(
+    repo: &Repository,
+) -> Result<joy_core::util::file_lock::FileLock, JoyError> {
+    let path = repo.commondir().join("joy-chats.lock");
+    joy_core::util::file_lock::exclusive(&path, joy_core::util::file_lock::DEFAULT_WAIT)
+        .map_err(|e| JoyError::Git(format!("the chat store is busy: {e}")))
 }
 
 /// Take a lost commit back out of the store, under both protections.
@@ -363,6 +394,7 @@ pub(crate) fn load_chats(root: &Path) -> Result<Vec<Chat>, JoyError> {
 /// every human deleted it). A no-op if the chat is not on the ref.
 pub fn remove_chat(root: &Path, id: &str) -> Result<(), JoyError> {
     let repo = open_repo(root)?;
+    let _lock = write_lock(&repo)?;
     for _ in 0..REF_MOVE_ATTEMPTS {
         if remove_chat_once(&repo, id)? {
             return Ok(());
@@ -666,6 +698,10 @@ pub fn remote_hash(
 /// [`sync_with_forge`] / [`pull_from_forge`] on every venue.
 pub fn reconcile_with_tracking(root: &Path) -> Result<bool, JoyError> {
     let repo = open_repo(root)?;
+    // The adopt and the fast-forward below SET the ref: without the
+    // store's write lock a local write landing between the read of
+    // `local` and that set was overwritten without a word.
+    let _lock = write_lock(&repo)?;
     let local = repo.refname_to_id(CHATS_REF).ok();
     let remote = repo.refname_to_id(CHATS_TRACKING_REF).ok();
     match (local, remote) {
@@ -873,6 +909,121 @@ mod tests {
             "a stale tip must not clobber the newer one"
         );
         assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), third);
+    }
+
+    /// JOY-02AB-F3: a writer that loses the swap used to unlink the
+    /// commit it wrote whatever the refusal was. Chat commits are
+    /// byte-identical across writers over the same parent, tree and
+    /// message (fixed signature, day-coarse time), so a TWIN process can
+    /// be publishing that very object while the loser removes it. libgit2 (1.9.7, refs.c:405 then :426) checks
+    /// the target object exists BEFORE it takes the ref lock, and a
+    /// contender finds the lock taken and gets GIT_ELOCKED at once
+    /// (util/filebuf.c lock_file), with the ref still at the old tip.
+    ///
+    /// The twin's critical section is three syscalls: write "<oid>\n"
+    /// into refs/joy/chats.lock, then rename it over refs/joy/chats.
+    /// Those are emulated by hand here; the loser is the real code.
+    #[test]
+    fn a_lost_writer_unlinks_the_commit_its_twin_is_publishing() {
+        let dir = repo();
+        let repo = open_repo(dir.path()).unwrap();
+        let empty = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let tip = commit_root(&repo, None, &empty, "base [no-item]")
+            .unwrap()
+            .unwrap();
+        let base = repo.find_commit(tip).unwrap();
+
+        // Both writers derive the same no-op commit X from that tip.
+        let sig = signature(&repo).unwrap();
+        let msg = "chat general [no-item]";
+        let buf = repo
+            .commit_create_buffer(&sig, &sig, msg, &empty, &[&base])
+            .unwrap();
+        let x = Oid::hash_object(ObjectType::Commit, &buf).unwrap();
+
+        // Twin C, mid-write: it has validated X (which the loser B wrote
+        // a moment earlier), taken the lock and filled it. B has not
+        // reached its swap yet. To let B be the CREATOR of X, C's
+        // freshen of X happened in between: modelled by writing X only
+        // through B below, and C's lock holding X's id from then on.
+        let lock = dir.path().join(".git/refs/joy/chats.lock");
+        std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+        std::fs::write(&lock, format!("{x}\n")).unwrap();
+
+        // The contender really does get ELOCKED, not a wait.
+        let code = repo
+            .reference_matching(CHATS_REF, tip, true, tip, "probe")
+            .map(|_| None)
+            .unwrap_or_else(|e| Some(e.code()));
+        assert_eq!(code, Some(ErrorCode::Locked));
+
+        // Loser B: real code. It writes X (created here) and its swap is
+        // refused by the lock. Before the fix B read the ref (still
+        // `tip`), judged X unreachable and unlinked it; now a refusal
+        // that is not "the ref moved" leaves the object alone.
+        let moved = commit_root(&repo, Some(&base), &empty, msg).unwrap();
+        assert!(moved.is_none(), "B lost its swap");
+        // On disk, not through this handle's odb: libgit2's object cache
+        // would answer `exists` for the rest of this process either way.
+        // A fresh process (`joy chat show` in CI) has no such cache.
+        let hex = x.to_string();
+        let loose = dir
+            .path()
+            .join(".git/objects")
+            .join(&hex[..2])
+            .join(&hex[2..]);
+        assert!(
+            loose.exists(),
+            "B must leave X for the twin that holds the lock"
+        );
+
+        // Twin C completes its write: rename lock over the ref.
+        std::fs::rename(&lock, dir.path().join(".git/refs/joy/chats")).unwrap();
+
+        // A fresh reader finds the commit the ref names. Before the fix
+        // this was NotFound, class Odb: the error `joy chat show general`
+        // failed on in tests/integration/chat_concurrent_writes.bats.
+        let reader = Repository::open(dir.path()).unwrap();
+        assert_eq!(reader.refname_to_id(CHATS_REF).unwrap(), x);
+        assert!(reader.find_commit(x).is_ok());
+    }
+
+    /// The counterpart: a swap refused because the ref MOVED still
+    /// discards the lost commit, or the sandbox grows its 505 orphans
+    /// out of 761 commits again.
+    #[test]
+    fn a_swap_refused_by_a_moved_ref_still_discards_the_lost_commit() {
+        let dir = repo();
+        let repo = open_repo(dir.path()).unwrap();
+        let empty = repo
+            .find_tree(repo.treebuilder(None).unwrap().write().unwrap())
+            .unwrap();
+        let tip = commit_root(&repo, None, &empty, "base [no-item]")
+            .unwrap()
+            .unwrap();
+        let base = repo.find_commit(tip).unwrap();
+        // somebody else moves the ref on
+        let winner = commit_root(&repo, Some(&base), &empty, "winner [no-item]")
+            .unwrap()
+            .unwrap();
+        // a writer still holding `tip` builds a commit nobody will reach
+        let sig = signature(&repo).unwrap();
+        let buf = repo
+            .commit_create_buffer(&sig, &sig, "loser [no-item]", &empty, &[&base])
+            .unwrap();
+        let x = Oid::hash_object(ObjectType::Commit, &buf).unwrap();
+        let moved = commit_root(&repo, Some(&base), &empty, "loser [no-item]").unwrap();
+        assert!(moved.is_none());
+        assert_eq!(repo.refname_to_id(CHATS_REF).unwrap(), winner);
+        let hex = x.to_string();
+        let loose = dir
+            .path()
+            .join(".git/objects")
+            .join(&hex[..2])
+            .join(&hex[2..]);
+        assert!(!loose.exists(), "a commit the ref left behind is unlinked");
     }
 
     /// Commit a sealed-layout chat subtree carrying the given log entry
