@@ -824,11 +824,14 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
     let language = prompt::ask_text("Language (e.g. en, de)", Some("en"))?;
 
     println!();
+    // The answer takes the place of the global `--user` for the rest of
+    // this run (JOY_USER): the founding, and the AI setup offered below,
+    // act as the person just named.
+    std::env::set_var("JOY_USER", user.trim());
     init_cmd::run(InitArgs {
         command: None,
         name: Some(name),
         acronym: Some(acronym),
-        user: Some(user),
         language: Some(language),
         anonymous: false,
         passphrase: None,

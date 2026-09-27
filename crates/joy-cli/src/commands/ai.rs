@@ -105,10 +105,6 @@ struct InitArgs {
     /// when it is not auto-detected. Skips the docs prompts.
     #[arg(long)]
     tool: Option<String>,
-
-    /// Act as this member instead of the one git config names.
-    #[arg(long)]
-    user: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -199,12 +195,8 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
-    let bootstrapped_passphrase = ensure_human_auth_initialized(
-        &root,
-        args.passphrase.as_deref(),
-        args.passphrase_stdin,
-        args.user.as_deref(),
-    )?;
+    let bootstrapped_passphrase =
+        ensure_human_auth_initialized(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
     let effective_passphrase = bootstrapped_passphrase
         .as_deref()
         .or(args.passphrase.as_deref());
@@ -262,37 +254,25 @@ struct AiInitPayload {
 /// tool configs written but no members attested. Detecting and resolving
 /// here keeps the flow in one pass.
 ///
-/// Returns `Some(passphrase)` if auth was just bootstrapped or a named
-/// member was just signed in, so the caller can pass it forward to
-/// subsequent operations such as AI member attestations in
-/// `setup_new_tools` without re-prompting. Returns `None` if the acting
-/// member already had authentication and needed no sign-in.
+/// Returns `Some(passphrase)` if auth was just bootstrapped, so the caller
+/// can pass it forward to subsequent operations such as AI member
+/// attestations in `setup_new_tools` without re-prompting. Returns `None`
+/// if auth was already initialised.
 fn ensure_human_auth_initialized(
     root: &Path,
     passphrase: Option<&str>,
     passphrase_stdin: bool,
-    user: Option<&str>,
 ) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    // The human this command sets authentication up for. Named with
-    // `--user`, that name wins, as it does for `joy auth`: it is how a
-    // person with no git identity, or a second person at one checkout,
-    // says who sets the tools up. Otherwise the operator behind a
-    // delegation session, else the person who signed in at this
-    // terminal, else this repository's own git config, else the forge
-    // account. Either way the answer is an at-rest member key, so
-    // anonymous mode (ADR-042) needs no second lookup path, and it is
-    // the same member `joy auth init` resolves, so the two cannot
-    // disagree about who is being initialised.
-    let member_key = match user {
-        Some(named) => {
-            let address = joy_core::identity::acting_member(root, &project, Some(named))?;
-            joy_core::privacy::member_key_for_email_or_forge(&project, root, &address, None)
-                .unwrap_or(address)
-        }
-        None => joy_core::identity::acting_human_key(root)?,
-    };
+    // The human this command sets authentication up for: the name given
+    // to this call (`--user`), else the operator behind a delegation
+    // session, else the person signed in at this terminal, else this
+    // repository's own git config, else the forge account. It is already
+    // an at-rest member key, so anonymous mode (ADR-042) needs no second
+    // lookup path, and it is the same member `joy auth init` resolves,
+    // so the two cannot disagree about who is being initialised.
+    let member_key = joy_core::identity::acting_human_key(root)?;
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(
             "{} is not a registered project member. Run `joy project member add {}` first.",
@@ -300,39 +280,24 @@ fn ensure_human_auth_initialized(
             member_key
         )
     })?;
-    if member.verify_key.is_none() {
-        dprintln!("{}", color::section("Authentication"));
-        dprintln!(
-            "{}",
-            color::inactive(
-                "AI tool members are attested with your project key, so authentication is required before registration."
-            )
-        );
-        let bootstrapped =
-            crate::commands::auth::run_init(passphrase, passphrase_stdin, user, false)?;
-        dprintln!();
-        return Ok(Some(bootstrapped));
+    if member.verify_key.is_some() {
+        return Ok(None);
     }
-    // Enrolled already. A named member who is not the one this terminal
-    // would otherwise act as signs in now, so every step below (the
-    // attestations, the commit) finds them through the session and not
-    // whoever git config names.
-    if user.is_some() {
-        let acting = joy_core::identity::acting_human_key(root).ok();
-        if acting.as_deref() != Some(member_key.as_str()) {
-            dprintln!("{}", color::section("Authentication"));
-            let signed_in = crate::commands::auth::auth_with_passphrase(
-                root,
-                &project,
-                &member_key,
-                passphrase,
-                passphrase_stdin,
-            )?;
-            dprintln!();
-            return Ok(Some(signed_in));
-        }
-    }
-    Ok(None)
+
+    dprintln!("{}", color::section("Authentication"));
+    dprintln!(
+        "{}",
+        color::inactive(
+            "AI tool members are attested with your project key, so authentication is required before registration."
+        )
+    );
+    // No session is left behind (operator, 2026-09-27): only `joy auth`
+    // makes one. The passphrase chosen here still serves the rest of this
+    // run, which is why it is handed back.
+    let bootstrapped =
+        crate::commands::auth::run_init(passphrase, passphrase_stdin, None, false, false)?;
+    dprintln!();
+    Ok(Some(bootstrapped))
 }
 
 /// Check if a tool's generated files are up to date by re-rendering expected

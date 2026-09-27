@@ -5,18 +5,23 @@
 //!
 //! Resolves the acting user's identity from, in this order (operator
 //! decision 2026-09-19, item JOY-02AE-1A, correcting D3.9 of
-//! docs/design/forge-connection-ng.md, and the operator's addition of
-//! 2026-09-27, which put the person's own session in front of git
-//! config):
+//! docs/design/forge-connection-ng.md, and the operator's decisions of
+//! 2026-09-27, which added the name on the call and put the person's
+//! own session in front of git config):
+//! 0. The name given to this very call: the global `--user <address>`,
+//!    carried as `JOY_USER`. This call acts as that member and nothing
+//!    is remembered; unproven like git config, so the guard asks for
+//!    the passphrase where it must. (`joy auth --user` is the one
+//!    command where the name makes a session instead.)
 //! 1. The delegation session in `JOY_SESSION` (unchanged: an AI's
 //!    identity has never come from anywhere else).
-//! 2. The person who signed in at THIS terminal: the newest live human
-//!    session of this project whose terminal binding matches, verified
-//!    against that member's key in `project.yaml`. This is what makes
-//!    "name yourself once" true on a machine with no git identity at
-//!    all (`joy auth --user <address>`), and what lets a person act as
-//!    somebody other than the one git config names, for as long as the
-//!    session lasts.
+//! 2. The person who signed in at THIS terminal: the live human session
+//!    of this project whose terminal binding matches, verified against
+//!    that member's key in `project.yaml`. There is one per project and
+//!    device, the one the last `joy auth` made. This is what makes
+//!    "sign in once" true on a machine with no git identity at all, and
+//!    what lets a person act as somebody other than the one git config
+//!    names, for as long as the session lasts.
 //! 3. `git config user.email` of the repository (`--local`).
 //! 4. `git config user.email` global. One git2 read answers both: the
 //!    config git2 opens through the repository already tries local
@@ -40,13 +45,13 @@
 //! [`acting_member`] follows this same order too, see its own doc for
 //! the one way it still differs from this function.
 //!
-//! A machine that answers none of the five, a fresh clone with no
+//! A machine that answers none of these, a fresh clone with no
 //! session, no git config and no forge login, or a checkout whose git
 //! config and forge account both name nobody the project knows, is told
 //! so instead of being guessed at: [`acting_member_key`] and
 //! [`acting_human_key`] answer [`JoyError::UnknownActingMember`], whose
-//! text names the two remedies (sign in by name, or set git config). A
-//! read-only command keeps working with an EMPTY member.
+//! one line names the two remedies (`joy auth`, or `--user` with the
+//! passphrase). A read-only command keeps working with an EMPTY member.
 //!
 //! AI members authenticate via `joy auth --token`, which creates a
 //! session. There is no self-declared identity override.
@@ -89,13 +94,16 @@ impl Identity {
 /// Resolve the acting identity for the current operation.
 ///
 /// Priority (operator decision 2026-09-19, item JOY-02AE-1A, correcting
-/// D3.9 of the forge connection NG design; session step added by the
-/// operator on 2026-09-27): the delegation session first, then the
-/// person who signed in at this terminal, then git config, then the
-/// forge account, and nothing else.
+/// D3.9 of the forge connection NG design; the name on the call and the
+/// session step added by the operator on 2026-09-27): the name given to
+/// this call first, then the delegation session, then the person who
+/// signed in at this terminal, then git config, then the forge account,
+/// and nothing else.
+/// 0. `JOY_USER`, the global `--user` of this call (see [`named_user`]);
+///    unauthenticated, nothing remembered
 /// 1. JOY_SESSION -- ephemeral-key-bound AI session handle (ADR-033)
-/// 2. The newest live human session of this project bound to this
-///    terminal, verified against the member's key (see
+/// 2. The live human session of this project bound to this terminal,
+///    verified against the member's key (see
 ///    [`member_key_from_session`]); authenticated
 /// 3. The member key: `git config user.email`, repository then global
 ///    (one read; see [`member_key_from_git_config`])
@@ -117,6 +125,24 @@ impl Identity {
 pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     let project = load_project_optional(root);
     let project_id = crate::auth::session::project_id(root).ok();
+
+    // 0. A name given to this very call (`--user`, carried as JOY_USER):
+    //    this call acts as that member and nothing is remembered. As
+    //    unproven as git config; the guard asks for the passphrase where
+    //    it must. The name is held against the member map the way an
+    //    address from git config is, so an anonymous project answers
+    //    with its opaque key.
+    if let Some(named) = named_user() {
+        let member = project
+            .as_ref()
+            .and_then(|p| crate::privacy::member_key_for_email_or_forge(p, root, &named, None))
+            .unwrap_or(named);
+        return Ok(Identity {
+            member: member.into(),
+            delegated_by: None,
+            authenticated: false,
+        });
+    }
 
     // 1. JOY_SESSION: env var carries the ephemeral private key bound to
     //    the session (ADR-033). We derive the public key from it and match
@@ -375,11 +401,10 @@ fn hint_once(hint: &str) {
 /// trailer writes no cleartext address there by accident.
 ///
 /// [`JoyError::UnknownActingMember`] when nothing answers at all: no
-/// session of either kind, no git config naming a member, and no forge
-/// account naming one either, which is a fresh clone or a second
-/// machine where nobody signed in yet. A command that lets a person name
-/// somebody (`--user`) asks [`acting_member`] instead, which takes that
-/// name first.
+/// name on the call, no session of either kind, no git config naming a
+/// member, and no forge account naming one either, which is a fresh
+/// clone or a second machine where nobody signed in yet. The auth
+/// commands ask [`acting_member`] instead, which never reads a session.
 ///
 /// This answers with the AI member under a delegation session, because
 /// that is who is acting. A command that needs the human BEHIND the
@@ -436,6 +461,16 @@ pub fn acting_human_key(root: &Path) -> Result<String, JoyError> {
     Ok(key.unwrap_or(operator))
 }
 
+/// The name given to this very call: the global `--user <address>`,
+/// which the command line carries as `JOY_USER` (operator, 2026-09-27).
+/// Empty and whitespace count as absent.
+pub fn named_user() -> Option<String> {
+    std::env::var("JOY_USER")
+        .ok()
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
+
 /// The address joy OFFERS a person when it asks them who they are: git
 /// config `user.email`, empty treated as absent.
 ///
@@ -455,15 +490,18 @@ pub fn git_config_prefill() -> Option<String> {
 }
 
 /// The member a bare `joy auth`, `joy auth init` or `joy auth --otp`
-/// acts as before anybody typed a name: the same order
-/// [`resolve_identity`] follows now that the device pin is gone from
-/// both of them (operator decision 2026-09-19, JOY-02AE-1A, correcting
-/// D3.9, completed in a later addition to the same item; session step
-/// added 2026-09-27) -- an explicit name first, then the person who
-/// signed in at this terminal, then this repository's own git config
-/// (local before global), then the account the forge tool for the
-/// remote's host reports -- and the typed error when none of the four
-/// answers.
+/// acts as before anybody typed a name: an explicit name first (`named`,
+/// else the call's own `--user`, see [`named_user`]), then this
+/// repository's own git config (local before global), then the account
+/// the forge tool for the remote's host reports, and the typed error
+/// when none of the three answers (operator decision 2026-09-19,
+/// JOY-02AE-1A, correcting D3.9, completed in a later addition to the
+/// same item).
+///
+/// Unlike [`resolve_identity`] this never reads the session: `joy auth`
+/// is the command that MAKES the session, so a bare `joy auth` signs in
+/// the person git config names and replaces whoever was signed in
+/// before (operator, 2026-09-27), instead of renewing them.
 ///
 /// This still differs from [`resolve_identity`] in what it hands back:
 /// that function checks each candidate against `project.yaml` before
@@ -486,14 +524,13 @@ pub fn acting_member(
     project: &Project,
     named: Option<&str>,
 ) -> Result<String, JoyError> {
-    if let Some(named) = named.map(str::trim).filter(|n| !n.is_empty()) {
-        return Ok(named.to_string());
-    }
-    // The one candidate here that IS checked, because a session is a
-    // signature and not a string: a session names the member the way
-    // this project's member map keys them.
-    if let Some(member) = member_key_from_session(project) {
-        return Ok(member);
+    if let Some(named) = named
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+        .map(str::to_string)
+        .or_else(named_user)
+    {
+        return Ok(named);
     }
     let (_, config_email) = crate::vcs::forge::user_identity(root);
     if let Some(email) = config_email.filter(|s| !s.trim().is_empty()) {
@@ -502,7 +539,7 @@ pub fn acting_member(
     forge_account_candidate(root, project).ok_or(JoyError::UnknownActingMember)
 }
 
-/// The last of [`acting_member`]'s four sources: an address the account
+/// The last of [`acting_member`]'s three sources: an address the account
 /// the forge tool for the remote's host reports vouches for, not yet
 /// checked against `project.yaml` (the caller does that). This asks the
 /// same plugin the same question [`member_key_from_forge_account`] does

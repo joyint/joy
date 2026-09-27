@@ -134,6 +134,10 @@ pub(crate) struct Cli {
     #[arg(long, global = true, value_name = "SESSION")]
     session: Option<String>,
 
+    /// Act as this member instead of the one git config names
+    #[arg(long, global = true, value_name = "ADDRESS")]
+    user: Option<String>,
+
     #[command(subcommand)]
     command: Option<Commands>,
 }
@@ -472,6 +476,12 @@ pub fn cli_main() -> anyhow::Result<()> {
     // unchanged. Precedence: --session > JOY_SESSION > no session.
     if let Some(ref session) = cli.session {
         std::env::set_var("JOY_SESSION", session);
+    }
+    // --user names the member this one call acts as; `joy auth` makes a
+    // session for them, every other command remembers nothing. Carried
+    // as JOY_USER so joy-core's identity resolution reads it first.
+    if let Some(ref user) = cli.user {
+        std::env::set_var("JOY_USER", user);
     }
 
     // Honour -w / --working-dir BEFORE anything that depends on cwd

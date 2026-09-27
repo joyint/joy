@@ -123,14 +123,20 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         text(&status)
     );
 
-    // Re-authenticating while the session stands renews it for the same
-    // member, found through that session; once it has expired, the
-    // founder names themselves again (`joy auth --user`), which is the
-    // one thing a machine with no git identity asks for.
+    // Re-authenticating on a machine with no git identity means naming
+    // yourself again: a bare `joy auth` reads git config, not the
+    // session it is about to replace. `--user` is the one thing such a
+    // machine asks for, and it makes the session anew.
     let again = joy(
         &root,
         &home,
-        &["auth", "--passphrase", "correct horse battery staple"],
+        &[
+            "auth",
+            "--user",
+            "a@b.c",
+            "--passphrase",
+            "correct horse battery staple",
+        ],
     );
     assert!(again.status.success(), "{}", text(&again));
     assert!(text(&again).contains("a@b.c"), "{}", text(&again));

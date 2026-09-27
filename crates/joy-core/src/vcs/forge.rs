@@ -5249,11 +5249,7 @@ mod tests {
 
         // Nobody at all: the typed error, not libgit2's parse failure.
         let err = commit_index(dir.path(), "third", "Scotty", "  ").unwrap_err();
-        assert!(
-            err.to_string()
-                .starts_with("this project does not know who you are, pick your member"),
-            "{err}"
-        );
+        assert!(err.to_string().starts_with("not signed in"), "{err}");
     }
 
     /// D3.4: a commit joy writes carries joy's own paths and nothing
@@ -5310,11 +5306,7 @@ mod tests {
     #[test]
     fn a_signature_without_a_member_is_the_typed_error() {
         let err = member_signature(None, "   ", Some("Scotty")).unwrap_err();
-        assert!(
-            err.to_string()
-                .starts_with("this project does not know who you are, pick your member"),
-            "{err}"
-        );
+        assert!(err.to_string().starts_with("not signed in"), "{err}");
         // the command line has no picker, so the sentence names its remedy
         assert!(err.to_string().contains("--user <address>"), "{err}");
         assert!(matches!(err, crate::error::JoyError::UnknownActingMember));

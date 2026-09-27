@@ -304,13 +304,35 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "the session of this terminal outranks git config"
     );
 
-    // Two people signed in at one terminal: the newer sign-in is the one
-    // meant, whatever the config says.
+    // A second sign-in replaces the first: `save_session` keeps one
+    // person per project and device (operator, 2026-09-27), so carol's
+    // session is the only one left and the one that answers.
     a_human_session(root, "carol@example.com");
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
         "carol@example.com",
-        "the newest session wins"
+        "the latest sign-in is the one that stands"
+    );
+    let project_id = session::project_id(root).unwrap();
+    assert!(
+        session::load_session(&project_id, "bea@example.com")
+            .unwrap()
+            .is_none(),
+        "bea's session went when carol signed in"
+    );
+
+    // Step 0: a name on the call itself (`--user`, carried as JOY_USER)
+    // outranks every session and is never remembered: unauthenticated,
+    // like git config, and gone with the variable.
+    std::env::set_var("JOY_USER", "a@b.c");
+    let named = resolve_identity(root).unwrap();
+    assert_eq!(named.member.id(), "a@b.c", "the name on the call wins");
+    assert!(!named.authenticated, "a name proves nothing by itself");
+    std::env::remove_var("JOY_USER");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "carol@example.com",
+        "nothing of the name remains"
     );
 
     // Signing out gives git config its turn again.
@@ -399,7 +421,7 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "{err}"
     );
     assert!(
-        err.to_string().contains("git config user.email"),
+        err.to_string().contains("--user <address>"),
         "the refusal names the remedy: {err}"
     );
 }

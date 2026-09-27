@@ -9,7 +9,10 @@
 //! identity key within the configured time window.
 //!
 //! Human sessions occupy one deterministic slot per (project, member):
-//! re-authenticating replaces the previous session. AI sessions get one
+//! re-authenticating replaces the previous session, and saving a human
+//! session removes every other person's session of the same project on
+//! this device (operator, 2026-09-27: `joy auth` simply makes THE
+//! session, whoever was signed in before is not any more). AI sessions get one
 //! file per session, keyed by the ephemeral session public key, because
 //! every token redemption is an independent session (JOY-01E1-E7) and a
 //! redemption in one terminal must not displace the session another
@@ -458,6 +461,9 @@ pub fn save_session(project_id: &str, token: &SessionToken) -> Result<(), JoyErr
         source: e,
     })?;
     sweep_expired_sessions(&dir);
+    if !is_ai_member(&token.claims.member) {
+        remove_other_human_sessions(&dir, project_id, &token.claims.member);
+    }
     let path = dir.join(format!(
         "{}.json",
         session_storage_id(project_id, &token.claims)
@@ -576,6 +582,33 @@ pub fn current_env_session(project_id: &str, member: &str) -> Option<SessionToke
     let (sid, _) = parse_session_env(&env_value)?;
     let token = load_session_by_id(&sid).ok().flatten()?;
     (token.claims.project_id == project_id && token.claims.member == member).then_some(token)
+}
+
+/// Remove every human session of `project_id` in `dir` that names
+/// somebody other than `keep`: the one-person-per-device rule of
+/// [`save_session`]. AI sessions and other projects are left alone.
+fn remove_other_human_sessions(dir: &Path, project_id: &str, keep: &str) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.project_id == project_id
+            && token.claims.member != keep
+            && !is_ai_member(&token.claims.member)
+        {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
 }
 
 /// Remove every expired session file in `dir`. Best effort: unreadable or

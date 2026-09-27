@@ -4,15 +4,15 @@
 //! Working without a git identity, and acting as somebody other than
 //! the one git config names (operator decision 2026-09-27).
 //!
-//! Two things had to become true. `joy ai init` takes `--user <address>`
-//! like `joy init` and `joy auth` do, so the person who sets the AI
-//! tools up can say who they are on a machine with no git config, or
-//! set them up as a member other than the one the config names. And a
-//! sign-in by name sticks: the session `joy auth --user` leaves behind
-//! is read before git config, so every later command in the same
-//! terminal acts as that member. Before this, the refusal named `--user`
-//! as the remedy while `joy ai init` had no such flag, and a sign-in by
-//! name changed nothing for the next command.
+//! Three things had to become true. `--user <address>` is a global
+//! flag: on any command it names the member this one call acts as, and
+//! nothing is remembered; `joy ai init --user` therefore exists, which
+//! the refusal used to suggest while the flag did not. `joy auth`
+//! (with or without `--user`) makes THE session of this project on this
+//! device, replacing whoever was signed in before, and that session is
+//! read before git config, so every later command in the same terminal
+//! acts as that member. And the refusal is one line naming exactly
+//! those two ways.
 //!
 //! These drive the real binary, the way `identity_call_sites.rs` does,
 //! because the question is what a person at a terminal gets.
@@ -182,9 +182,9 @@ fn is_a_one_time_password(word: &str) -> bool {
 /// The defect as reported: `joy ai init` on a machine with no git
 /// identity refused with a sentence naming `--user`, and `joy ai init
 /// --user` was not a command. Now it is, and it does the whole job on
-/// such a machine: it enrols the founder who has no passphrase yet,
-/// registers the tool member under their attestation, and leaves the
-/// session that names them for the commands that follow.
+/// such a machine: it enrols the founder who has no passphrase yet and
+/// registers the tool member under their attestation. It leaves NO
+/// session behind: only `joy auth` does that.
 #[test]
 fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
     let machine = Machine::new();
@@ -199,18 +199,13 @@ fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
     ]);
     assert!(init.status.success(), "{}", text(&init));
 
-    // Without a name, and with nobody signed in, the refusal names a
-    // remedy that exists: a sign-in by name.
+    // Without a name, and with nobody signed in, the refusal is one line
+    // naming the two remedies, both of which exist.
     let refused = machine.joy(&["ai", "init", "--tool", "claude", "--passphrase", PASSPHRASE]);
     assert!(!refused.status.success(), "{}", text(&refused));
     assert!(
-        text(&refused).contains("this project does not know who you are"),
+        text(&refused).contains("not signed in: run `joy auth`, or pass `--user <address>`"),
         "{}",
-        text(&refused)
-    );
-    assert!(
-        text(&refused).contains("joy auth --user <address>"),
-        "the refusal names the remedy: {}",
         text(&refused)
     );
 
@@ -231,6 +226,11 @@ fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
         text(&set_up)
     );
     assert!(
+        !text(&set_up).contains("Session active"),
+        "no session is made: {}",
+        text(&set_up)
+    );
+    assert!(
         text(&set_up).contains("ai:claude@joy"),
         "the tool member is registered: {}",
         text(&set_up)
@@ -238,27 +238,50 @@ fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
     let project = std::fs::read_to_string(machine.root.join(".joy/project.yaml")).unwrap();
     assert!(project.contains("ai:claude@joy"), "{project}");
 
-    // The founder is signed in now; the next command needs no name and
-    // no git config, and says where its answer came from.
-    let add = machine.joy(&["add", "task", "First thing"]);
-    assert!(add.status.success(), "{}", text(&add));
-    assert_eq!(machine.the_actor_of_the_only_item(), "a@b.c");
+    // Nothing was remembered: the next command needs the name again.
+    // A write the guard protects (the project has an AI member now)
+    // still wants a session or the passphrase at the guard, which is
+    // the follow-up's job; a command that unlocks with the passphrase
+    // itself, like a second `ai init`, acts as the founder for that one
+    // call. Still no session afterwards.
     let status = machine.joy(&["auth", "status"]);
-    assert!(status.status.success(), "{}", text(&status));
+    assert!(!status.status.success(), "{}", text(&status));
+    assert!(text(&status).contains("not signed in"), "{}", text(&status));
+    let unnamed = machine.joy(&["add", "task", "First thing"]);
+    assert!(!unnamed.status.success(), "{}", text(&unnamed));
     assert!(
-        text(&status).contains("Source:     your session in this terminal"),
+        text(&unnamed).contains("not signed in"),
         "{}",
+        text(&unnamed)
+    );
+    let again = machine.joy(&[
+        "ai",
+        "init",
+        "--tool",
+        "qwen",
+        "--user",
+        "a@b.c",
+        "--passphrase",
+        PASSPHRASE,
+    ]);
+    assert!(again.status.success(), "{}", text(&again));
+    let project = std::fs::read_to_string(machine.root.join(".joy/project.yaml")).unwrap();
+    assert!(project.contains("ai:qwen@joy"), "{project}");
+    let status = machine.joy(&["auth", "status"]);
+    assert!(
+        !status.status.success(),
+        "still nobody signed in: {}",
         text(&status)
     );
     assert!(!machine.home.join(".gitconfig").exists());
 }
 
 /// The second machine of a member who is already enrolled: no session
-/// here yet, no git config, and `joy ai init --user` signs them in with
-/// the passphrase it needs anyway for the attestation, instead of
-/// telling them to do so first.
+/// here, no git config, and `joy ai init --user` does the setup with the
+/// passphrase it needs for the attestation anyway, still without a
+/// session.
 #[test]
-fn ai_init_user_signs_an_enrolled_member_in_on_a_new_machine() {
+fn ai_init_user_on_a_new_machine_leaves_no_session_either() {
     let machine = Machine::new();
     machine.found_and_enrol();
     machine.forget_the_device_state();
@@ -274,16 +297,14 @@ fn ai_init_user_signs_an_enrolled_member_in_on_a_new_machine() {
         PASSPHRASE,
     ]);
     assert!(set_up.status.success(), "{}", text(&set_up));
+    assert!(text(&set_up).contains("ai:claude@joy"), "{}", text(&set_up));
     assert!(
-        text(&set_up).contains("Authenticated as a@b.c"),
-        "the named member is signed in on the way: {}",
+        !text(&set_up).contains("Authenticated as"),
+        "no sign-in on the way: {}",
         text(&set_up)
     );
-    assert!(text(&set_up).contains("ai:claude@joy"), "{}", text(&set_up));
-
     let status = machine.joy(&["auth", "status"]);
-    assert!(status.status.success(), "{}", text(&status));
-    assert!(text(&status).contains("a@b.c"), "{}", text(&status));
+    assert!(!status.status.success(), "{}", text(&status));
 }
 
 /// A wrong passphrase on that path is a refusal, not a half-done setup:
@@ -311,20 +332,20 @@ fn ai_init_user_with_the_wrong_passphrase_registers_nothing() {
     assert!(!status.status.success(), "{}", text(&status));
 }
 
-/// Despite a git config that names the founder, a second person signs
-/// in by name at the same checkout and acts as themselves: the item
-/// they create is theirs, `joy auth status` names them, and the founder
-/// takes over again by signing in by name in turn. The git config is
-/// never touched.
+/// `joy auth` makes THE session: a second person signing in at a
+/// checkout whose git config names the founder replaces the founder's
+/// session and acts as themselves from then on, until the founder signs
+/// in again, which replaces theirs in turn. The git config is never
+/// touched, and a bare `joy auth` reads it, not the session.
 #[test]
-fn a_sign_in_by_name_acts_as_that_member_despite_the_git_config() {
+fn joy_auth_makes_the_one_session_whatever_the_git_config_says() {
     let machine = Machine::new();
     machine.git_config_says("a@b.c");
     machine.found_and_enrol();
     machine.a_second_enrolled_member("b@c.d");
 
-    // The newest sign-in at this terminal is b@c.d; the config still
-    // says a@b.c, and the write is b's.
+    // b redeemed last, so b is signed in; the config still says a@b.c,
+    // and the write is b's.
     let add = machine.joy(&["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
     assert_eq!(machine.the_actor_of_the_only_item(), "b@c.d");
@@ -337,22 +358,21 @@ fn a_sign_in_by_name_acts_as_that_member_despite_the_git_config() {
         text(&status)
     );
 
-    // The founder signs in by name and is the one acting again, their
-    // older session renewed and therefore the newest.
-    let founder = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
+    // A bare `joy auth` signs in the person git config names, and b's
+    // session is gone with it.
+    let founder = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(founder.status.success(), "{}", text(&founder));
+    assert!(
+        text(&founder).contains("Authenticated as a@b.c"),
+        "{}",
+        text(&founder)
+    );
     let status = machine.joy(&["auth", "status"]);
     assert!(status.status.success(), "{}", text(&status));
     assert!(text(&status).contains("a@b.c"), "{}", text(&status));
 
-    // Signing out ends the founder's session; b's still stands, so b is
-    // acting. Signing out once more leaves the git config, which names
-    // the founder, unauthenticated.
-    let deauth = machine.joy(&["deauth"]);
-    assert!(deauth.status.success(), "{}", text(&deauth));
-    let status = machine.joy(&["auth", "status"]);
-    assert!(status.status.success(), "{}", text(&status));
-    assert!(text(&status).contains("b@c.d"), "{}", text(&status));
+    // Signing out leaves nobody signed in: the config names the founder,
+    // unauthenticated, and b's earlier session did not come back.
     let deauth = machine.joy(&["deauth"]);
     assert!(deauth.status.success(), "{}", text(&deauth));
     let status = machine.joy(&["auth", "status"]);
@@ -366,4 +386,38 @@ fn a_sign_in_by_name_acts_as_that_member_despite_the_git_config() {
 
     let config = std::fs::read_to_string(machine.home.join(".gitconfig")).unwrap();
     assert!(config.contains("a@b.c"), "the git config was never touched");
+}
+
+/// `--user` on any other command is a name for that one call: the
+/// command acts as that member, unproven like git config, and the
+/// session of whoever is signed in stands untouched afterwards.
+#[test]
+fn user_on_any_other_command_acts_once_and_remembers_nothing() {
+    let machine = Machine::new();
+    machine.git_config_says("a@b.c");
+    machine.found_and_enrol();
+    machine.a_second_enrolled_member("b@c.d");
+    let founder = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
+    assert!(founder.status.success(), "{}", text(&founder));
+
+    let theirs = machine.joy(&["add", "--user", "b@c.d", "task", "Theirs"]);
+    assert!(theirs.status.success(), "{}", text(&theirs));
+    assert_eq!(machine.the_actor_of_the_only_item(), "b@c.d");
+
+    // The founder is still the one signed in.
+    let status = machine.joy(&["auth", "status"]);
+    assert!(status.status.success(), "{}", text(&status));
+    assert!(
+        text(&status).contains("a@b.c")
+            && text(&status).contains("Source:     your session in this terminal"),
+        "{}",
+        text(&status)
+    );
+    // And `joy auth status --user` says whom that call would act as.
+    let named = machine.joy(&["auth", "status", "--user", "b@c.d"]);
+    assert!(
+        text(&named).contains("b@c.d") && text(&named).contains("Source:     --user on this call"),
+        "{}",
+        text(&named)
+    );
 }

@@ -276,7 +276,7 @@ fn removing_user_email_takes_the_acting_member_with_it() {
         text(&second)
     );
     assert!(
-        text(&second).contains("git config user.email"),
+        text(&second).contains("--user <address>"),
         "the refusal names the remedy: {}",
         text(&second)
     );

@@ -13,10 +13,13 @@
 //! then the person who signed in at this terminal (operator,
 //! 2026-09-27), then git config (the repository's own file before the
 //! person's global one), then the forge account for the remote's host,
-//! and nothing else: the device pin that used to stand at the second
-//! step is retired, and none of the cases below may depend on it any
-//! more. A session is not a pin: it is this member's own signature,
-//! bound to the terminal and gone after 24 hours or a `deauth`.
+//! and nothing else; a name given to the call itself (the global
+//! `--user`) comes before all of them and is never remembered. The
+//! device pin that used to stand at the second step is retired, and
+//! none of the cases below may depend on it any more. A session is not
+//! a pin: it is this member's own signature, bound to the terminal and
+//! gone after 24 hours, a `deauth`, or the next `joy auth` of somebody
+//! else.
 //! `identity::acting_member`, which some cases here also exercise
 //! through a bare `joy auth`, was left reading the pin at first; a later
 //! addition to the same item retired it there too, so it now reads the
@@ -753,7 +756,7 @@ fn the_session_answers_every_identity_call_site_until_it_ends() {
         match step.label {
             "deauth" | "auth again" | "auth recover" => {
                 assert!(
-                    !step.ok && step.text.contains("this project does not know who you are"),
+                    !step.ok && step.text.contains("not signed in"),
                     "`joy {}` after the session ended, with no git config: {}",
                     step.label,
                     step.text
@@ -907,7 +910,7 @@ fn the_privacy_migration_needs_git_config_too() {
         text(&anonymous)
     );
     assert!(
-        text(&anonymous).contains("this project does not know who you are"),
+        text(&anonymous).contains("not signed in"),
         "{}",
         text(&anonymous)
     );
@@ -1091,12 +1094,12 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
     let refused = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(!refused.status.success(), "{}", text(&refused));
     assert!(
-        text(&refused).contains("this project does not know who you are"),
+        text(&refused).contains("not signed in"),
         "{}",
         text(&refused)
     );
     assert!(
-        text(&refused).contains("joy auth --user <address>"),
+        text(&refused).contains("--user <address>"),
         "the refusal names the remedy: {}",
         text(&refused)
     );
@@ -1106,7 +1109,7 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
     let crypt = machine.joy(&["crypt", "status"]);
     assert!(!crypt.status.success(), "{}", text(&crypt));
     assert!(
-        text(&crypt).contains("joy auth --user <address>"),
+        text(&crypt).contains("--user <address>"),
         "{}",
         text(&crypt)
     );
@@ -1136,11 +1139,7 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
     assert!(deauth.status.success(), "{}", text(&deauth));
     let status = machine.joy(&["auth", "status"]);
     assert!(!status.status.success(), "{}", text(&status));
-    assert!(
-        text(&status).contains("this project does not know who you are"),
-        "{}",
-        text(&status)
-    );
+    assert!(text(&status).contains("not signed in"), "{}", text(&status));
     machine.git_config_says("a@b.c");
     let crypt = machine.joy(&["crypt", "status"]);
     assert!(crypt.status.success(), "{}", text(&crypt));
@@ -1427,17 +1426,10 @@ fn an_anonymous_project_knows_its_members_from_git_config() {
         text(&returning)
     );
 
-    // While b's session stands, a bare `joy auth` speaks for b whatever
-    // the config says (operator, 2026-09-27): the founder's passphrase
-    // is refused, and no pin is involved in either direction.
+    // The founder, named in git config again, is equally known: a bare
+    // `joy auth` reads the config, never the session b just made, and
+    // replaces that session with the founder's.
     machine.git_config_says("a@b.c");
-    let refused = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
-    assert!(!refused.status.success(), "{}", text(&refused));
-
-    // Signed out, the founder named in git config is equally known, from
-    // the config itself.
-    let deauth = machine.joy(&["deauth"]);
-    assert!(deauth.status.success(), "{}", text(&deauth));
     let again = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(again.status.success(), "{}", text(&again));
     assert!(

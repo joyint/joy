@@ -239,37 +239,40 @@ fn acting_member_follows_the_same_order_resolve_identity_does() {
         "carol@example.com"
     );
 
-    // Between the name and the git config: the person who signed in at
-    // this terminal (operator, 2026-09-27). erin signs in while the
-    // config names bea, and both functions answer erin, so a bare `joy
-    // auth` renews the session of the person who is acting, not of the
-    // one the config names. A name still beats the session.
+    // The one place the two functions part (operator, 2026-09-27): a
+    // session. erin signs in while the config names bea; resolve_identity
+    // answers erin (she is acting), acting_member still answers bea,
+    // because `joy auth` is the command that MAKES the session, and a
+    // bare one signs in the person git config names, replacing erin.
     add_member(root, "erin@example.com");
-    let project = joy_core::store::load_project(root).unwrap();
     a_human_session(root, "erin@example.com");
-    let project = {
-        let _ = project;
-        joy_core::store::load_project(root).unwrap()
-    };
-    assert_eq!(
-        acting_member(root, &project, None).unwrap(),
-        "erin@example.com",
-        "the session of this terminal outranks git config"
-    );
+    let project = joy_core::store::load_project(root).unwrap();
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
         "erin@example.com",
-        "the two agree on the session too"
+        "the session names who is acting"
     );
     assert_eq!(
-        acting_member(root, &project, Some("carol@example.com")).unwrap(),
-        "carol@example.com",
-        "a name beats the session"
+        acting_member(root, &project, None).unwrap(),
+        "bea@example.com",
+        "a bare joy auth never reads the session"
     );
+    // The call's own `--user` (JOY_USER) is a name like any other: it
+    // wins in both functions, and leaves nothing behind.
+    std::env::set_var("JOY_USER", "carol@example.com");
+    assert_eq!(
+        acting_member(root, &project, None).unwrap(),
+        "carol@example.com"
+    );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "carol@example.com"
+    );
+    std::env::remove_var("JOY_USER");
     let project_id = session::project_id(root).unwrap();
     session::remove_session(&project_id, "erin@example.com").unwrap();
     assert_eq!(
-        acting_member(root, &project, None).unwrap(),
+        resolve_identity(root).unwrap().member.id(),
         "bea@example.com",
         "signed out, git config answers again"
     );

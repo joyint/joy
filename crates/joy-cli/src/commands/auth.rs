@@ -39,10 +39,6 @@ pub struct AuthArgs {
     /// One-time password for first-time member setup.
     #[arg(long, global = true)]
     otp: Option<String>,
-
-    /// Authenticate as this member ID.
-    #[arg(long, global = true)]
-    user: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -160,18 +156,23 @@ struct TokenAddArgs {
 
 pub fn run(args: AuthArgs) -> Result<()> {
     let stdin = args.passphrase_stdin;
+    // The global `--user` (JOY_USER): here it names who signs in, and
+    // the session is made for them. On every other command it is a name
+    // for that one call.
+    let user = joy_core::identity::named_user();
     match args.command {
         Some(AuthCommand::Init) => run_init(
             args.passphrase.as_deref(),
             stdin,
-            args.user.as_deref(),
+            user.as_deref(),
             false,
+            true,
         )
         .map(|_| ()),
         Some(AuthCommand::Status) => run_status(),
         Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref(), stdin),
         Some(AuthCommand::Token(a)) => {
-            run_token(a, args.passphrase.as_deref(), stdin, args.user.as_deref())
+            run_token(a, args.passphrase.as_deref(), stdin, user.as_deref())
         }
         Some(AuthCommand::Delegation(a)) => match a.command {
             DelegationCommand::Rotate(args_) => {
@@ -187,13 +188,13 @@ pub fn run(args: AuthArgs) -> Result<()> {
         Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref(), stdin, args.user.as_deref())
+                run_auth_otp(otp, args.passphrase.as_deref(), stdin, user.as_deref())
             } else {
                 run_auth(
                     args.passphrase.as_deref(),
                     stdin,
                     args.token.as_deref(),
-                    args.user.as_deref(),
+                    user.as_deref(),
                 )
             }
         }
@@ -291,11 +292,15 @@ pub(crate) fn read_passphrase(
 /// Returns the validated passphrase so callers that bootstrap auth as part
 /// of a larger flow (e.g. `joy ai init`) can pass it forward to subsequent
 /// operations in the same invocation without re-prompting the user.
+///
+/// `persist_session` is false for exactly those callers: only `joy auth`
+/// and `joy auth init` leave a session behind (operator, 2026-09-27).
 pub(crate) fn run_init(
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
     user_flag: Option<&str>,
     anonymous: bool,
+    persist_session: bool,
 ) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -401,23 +406,31 @@ pub(crate) fn run_init(
     };
 
     // Create initial session
-    let project_id = session::project_id(&root)?;
-    let mut session_token = session::create_session(&keypair, &session_member, &project_id, None);
-    // Anonymous mode (ADR-042): cache the members.yaml zone key so later commands
-    // resolve opaque ids without re-entering the passphrase.
-    session_token.members_zone_key =
-        cached_members_zone_key(&project, &session_member, seed.as_bytes());
-    session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
-    session::save_session(&project_id, &session_token)?;
+    if persist_session {
+        let project_id = session::project_id(&root)?;
+        let mut session_token =
+            session::create_session(&keypair, &session_member, &project_id, None);
+        // Anonymous mode (ADR-042): cache the members.yaml zone key so later commands
+        // resolve opaque ids without re-entering the passphrase.
+        session_token.members_zone_key =
+            cached_members_zone_key(&project, &session_member, seed.as_bytes());
+        session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
+        session::save_session(&project_id, &session_token)?;
+    }
 
+    let session_line = if persist_session {
+        " Session active (24h)."
+    } else {
+        ""
+    };
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
         println!(
-            "Your e-mail is kept out of the committed files. Public key registered. Session active (24h)."
+            "Your e-mail is kept out of the committed files. Public key registered.{session_line}"
         );
     } else {
         println!("Authentication initialized for {email}.");
-        println!("Public key registered. Session active (24h).");
+        println!("Public key registered.{session_line}");
     }
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
@@ -460,24 +473,19 @@ fn run_auth(
 
     // Human authentication via passphrase
     let email = resolve_user(&root, user_flag)?;
-    auth_with_passphrase(&root, &project, &email, passphrase_flag, passphrase_stdin)?;
-    Ok(())
+    auth_with_passphrase(&root, &project, &email, passphrase_flag, passphrase_stdin)
 }
 
-/// Sign `email` in with their passphrase and leave a session behind for
-/// this terminal. Returns the passphrase, so a caller that continues
-/// with work needing it (`joy ai init --user`, whose attestations unwrap
-/// the same identity) does not ask twice.
-///
-/// `pub(crate)` for that caller alone; the `joy auth` entry point is
-/// [`run`].
-pub(crate) fn auth_with_passphrase(
+/// Authenticate a human member via passphrase: the session this leaves
+/// behind is THE session of this project on this device; whoever was
+/// signed in before is not any more (`session::save_session`).
+fn auth_with_passphrase(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
     email: &str,
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
-) -> Result<String> {
+) -> Result<()> {
     // In anonymous mode the member map is keyed by the opaque id, not the git
     // e-mail (ADR-042); resolve it so the lookup, session and audit actor share
     // one key. A miss consults the project's forge plugin (JOY-0253-8A):
@@ -537,7 +545,7 @@ pub(crate) fn auth_with_passphrase(
         outcome.address
     );
 
-    Ok(passphrase)
+    Ok(())
 }
 
 /// In anonymous mode, the hex-encoded members.yaml zone key for `member_key`,
@@ -690,6 +698,9 @@ fn identity_source(
 ) -> String {
     if identity.delegated_by.is_some() {
         return "delegation session in JOY_SESSION".to_string();
+    }
+    if joy_core::identity::named_user().is_some() {
+        return "--user on this call".to_string();
     }
     // A human who is authenticated was found through their own session
     // (the second step of the order, before git config), whatever the
