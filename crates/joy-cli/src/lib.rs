@@ -134,7 +134,7 @@ pub(crate) struct Cli {
     #[arg(long, global = true, value_name = "SESSION")]
     session: Option<String>,
 
-    /// Act as this member instead of the one git config names
+    /// Act as this member
     #[arg(long, global = true, value_name = "ADDRESS")]
     user: Option<String>,
 
