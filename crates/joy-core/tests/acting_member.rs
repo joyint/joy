@@ -7,8 +7,9 @@
 //! the end:
 //!
 //! - [`resolve_identity`] answers "who is acting right now": the
-//!   delegation session first, then git config (repository before
-//!   global), then the forge account, and nothing else.
+//!   delegation session first, then the person who signed in at this
+//!   terminal (operator, 2026-09-27), then git config (repository
+//!   before global), then the forge account, and nothing else.
 //! - [`acting_member`] answers a narrower, earlier question: "who does a
 //!   bare `joy auth`, `joy auth init` or `joy auth --otp` act as, before
 //!   a name settled it". A first pass at the correction left this one
@@ -43,6 +44,7 @@ use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
+use joy_core::auth::{session, IdentityKeypair};
 use joy_core::forge_plugins;
 use joy_core::identity::{acting_human_key, acting_member, acting_member_key, resolve_identity};
 use joy_core::init::{init, InitOptions};
@@ -119,6 +121,27 @@ fn add_member(root: &Path, address: &str) {
         .register_member(address, Member::new(MemberCapabilities::All))
         .unwrap();
     joy_core::store::write_yaml(&path, &project).unwrap();
+}
+
+/// Sign `member` in at this terminal: give them a verify key and save the
+/// session `joy auth --user <member>` would leave behind (copied from
+/// `resolve_identity_order.rs`'s helper of the same name and purpose).
+fn a_human_session(root: &Path, member: &str) {
+    let mut seed = [21u8; 32];
+    for (at, byte) in member.bytes().enumerate().take(32) {
+        seed[at] ^= byte;
+    }
+    let keypair = IdentityKeypair::from_seed(&seed);
+    let path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project = joy_core::store::load_project(root).unwrap();
+    project
+        .member_by_key_mut(member)
+        .expect("the member is registered")
+        .verify_key = Some(keypair.public_key().to_hex());
+    joy_core::store::write_yaml(&path, &project).unwrap();
+    let project_id = session::project_id(root).unwrap();
+    let token = session::create_session(&keypair, member, &project_id, None);
+    session::save_session(&project_id, &token).unwrap();
 }
 
 fn found(root: &Path, founder: &str) {
@@ -214,6 +237,41 @@ fn acting_member_follows_the_same_order_resolve_identity_does() {
     assert_eq!(
         acting_member(root, &project, Some("carol@example.com")).unwrap(),
         "carol@example.com"
+    );
+
+    // Between the name and the git config: the person who signed in at
+    // this terminal (operator, 2026-09-27). erin signs in while the
+    // config names bea, and both functions answer erin, so a bare `joy
+    // auth` renews the session of the person who is acting, not of the
+    // one the config names. A name still beats the session.
+    add_member(root, "erin@example.com");
+    let project = joy_core::store::load_project(root).unwrap();
+    a_human_session(root, "erin@example.com");
+    let project = {
+        let _ = project;
+        joy_core::store::load_project(root).unwrap()
+    };
+    assert_eq!(
+        acting_member(root, &project, None).unwrap(),
+        "erin@example.com",
+        "the session of this terminal outranks git config"
+    );
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "erin@example.com",
+        "the two agree on the session too"
+    );
+    assert_eq!(
+        acting_member(root, &project, Some("carol@example.com")).unwrap(),
+        "carol@example.com",
+        "a name beats the session"
+    );
+    let project_id = session::project_id(root).unwrap();
+    session::remove_session(&project_id, "erin@example.com").unwrap();
+    assert_eq!(
+        acting_member(root, &project, None).unwrap(),
+        "bea@example.com",
+        "signed out, git config answers again"
     );
 
     // 3. No local config; the person's global one answers instead,

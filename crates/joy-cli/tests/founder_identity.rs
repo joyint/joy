@@ -63,9 +63,10 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
 /// later addition to the operator's 2026-09-19 correction (JOY-02AE-1A)
 /// retired the device pin from `acting_member` too, so `auth init` no
 /// longer finds the founder through it either: naming `--user` at both
-/// steps is what a founder with no git config actually has to do now,
-/// and what happens AFTER enrolment needs the git config back, since
-/// resolve_identity reads it, not a pin.
+/// steps is what a founder with no git config has to do. What happens
+/// AFTER enrolment needs no git config either (operator, 2026-09-27):
+/// the session the enrolment left behind names the founder in this
+/// terminal, which is a signature and not a pin.
 #[test]
 fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     let (_dir, root, home) = machine();
@@ -105,22 +106,27 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         "{project}"
     );
 
-    // Operator decision 2026-09-19 (JOY-02AE-1A, correcting D3.9): the
-    // device pin `auth init` used to leave behind is not read for
-    // identity any more, so the next command needs the git config back
-    // to know who acts here, exactly as a working checkout would have
-    // one.
-    std::fs::write(
-        home.join(".gitconfig"),
-        "[user]\n\temail = a@b.c\n\tname = Founder\n",
-    )
-    .unwrap();
+    // The session `auth init` left behind names the founder for every
+    // later command in this terminal (operator, 2026-09-27): no git
+    // config is written on this machine, here or later.
+    assert!(
+        !home.join(".gitconfig").exists(),
+        "this machine never gets a git identity"
+    );
     let add = joy(&root, &home, &["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
+    let status = joy(&root, &home, &["auth", "status"]);
+    assert!(status.status.success(), "{}", text(&status));
+    assert!(
+        text(&status).contains("Source:     your session in this terminal"),
+        "the session is named as the source: {}",
+        text(&status)
+    );
 
-    // The session lasts 24 hours; the project does not end with it.
-    // Re-authenticating finds the same member the same way, so the
-    // founder is not locked out of his own project tomorrow.
+    // Re-authenticating while the session stands renews it for the same
+    // member, found through that session; once it has expired, the
+    // founder names themselves again (`joy auth --user`), which is the
+    // one thing a machine with no git identity asks for.
     let again = joy(
         &root,
         &home,

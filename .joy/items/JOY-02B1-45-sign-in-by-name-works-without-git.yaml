@@ -1,0 +1,14 @@
+id: JOY-02B1-45
+title: Sign in by name works without git config, and joy ai init takes --user
+type: task
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-27T08:34:16.356537075Z
+updated: 2026-09-27T08:47:01.778697161Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator decision 2026-09-27: a person must always be able to work without a git identity, and to act as a member other than the one git config names. resolve_identity and acting_member read the newest live human session of this terminal right after the delegation session and before git config; the session joy auth --user leaves behind therefore names the member for every later command. joy ai init takes --user <address> and signs that member in when needed. The UnknownActingMember text names remedies that work. Tests that asserted the opposite (nothing answers without git config after enrolling) are inverted.'

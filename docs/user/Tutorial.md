@@ -98,6 +98,12 @@ After onboarding, set up AI tool integration if you use one:
 joy ai init
 ```
 
+Joy knows who you are from your session, else from `git config user.email`. On a machine with no git identity, or to act as somebody other than the one the config names, sign in by name once; the session then names you for every command in that terminal:
+
+```sh
+joy auth --user you@example.com     # or: joy ai init --user you@example.com
+```
+
 ---
 
 ## 2. Creating Items

@@ -532,6 +532,38 @@ pub fn list_member_sessions(
     Ok(sessions)
 }
 
+/// Every session file of `project_id`, newest first, whoever it names:
+/// the per-member slots of the people who authenticated on this machine
+/// and the per-session files of the AIs. The identity resolver reads it
+/// to find the person who signed in at this terminal without knowing
+/// their name in advance. Unreadable or foreign files are skipped; a
+/// missing directory yields an empty list. Nothing here is validated:
+/// the caller holds each candidate against the member's verify key.
+pub fn list_project_sessions(project_id: &str) -> Result<Vec<SessionToken>, JoyError> {
+    let dir = session_dir()?;
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Ok(Vec::new());
+    };
+    let mut sessions = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(json) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
+            continue;
+        };
+        if token.claims.project_id == project_id {
+            sessions.push(token);
+        }
+    }
+    sessions.sort_by_key(|token| std::cmp::Reverse(token.claims.created));
+    Ok(sessions)
+}
+
 /// The session the current environment points at: parses `JOY_SESSION`,
 /// loads the file it references, and returns it if it belongs to
 /// (project, member). Possession of the matching ephemeral private key is

@@ -10,10 +10,13 @@
 //! `identity::acting_member_key` where the actor is whoever acts, and
 //! through `identity::acting_human_key` where a passphrase is needed and
 //! the answer must be a person. Both read the delegation session first,
-//! then git config (the repository's own file before the person's
-//! global one), then the forge account for the remote's host, and
-//! nothing else: the device pin that used to stand at the second step
-//! is retired, and none of the cases below may depend on it any more.
+//! then the person who signed in at this terminal (operator,
+//! 2026-09-27), then git config (the repository's own file before the
+//! person's global one), then the forge account for the remote's host,
+//! and nothing else: the device pin that used to stand at the second
+//! step is retired, and none of the cases below may depend on it any
+//! more. A session is not a pin: it is this member's own signature,
+//! bound to the terminal and gone after 24 hours or a `deauth`.
 //! `identity::acting_member`, which some cases here also exercise
 //! through a bare `joy auth`, was left reading the pin at first; a later
 //! addition to the same item retired it there too, so it now reads the
@@ -216,9 +219,11 @@ const FOUNDER: &str = "a@b.c";
 /// the device pin gone from `acting_member` too (a later addition to
 /// JOY-02AE-1A), a bare `joy auth init` right after founding on a
 /// machine with no git config has nothing left to resolve who is
-/// initialising, exactly like every other command this file exercises.
-/// A caller that wants to test the no-git-config case removes the git
-/// config or the whole device state AFTER this helper, never before.
+/// initialising. The enrolment leaves the founder's SESSION behind, and
+/// since 2026-09-27 that session names them for every later command in
+/// this terminal. A caller that wants the "nobody answers" case removes
+/// the device state (and the git config) AFTER this helper, never
+/// before.
 fn found_and_enrol(machine: &Machine) {
     let init = machine.joy(&[
         "init",
@@ -733,18 +738,50 @@ fn without_a_timestamp(line: &str) -> String {
     }
 }
 
+/// A machine with no git config and no forge account, where the founder
+/// enrolled by name: their session answers every identity call site in
+/// this terminal (operator, 2026-09-27), up to the `auth passphrase`
+/// that ends it (a passphrase change signs the member out, as it always
+/// has). The three steps after it, `deauth`, a bare `joy auth` and `joy
+/// auth recover`, have nothing left to read and say so.
+#[test]
+fn the_session_answers_every_identity_call_site_until_it_ends() {
+    let machine = Machine::new();
+    found_and_enrol(&machine);
+
+    for step in identity_script(&machine) {
+        match step.label {
+            "deauth" | "auth again" | "auth recover" => {
+                assert!(
+                    !step.ok && step.text.contains("this project does not know who you are"),
+                    "`joy {}` after the session ended, with no git config: {}",
+                    step.label,
+                    step.text
+                );
+            }
+            _ => assert!(
+                step.ok,
+                "`joy {}` failed with a session and no git config: {}",
+                step.label, step.text
+            ),
+        }
+    }
+}
+
 /// The acceptance of J11 was that every joy command needing an identity
 /// worked in a repository with no git config once the member was known,
 /// because the founding pin answered for it. The operator's 2026-09-19
 /// correction (JOY-02AE-1A) retires that pin from resolve_identity, so
-/// this is the acceptance's exact inverse: a freshly founded machine
-/// with no git config and no forge account does not know who is acting,
-/// exactly as if nobody had ever authenticated here. Reading needs no
-/// member, and it never did.
+/// this is the acceptance's exact inverse: a machine with no session, no
+/// git config and no forge account does not know who is acting, exactly
+/// as if nobody had ever authenticated here. Reading needs no member,
+/// and it never did.
 #[test]
-fn every_identity_command_needs_a_git_config_or_a_forge_account() {
+fn every_identity_command_needs_a_session_a_git_config_or_a_forge_account() {
     let machine = Machine::new();
     found_and_enrol(&machine);
+    // Another machine, or a fresh clone: the session stays behind.
+    machine.forget_the_device_state();
 
     assert_every_step_needed_an_identity(&identity_script(&machine));
 
@@ -763,7 +800,8 @@ fn every_identity_command_needs_a_git_config_or_a_forge_account() {
 ///
 /// Two identical machines run the identical script. One keeps the git
 /// config it was founded with; the other loses it the moment the member
-/// is known.
+/// is known, together with the session the enrolment left behind, which
+/// would otherwise answer in its place (operator, 2026-09-27).
 #[test]
 fn keeping_user_email_answers_who_acts_removing_it_does_not() {
     let with_config = Machine::new();
@@ -774,6 +812,7 @@ fn keeping_user_email_answers_who_acts_removing_it_does_not() {
     without_config.git_config_says("a@b.c");
     found_and_enrol(&without_config);
     without_config.forget_the_git_config();
+    without_config.forget_the_device_state();
 
     for step in identity_script(&with_config) {
         assert!(
@@ -786,8 +825,9 @@ fn keeping_user_email_answers_who_acts_removing_it_does_not() {
 }
 
 /// The verbs that take something away, inverted the same way: they need
-/// a git config (or a forge account) exactly as every other write does,
-/// and removing `user.email` takes the answer away with it.
+/// a session, a git config or a forge account exactly as every other
+/// write does, and removing `user.email` and the session takes the
+/// answer away with them.
 ///
 /// One comparison for both machines, because the script can only be run
 /// once per machine: each of these commands removes the thing the next
@@ -802,6 +842,7 @@ fn the_verbs_that_take_something_away_need_git_config_too() {
     without_config.git_config_says("a@b.c");
     found_and_enrol(&without_config);
     without_config.forget_the_git_config();
+    without_config.forget_the_device_state();
 
     for step in taking_something_away_script(&with_config) {
         assert!(
@@ -842,6 +883,7 @@ fn the_privacy_migration_needs_git_config_too() {
     without_config.git_config_says("a@b.c");
     found_and_enrol(&without_config);
     without_config.forget_the_git_config();
+    without_config.forget_the_device_state();
 
     for step in privacy_migration_script(&with_config) {
         assert!(
@@ -920,14 +962,15 @@ fn a_git_config_alone_decides_who_acts() {
     assert!(add.status.success(), "{}", text(&add));
 
     // Authenticating once now creates a real session, and `joy auth
-    // status` answers with it, still sourced from git config.
+    // status` answers with it: the session stands in front of git config
+    // in the order (operator, 2026-09-27), so it is the source named.
     let auth = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(auth.status.success(), "{}", text(&auth));
     let status = machine.joy(&["auth", "status"]);
     assert!(status.status.success(), "{}", text(&status));
     assert!(text(&status).contains("a@b.c"), "{}", text(&status));
     assert!(
-        text(&status).contains("Source:     git config user.email"),
+        text(&status).contains("Source:     your session in this terminal"),
         "{}",
         text(&status)
     );
@@ -1028,12 +1071,12 @@ fn a_delegation_session_outranks_the_git_config() {
 
 /// The one boundary of the criterion above, named rather than left to be
 /// discovered: with no session, no git config and no forge account, joy
-/// says it does not know who is acting and names the remedy. `--user`
-/// authenticates for that one command only: there is no pin left
-/// anywhere in joy for authenticating to leave behind (JOY-02AE-1A), so
-/// a LATER bare command, still with no git config, needs a name or a
-/// config again: naming an address once no longer settles it for good
-/// on a machine with no git identity of its own.
+/// says it does not know who is acting and names the remedy. The remedy
+/// works: `joy auth --user <address>` leaves a session behind, and that
+/// session names the member for every later command in this terminal
+/// (operator, 2026-09-27), with no git config ever set. Not a pin
+/// (JOY-02AE-1A retired that): a signature, gone with `deauth` or after
+/// 24 hours, after which the person names themselves again.
 #[test]
 fn without_a_session_or_a_config_joy_names_the_remedy() {
     let machine = Machine::new();
@@ -1072,10 +1115,25 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
     assert!(named.status.success(), "{}", text(&named));
     assert!(text(&named).contains("a@b.c"), "{}", text(&named));
 
-    // Authenticating with --user leaves nothing behind for later
-    // commands to read: there is no pin (JOY-02AE-1A), so a bare
-    // command, still with no git config, needs a name or a config
-    // again, including the one that has no `--user` of its own.
+    // Authenticating with --user leaves the session behind, and the
+    // session names the member for every later bare command in this
+    // terminal, still with no git config, including the one that has no
+    // `--user` of its own.
+    let status = machine.joy(&["auth", "status"]);
+    assert!(status.status.success(), "{}", text(&status));
+    assert!(text(&status).contains("a@b.c"), "{}", text(&status));
+    assert!(
+        text(&status).contains("Source:     your session in this terminal"),
+        "{}",
+        text(&status)
+    );
+    let crypt = machine.joy(&["crypt", "status"]);
+    assert!(crypt.status.success(), "{}", text(&crypt));
+
+    // Signing out takes the answer away again; giving git config the
+    // address is the other source this function reads.
+    let deauth = machine.joy(&["deauth"]);
+    assert!(deauth.status.success(), "{}", text(&deauth));
     let status = machine.joy(&["auth", "status"]);
     assert!(!status.status.success(), "{}", text(&status));
     assert!(
@@ -1083,12 +1141,6 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
         "{}",
         text(&status)
     );
-
-    // Naming the member again works, and so does giving git config the
-    // address: both are still sources this function reads, unaffected
-    // by the pin's removal.
-    let named_again = machine.joy(&["auth", "--user", "a@b.c", "--passphrase", PASSPHRASE]);
-    assert!(named_again.status.success(), "{}", text(&named_again));
     machine.git_config_says("a@b.c");
     let crypt = machine.joy(&["crypt", "status"]);
     assert!(crypt.status.success(), "{}", text(&crypt));
@@ -1375,9 +1427,17 @@ fn an_anonymous_project_knows_its_members_from_git_config() {
         text(&returning)
     );
 
-    // The founder, named in git config again, is equally known: no
-    // pin carries this any more, only the config itself.
+    // While b's session stands, a bare `joy auth` speaks for b whatever
+    // the config says (operator, 2026-09-27): the founder's passphrase
+    // is refused, and no pin is involved in either direction.
     machine.git_config_says("a@b.c");
+    let refused = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
+    assert!(!refused.status.success(), "{}", text(&refused));
+
+    // Signed out, the founder named in git config is equally known, from
+    // the config itself.
+    let deauth = machine.joy(&["deauth"]);
+    assert!(deauth.status.success(), "{}", text(&deauth));
     let again = machine.joy(&["auth", "--passphrase", PASSPHRASE]);
     assert!(again.status.success(), "{}", text(&again));
     assert!(

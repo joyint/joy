@@ -460,25 +460,24 @@ fn run_auth(
 
     // Human authentication via passphrase
     let email = resolve_user(&root, user_flag)?;
-    auth_with_passphrase(
-        &root,
-        &project,
-        &project_id,
-        &email,
-        passphrase_flag,
-        passphrase_stdin,
-    )
+    auth_with_passphrase(&root, &project, &email, passphrase_flag, passphrase_stdin)?;
+    Ok(())
 }
 
-/// Authenticate a human member via passphrase.
-fn auth_with_passphrase(
+/// Sign `email` in with their passphrase and leave a session behind for
+/// this terminal. Returns the passphrase, so a caller that continues
+/// with work needing it (`joy ai init --user`, whose attestations unwrap
+/// the same identity) does not ask twice.
+///
+/// `pub(crate)` for that caller alone; the `joy auth` entry point is
+/// [`run`].
+pub(crate) fn auth_with_passphrase(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
-    _project_id: &str,
     email: &str,
     passphrase_flag: Option<&str>,
     passphrase_stdin: bool,
-) -> Result<()> {
+) -> Result<String> {
     // In anonymous mode the member map is keyed by the opaque id, not the git
     // e-mail (ADR-042); resolve it so the lookup, session and audit actor share
     // one key. A miss consults the project's forge plugin (JOY-0253-8A):
@@ -538,7 +537,7 @@ fn auth_with_passphrase(
         outcome.address
     );
 
-    Ok(())
+    Ok(passphrase)
 }
 
 /// In anonymous mode, the hex-encoded members.yaml zone key for `member_key`,
@@ -676,13 +675,14 @@ fn auth_with_token(
 /// person can act on.
 ///
 /// The order is `resolve_identity`'s own: a delegation session names the
-/// AI and the operator behind it; failing that, git config (the
-/// repository's own file or the person's global one, read as one merged
-/// value, so this does not try to say which of the two it was); failing
-/// that, the forge account for the remote's host. The device pin is not
-/// in this list any more: `run_status` already refused before calling
-/// this function when nothing named a member, so a non-empty member here
-/// is always one of the three, checked in the same order.
+/// AI and the operator behind it; failing that, the person's own session
+/// at this terminal (operator, 2026-09-27); failing that, git config
+/// (the repository's own file or the person's global one, read as one
+/// merged value, so this does not try to say which of the two it was);
+/// failing that, the forge account for the remote's host. The device pin
+/// is not in this list any more: `run_status` already refused before
+/// calling this function when nothing named a member, so a non-empty
+/// member here is always one of the four, checked in the same order.
 fn identity_source(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
@@ -690,6 +690,12 @@ fn identity_source(
 ) -> String {
     if identity.delegated_by.is_some() {
         return "delegation session in JOY_SESSION".to_string();
+    }
+    // A human who is authenticated was found through their own session
+    // (the second step of the order, before git config), whatever the
+    // config says: that is the one that names them here.
+    if identity.authenticated {
+        return "your session in this terminal".to_string();
     }
     let member = identity.member.id();
     let (_, config_email) = joy_core::vcs::forge::user_identity(root);
