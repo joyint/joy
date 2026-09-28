@@ -1,7 +1,7 @@
 id: JOY-02B2-65
 title: 'One authentication gate for every command: session, else passphrase, then a session'
 type: task
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -9,7 +9,7 @@ capabilities:
 - implement
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-27T09:19:03.583797242Z
-updated: 2026-09-28T20:08:46.222793224Z
+updated: 2026-09-28T20:46:10.496654888Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Operator decision 2026-09-27. Today three mechanisms coexist: the guard refuses writes with ''must authenticate, run joy auth'' (joy add, status, assign; no --passphrase there); crypt, project member add/edit/rm, project set privacy, ai init, auth passphrase/recover read their own --passphrase / JOY_PASSPHRASE / prompt, unlock directly and leave no session, and they ask even when a session stands (derive_acting_keypair, crypt_session::ensure_zone_keys do not read the session); only chat uses the seed cached in the session (chat_seed, JOY-0269-BC). Target: one gate in joy-cli, acting_identity(passphrase_flag, stdin) -> UnlockedIdentity, order: (a) valid session of this terminal with cached seed, no question; (b) --passphrase, --passphrase-stdin, JOY_PASSPHRASE; (c) prompt on a terminal; after (b) or (c) the same session joy auth would create (login::login, with attestation check and zone-key cache). Non-interactive without passphrase: error naming both ways. All call sites in crypt, project, ai, chat, crypt_session use the gate; guard-protected commands get global --passphrase / --passphrase-stdin (like --session) and call the gate before the guard decides, instead of printing ''Run joy auth''. joy auth stays as the explicit way, never mandatory. AI sessions unchanged (JOY_SESSION, no passphrase). Acceptance: every command behaves the same on (1) a live session, (2) no session with passphrase flag, (3) no session on a terminal, (4) no session non-interactive; joy-cli tests drive the binary through all four for at least one command of each group; tutorial updated.'
 comments:
