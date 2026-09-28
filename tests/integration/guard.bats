@@ -335,11 +335,13 @@ EOF
     joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
     joy add task "Auth test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Auth test" | awk '{print $1}')
-    # Remove human session to become unauthenticated
+    # Remove human session to become unauthenticated. The auth gate
+    # (JOY-02B2-65) would ask for the passphrase; with no terminal and
+    # none given it refuses, naming both ways.
     joy deauth
     run joy comment "$ITEM_ID" "Should fail"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"must authenticate"* ]]
+    [[ "$output" == *"run \`joy auth\`"* ]]
 }
 
 @test "unauthenticated read allowed when AI members exist" {

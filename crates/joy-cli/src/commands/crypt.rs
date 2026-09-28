@@ -20,21 +20,11 @@ use joy_core::model::project::Project;
 use joy_core::store;
 
 use crate::color;
-use crate::commands::auth::read_passphrase;
 
 #[derive(Args)]
 pub struct CryptArgs {
     #[command(subcommand)]
     command: CryptCommand,
-
-    /// Passphrase of the acting member (non-interactive).
-    #[arg(long, global = true)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin. Mutually
-    /// exclusive with `--passphrase`.
-    #[arg(long = "passphrase-stdin", global = true)]
-    passphrase_stdin: bool,
 
     /// Named zone (default: "default", auto-created).
     #[arg(long, global = true)]
@@ -133,20 +123,18 @@ pub fn run(args: CryptArgs) -> Result<()> {
     let zone = args
         .zone
         .unwrap_or_else(|| joy_crypt::zone::DEFAULT_ZONE.to_string());
-    let stdin = args.passphrase_stdin;
-    let pp = args.passphrase.as_deref();
     match args.command {
         CryptCommand::Add(t) => match (t.all, t.target.as_deref()) {
-            (true, _) => run_add_all(&zone, pp, stdin),
-            (false, Some(target)) => run_add(&zone, target, pp, stdin),
+            (true, _) => run_add_all(&zone),
+            (false, Some(target)) => run_add(&zone, target),
             (false, None) => bail!("specify a target item/path or use --all"),
         },
         CryptCommand::Rm(t) => match (t.all, t.target.as_deref()) {
-            (true, _) => run_rm_all(&zone, pp, stdin),
-            (false, Some(target)) => run_rm(&zone, target, pp, stdin),
+            (true, _) => run_rm_all(&zone),
+            (false, Some(target)) => run_rm(&zone, target),
             (false, None) => bail!("specify a target item/path or use --all"),
         },
-        CryptCommand::Grant(m) => run_grant(&zone, &m.member, pp, stdin),
+        CryptCommand::Grant(m) => run_grant(&zone, &m.member),
         CryptCommand::Revoke(m) => run_revoke(&zone, &m.member),
         CryptCommand::Ls => run_list(&zone),
         CryptCommand::Status => run_status(),
@@ -154,11 +142,11 @@ pub fn run(args: CryptArgs) -> Result<()> {
             ZoneCommand::Ls => run_zone_list(),
             ZoneCommand::Rm(args) => run_zone_rm(&args.name),
         },
-        CryptCommand::Read(f) => run_read(&f.file, pp, stdin),
-        CryptCommand::Write(f) => run_write(&f.file, pp, stdin),
-        CryptCommand::Edit(f) => run_edit(&f.file, pp, stdin),
-        CryptCommand::Unlock(f) => run_unlock(&f.file, pp, stdin),
-        CryptCommand::Lock(f) => run_lock(&f.file, pp, stdin),
+        CryptCommand::Read(f) => run_read(&f.file),
+        CryptCommand::Write(f) => run_write(&f.file),
+        CryptCommand::Edit(f) => run_edit(&f.file),
+        CryptCommand::Unlock(f) => run_unlock(&f.file),
+        CryptCommand::Lock(f) => run_lock(&f.file),
     }
 }
 
@@ -202,18 +190,13 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
 fn enforce_zone_rights() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "crypt")?;
+    crate::auth_gate::enforce_at(&root, &joy_core::guard::Action::ManageProject, "crypt")?;
     Ok(())
 }
 
 /// Unwrap the acting member's wrap for the zone, or generate a fresh
 /// zone key if `autocreate` is allowed and no wrap exists.
-fn unlock_zone(
-    zone: &str,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-    autocreate: bool,
-) -> Result<UnlockedZone> {
+fn unlock_zone(zone: &str, autocreate: bool) -> Result<UnlockedZone> {
     let (root, project, acting_key) = load_context()?;
     let acting = project
         .member_by_key(&acting_key)
@@ -224,8 +207,7 @@ fn unlock_zone(
             acting_key
         );
     }
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
+    let unlocked = crate::auth_gate::unlock(&root, &project, &acting_key)?;
 
     let zone_key = match acting.crypt_wraps.get(zone) {
         Some(wrap_hex) => joy_crypt::zone::unwrap_for_member(wrap_hex, zone, &unlocked.seed)?,
@@ -299,8 +281,8 @@ impl UnlockedZone {
     }
 }
 
-fn run_add(zone: &str, target: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
-    let mut unlocked = unlock_zone(zone, passphrase, stdin, true)?;
+fn run_add(zone: &str, target: &str) -> Result<()> {
+    let mut unlocked = unlock_zone(zone, true)?;
 
     if looks_like_item_id(target) {
         let item_path = joy_core::items::find_item_file(&unlocked.root, target)?;
@@ -477,8 +459,6 @@ fn zone_for_path(
 /// otherwise looked up via crypt.zones[].paths.
 fn unlock_for_file(
     abs_path: &std::path::Path,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
 ) -> Result<(std::path::PathBuf, String, joy_crypt::zone::ZoneKey)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -516,8 +496,7 @@ fn unlock_for_file(
         .strip_prefix("chat:")
         .and_then(|r| r.rsplit_once('#'))
     {
-        let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
-        let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
+        let unlocked = crate::auth_gate::unlock(&root, &project, &acting_key)?;
         let ck = joy_chat_store::chat_store::epoch_content_key(&root, cid, epoch, &unlocked.seed)?
             .ok_or_else(|| {
                 anyhow::anyhow!(
@@ -533,13 +512,12 @@ fn unlock_for_file(
         }
     })?;
 
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(acting, &passphrase)?;
+    let unlocked = crate::auth_gate::unlock(&root, &project, &acting_key)?;
     let zone_key = joy_crypt::zone::unwrap_for_member(wrap_hex, &zone_name, &unlocked.seed)?;
     Ok((root, zone_name, zone_key))
 }
 
-fn run_read(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_read(file: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
@@ -550,7 +528,7 @@ fn run_read(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
         std::io::stdout().write_all(&bytes)?;
         return Ok(());
     }
-    let (_root, _zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
+    let (_root, _zone, zone_key) = unlock_for_file(&abs)?;
     let mut keys = std::collections::BTreeMap::new();
     let zone_len = bytes[9] as usize;
     let zone_name = std::str::from_utf8(&bytes[10..10 + zone_len])?.to_string();
@@ -564,11 +542,11 @@ fn run_read(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_write(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_write(file: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
-    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
+    let (_root, zone, zone_key) = unlock_for_file(&abs)?;
 
     use std::io::Read;
     let mut input = Vec::new();
@@ -587,7 +565,7 @@ fn run_write(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_unlock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_unlock(file: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
@@ -598,7 +576,7 @@ fn run_unlock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
             abs.display()
         );
     }
-    let (_root, _zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
+    let (_root, _zone, zone_key) = unlock_for_file(&abs)?;
     let mut keys = std::collections::BTreeMap::new();
     let zone_len = bytes[9] as usize;
     let zone_name = std::str::from_utf8(&bytes[10..10 + zone_len])?.to_string();
@@ -617,7 +595,7 @@ fn run_unlock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_lock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_lock(file: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
@@ -626,7 +604,7 @@ fn run_lock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
         println!("{} is already encrypted; nothing to do.", abs.display());
         return Ok(());
     }
-    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
+    let (_root, zone, zone_key) = unlock_for_file(&abs)?;
     let blob = joy_crypt::zone::encrypt_blob(&zone, &zone_key, &bytes);
     write_atomic(&abs, &blob)?;
     if let Ok(rel) = abs.strip_prefix(&root) {
@@ -636,11 +614,11 @@ fn run_lock(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_edit(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_edit(file: &str) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let abs = resolve_file_path(&root, file)?;
-    let (_root, zone, zone_key) = unlock_for_file(&abs, passphrase, stdin)?;
+    let (_root, zone, zone_key) = unlock_for_file(&abs)?;
 
     // Decrypt to a temp file in $TMPDIR, open editor, re-encrypt.
     let plaintext = match std::fs::read(&abs) {
@@ -702,8 +680,8 @@ fn run_edit(file: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
     Ok(())
 }
 
-fn run_rm(zone: &str, target: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
-    let mut unlocked = unlock_zone(zone, passphrase, stdin, false)?;
+fn run_rm(zone: &str, target: &str) -> Result<()> {
+    let mut unlocked = unlock_zone(zone, false)?;
 
     if looks_like_item_id(target) {
         // Install the zone key so read_yaml decrypts the existing
@@ -773,8 +751,8 @@ fn run_rm(zone: &str, target: &str, passphrase: Option<&str>, stdin: bool) -> Re
     }
 }
 
-fn run_add_all(zone: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
-    let mut unlocked = unlock_zone(zone, passphrase, stdin, true)?;
+fn run_add_all(zone: &str) -> Result<()> {
+    let mut unlocked = unlock_zone(zone, true)?;
     // Persist wrap before encrypting any items - if encryption fails
     // mid-way, items still on plaintext are recoverable; the wrap
     // ensures the zone key survives.
@@ -805,8 +783,8 @@ fn run_add_all(zone: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> 
     unlocked.finalize(&format!("crypt add --all (zone {zone})"))
 }
 
-fn run_rm_all(zone: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
-    let unlocked = unlock_zone(zone, passphrase, stdin, false)?;
+fn run_rm_all(zone: &str) -> Result<()> {
+    let unlocked = unlock_zone(zone, false)?;
     unlocked.install_zone_key();
     let items = joy_core::items::load_items(&unlocked.root).unwrap_or_default();
     let mut updated = 0usize;
@@ -908,14 +886,14 @@ fn run_zone_rm(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_grant(zone: &str, target_member: &str, passphrase: Option<&str>, stdin: bool) -> Result<()> {
+fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     use joy_core::model::project::is_ai_member;
     // Who acts here, then whether they may: the refusal comes before the
     // passphrase prompt, so a member without `manage` is not asked for a
     // secret it will not use.
     let (_root, _project, _acting) = load_context()?;
     enforce_zone_rights()?;
-    let unlocked = unlock_zone(zone, passphrase, stdin, false)?;
+    let unlocked = unlock_zone(zone, false)?;
     // `target_member` is a user-supplied identifier that is polymorphic by
     // kind: an `ai:` synthetic id for AI tools (always the at-rest map key),
     // or a git e-mail for humans (privacy-dependent map key). Resolve each via

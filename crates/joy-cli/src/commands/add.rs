@@ -108,7 +108,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         std::process::exit(0);
     }
 
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     let type_str = args
         .item_type
@@ -276,7 +276,7 @@ pub fn run(args: AddArgs) -> Result<()> {
         }
     }
 
-    ctx.enforce(&Action::CreateItem, &id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::CreateItem, &id)?;
 
     let log_user = ctx.log_user();
     item.created_by = Some(log_user.clone().into());

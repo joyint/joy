@@ -38,14 +38,14 @@ pub struct DepsArgs {
 }
 
 pub fn run(args: DepsArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     if let Some(ref dep_id) = args.add {
-        return add_dep(&ctx, &args.id, dep_id);
+        return add_dep(&mut ctx, &args.id, dep_id);
     }
 
     if let Some(ref dep_id) = args.rm {
-        return rm_dep(&ctx, &args.id, dep_id);
+        return rm_dep(&mut ctx, &args.id, dep_id);
     }
 
     // Show dependencies
@@ -96,8 +96,8 @@ pub fn run(args: DepsArgs) -> Result<()> {
     Ok(())
 }
 
-fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
-    ctx.enforce(&Action::UpdateItem, item_id)?;
+fn add_dep(ctx: &mut Context, item_id: &str, dep_id: &str) -> Result<()> {
+    crate::auth_gate::enforce(ctx, &Action::UpdateItem, item_id)?;
 
     // Verify dep exists
     let _ = items::load_item(&ctx.root, dep_id)?;
@@ -153,8 +153,8 @@ fn add_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn rm_dep(ctx: &Context, item_id: &str, dep_id: &str) -> Result<()> {
-    ctx.enforce(&Action::UpdateItem, item_id)?;
+fn rm_dep(ctx: &mut Context, item_id: &str, dep_id: &str) -> Result<()> {
+    crate::auth_gate::enforce(ctx, &Action::UpdateItem, item_id)?;
 
     let mut item = items::load_item(&ctx.root, item_id)?;
 

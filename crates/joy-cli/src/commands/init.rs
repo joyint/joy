@@ -41,15 +41,6 @@ pub struct InitArgs {
     /// immediately, so a passphrase is required.
     #[arg(long)]
     pub anonymous: bool,
-
-    /// Passphrase for the founder identity (only with --anonymous). Falls back
-    /// to the JOY_PASSPHRASE env var, then an interactive prompt.
-    #[arg(long)]
-    pub passphrase: Option<String>,
-
-    /// Read the founder passphrase from stdin (only with --anonymous).
-    #[arg(long)]
-    pub passphrase_stdin: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -129,10 +120,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     // must leave nothing on disk -- otherwise init::init would have already
     // written an e-mail-keyed, open project.
     let anon_passphrase = if want_anonymous {
-        Some(acquire_founder_passphrase(
-            args.passphrase.as_deref(),
-            args.passphrase_stdin,
-        )?)
+        Some(acquire_founder_passphrase()?)
     } else {
         None
     };
@@ -172,13 +160,11 @@ pub fn run(args: InitArgs) -> Result<()> {
                 // The founder init just registered, not git config: an
                 // anonymous project may be founded on a machine that has
                 // no git identity at all (D3.9).
-                crate::commands::auth::run_init(
-                    Some(pass),
-                    false,
-                    Some(&result.founder),
-                    true,
-                    true,
-                )?;
+                // The pre-acquired passphrase takes the place of the
+                // global flag for the rest of this run, so run_init runs
+                // non-interactively and does not prompt a second time.
+                std::env::set_var("JOY_PASSPHRASE", pass);
+                crate::commands::auth::run_init(Some(&result.founder), true, true)?;
             }
 
             println!();
@@ -236,22 +222,18 @@ pub fn run(args: InitArgs) -> Result<()> {
 }
 
 /// Acquire and validate the founder passphrase for `joy init --anonymous`,
-/// before any project files are written. Honors `--passphrase`, then
-/// `JOY_PASSPHRASE`, then an interactive prompt with confirmation.
-fn acquire_founder_passphrase(flag: Option<&str>, from_stdin: bool) -> Result<String> {
-    let env = std::env::var("JOY_PASSPHRASE")
-        .ok()
-        .filter(|s| !s.is_empty());
-    let effective = flag.or(env.as_deref());
-    let interactive = effective.is_none() && !from_stdin;
+/// before any project files are written. Honors the global `--passphrase`
+/// and `--passphrase-stdin` (`JOY_PASSPHRASE`), then an interactive
+/// prompt with confirmation.
+fn acquire_founder_passphrase() -> Result<String> {
+    let interactive = !crate::auth_gate::passphrase_given();
     if interactive {
         eprintln!(
             "Starting an anonymous project. Member e-mails are kept out of the committed files."
         );
         eprintln!("Choose a founder passphrase (minimum 3 words, e.g. Diceware):");
     }
-    let passphrase =
-        crate::commands::auth::read_passphrase(effective, from_stdin, "  Passphrase: ")?;
+    let passphrase = crate::commands::auth::read_passphrase("  Passphrase: ")?;
     joy_core::auth::validate_passphrase(&passphrase)?;
     if interactive {
         let confirm = rpassword::prompt_password("  Confirm:    ")?;

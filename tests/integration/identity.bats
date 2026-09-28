@@ -205,8 +205,10 @@ load setup
     ITEM_ID=$(joy ls 2>/dev/null | grep "TTY isolation" | awk '{print $1}')
     # Re-authenticate human inside a PTY (session gets a real TTY)
     pty_run "joy auth --passphrase '$TEST_PASSPHRASE'"
-    # Outside the PTY, human session TTY does not match -> unauthenticated
+    # Outside the PTY, human session TTY does not match -> unauthenticated,
+    # and with no terminal and no passphrase the auth gate refuses
+    # (JOY-02B2-65), naming both ways.
     run joy comment "$ITEM_ID" "Should fail"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"must authenticate"* ]]
+    [[ "$output" == *"run \`joy auth\`"* ]]
 }

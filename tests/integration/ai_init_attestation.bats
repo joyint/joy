@@ -46,11 +46,14 @@ setup_fake_ai_tools() {
     setup_human_auth
     setup_fake_ai_tools
 
-    # No --passphrase, no stdin -> derive_acting_keypair has nothing
-    # to read and must surface an error rather than silently writing
-    # an unattested member.
+    # The session `auth init` made would carry the seed (the auth gate,
+    # JOY-02B2-65), so it is ended first. No session, no --passphrase,
+    # no terminal -> the gate has nothing to unlock with and must refuse
+    # rather than silently write an unattested member.
+    joy deauth
     run joy ai init </dev/null 2>&1
     [ "$status" -ne 0 ]
+    [[ "$output" == *"run \`joy auth\`"* ]]
     ! grep -q "ai:claude@joy" .joy/project.yaml
 }
 
