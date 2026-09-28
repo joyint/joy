@@ -302,29 +302,21 @@ impl Guard {
             }
         }
 
-        // Auth enforcement when AI members exist: all actions require authentication.
-        // This prevents AI tools from piggybacking on a human's file-based session.
-        let has_ai = self.members.keys().any(|k| is_ai_member(k));
-        if has_ai && !identity.authenticated {
+        // Auth enforcement (see `needs_authentication`): every action
+        // needs proof once AI members exist, a manage action needs it as
+        // soon as anybody has a key. A host that can ask asks for the
+        // passphrase BEFORE this check (the CLI's auth gate, operator
+        // 2026-09-27); this refusal is for the host that cannot.
+        if self.needs_authentication(action, identity) {
+            let what = if self.members.keys().any(|k| is_ai_member(k)) {
+                "this action"
+            } else {
+                "manage actions"
+            };
             return Verdict::Deny(format!(
-                "{} must authenticate to perform this action. Run `joy auth`.",
+                "{} must authenticate to perform {what}. Run `joy auth`.",
                 identity.member
             ));
-        }
-
-        // Auth enforcement: manage actions require authentication when auth is active
-        // (even without AI members, manage actions need auth if any member has a key)
-        if !has_ai && !identity.authenticated {
-            let auth_active = self.members.values().any(|m| m.verify_key.is_some());
-            if auth_active {
-                let required = action.required_capability();
-                if required == Capability::Manage {
-                    return Verdict::Deny(format!(
-                        "{} must authenticate to perform manage actions. Run `joy auth`.",
-                        identity.member
-                    ));
-                }
-            }
         }
 
         // Fast path: capabilities: all allows everything
@@ -369,6 +361,23 @@ impl Guard {
                 identity.member, required
             ))
         }
+    }
+
+    /// Whether `check` would refuse `action` for want of proof, before
+    /// any capability is looked at: every action once AI members exist
+    /// (an AI must never piggyback on a person's file-based session),
+    /// and manage actions once anybody holds a key. A host that can ask
+    /// for the passphrase asks when this is true, instead of refusing
+    /// (operator, 2026-09-27).
+    pub fn needs_authentication(&self, action: &Action, identity: &Identity) -> bool {
+        if identity.authenticated {
+            return false;
+        }
+        if self.members.keys().any(|k| is_ai_member(k)) {
+            return true;
+        }
+        let auth_active = self.members.values().any(|m| m.verify_key.is_some());
+        auth_active && action.required_capability() == Capability::Manage
     }
 
     /// Check if removing a member (or stripping their manage) would leave

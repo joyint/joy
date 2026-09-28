@@ -140,8 +140,8 @@ fn resolve_version(
 }
 
 fn bump(args: BumpArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
-    ctx.enforce(&Action::CreateRelease, "release")?;
+    let mut ctx = crate::crypt_session::load_context()?;
+    crate::auth_gate::enforce(&mut ctx, &Action::CreateRelease, "release")?;
 
     let version_files = read_version_files(&ctx.root);
     let pre = args.prerelease.as_deref().or(args.pre_flag.as_deref());
@@ -208,8 +208,8 @@ fn version_mismatch_error(
 }
 
 fn record(args: RecordArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
-    ctx.enforce(&Action::CreateRelease, "release")?;
+    let mut ctx = crate::crypt_session::load_context()?;
+    crate::auth_gate::enforce(&mut ctx, &Action::CreateRelease, "release")?;
 
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
@@ -403,8 +403,8 @@ fn say(line: &str) {
 }
 
 fn publish(args: PublishArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
-    ctx.enforce(&Action::CreateRelease, "release")?;
+    let mut ctx = crate::crypt_session::load_context()?;
+    crate::auth_gate::enforce(&mut ctx, &Action::CreateRelease, "release")?;
 
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
@@ -463,7 +463,7 @@ fn publish(args: PublishArgs) -> Result<()> {
 }
 
 fn show(args: ShowArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let ctx = crate::crypt_session::load_context()?;
     let project = store::load_project(&ctx.root)?;
     let acronym = project.acronym.as_deref().unwrap_or("JOY");
 
@@ -529,7 +529,7 @@ fn show(args: ShowArgs) -> Result<()> {
 }
 
 fn ls() -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let ctx = crate::crypt_session::load_context()?;
 
     let all_releases = releases::load_releases(&ctx.root)?;
 

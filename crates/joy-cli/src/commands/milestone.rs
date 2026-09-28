@@ -120,9 +120,9 @@ pub fn run(args: MilestoneArgs) -> Result<()> {
 }
 
 fn run_add(args: AddArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
-    ctx.enforce(&Action::ManageMilestone, "milestone")?;
+    crate::auth_gate::enforce(&mut ctx, &Action::ManageMilestone, "milestone")?;
 
     let acronym = store::load_acronym(&ctx.root)?;
     let id = milestones::next_id(&ctx.root, &acronym, &args.title)?;
@@ -167,7 +167,7 @@ fn run_add(args: AddArgs) -> Result<()> {
 }
 
 fn run_ls() -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let ctx = crate::crypt_session::load_context()?;
 
     let milestones = milestones::load_milestones(&ctx.root)?;
     let all_items = items::load_items(&ctx.root)?;
@@ -239,7 +239,7 @@ fn run_ls() -> Result<()> {
 }
 
 fn run_show(args: ShowArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let ctx = crate::crypt_session::load_context()?;
 
     let ms = milestones::load_milestone(&ctx.root, &args.id)?;
     let all_items = items::load_items(&ctx.root)?;
@@ -346,9 +346,9 @@ fn run_show(args: ShowArgs) -> Result<()> {
 }
 
 fn run_rm(args: RmArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
-    ctx.enforce(&Action::ManageMilestone, &args.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::ManageMilestone, &args.id)?;
 
     let ms = milestones::load_milestone(&ctx.root, &args.id)?;
 
@@ -405,9 +405,9 @@ fn run_rm(args: RmArgs) -> Result<()> {
 }
 
 fn run_edit(args: EditArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
-    ctx.enforce(&Action::ManageMilestone, &args.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::ManageMilestone, &args.id)?;
 
     let mut ms = milestones::load_milestone(&ctx.root, &args.id)?;
     let mut changed = false;
@@ -470,9 +470,9 @@ fn run_edit(args: EditArgs) -> Result<()> {
 }
 
 fn run_link(args: LinkArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
-    ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::ManageMilestone, &args.item_id)?;
 
     // Verify milestone exists
     let ms = milestones::load_milestone(&ctx.root, &args.ms_id)?;
@@ -525,9 +525,9 @@ fn run_link(args: LinkArgs) -> Result<()> {
 }
 
 fn run_unlink(args: UnlinkArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
-    ctx.enforce(&Action::ManageMilestone, &args.item_id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::ManageMilestone, &args.item_id)?;
 
     let mut item = items::load_item(&ctx.root, &args.item_id)?;
 

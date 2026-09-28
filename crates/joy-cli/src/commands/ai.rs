@@ -90,17 +90,6 @@ struct InitArgs {
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     contributing: Option<String>,
 
-    /// Passphrase (non-interactive, for scripts and tests). Required for
-    /// signing the attestation that ties newly registered AI members to
-    /// the acting manage member.
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin. See
-    /// `joy auth --help` for the rationale; same flag, same semantics.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
-
     /// Only set up a specific tool (claude, qwen, vibe, copilot) — even
     /// when it is not auto-detected. Skips the docs prompts.
     #[arg(long)]
@@ -123,25 +112,13 @@ struct RotateArgs {
     /// AI member ID whose delegation to rotate (e.g. ai:claude@joy).
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
-
-    /// Passphrase (non-interactive, for scripts and tests).
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
 }
 
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
         AiCommand::Reset(a) => reset(a),
-        AiCommand::Rotate(a) => crate::commands::auth::run_ai_rotate(
-            &a.member,
-            a.passphrase.as_deref(),
-            a.passphrase_stdin,
-        ),
+        AiCommand::Rotate(a) => crate::commands::auth::run_ai_rotate(&a.member),
         AiCommand::Tutorial(a) => ai_tutorial(a),
     }
 }
@@ -195,11 +172,11 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     // Ensure project.defaults.yaml exists
     joy_core::embedded::sync_files(&root, joy_core::init::PROJECT_FILES)?;
 
-    let bootstrapped_passphrase =
-        ensure_human_auth_initialized(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
-    let effective_passphrase = bootstrapped_passphrase
-        .as_deref()
-        .or(args.passphrase.as_deref());
+    if let Some(bootstrapped) = ensure_human_auth_initialized(&root)? {
+        // The passphrase just chosen serves the attestations below through
+        // the auth gate, so it is not asked a second time.
+        std::env::set_var("JOY_PASSPHRASE", bootstrapped);
+    }
     if let Some(filter) = args.tool.as_deref() {
         if !ALL_TOOLS.iter().any(|(_, id, _, _)| *id == filter) {
             let valid: Vec<&str> = ALL_TOOLS.iter().map(|(_, id, _, _)| *id).collect();
@@ -208,12 +185,7 @@ fn ai_init(args: InitArgs) -> anyhow::Result<()> {
     } else {
         check_docs(&root, &args)?;
     }
-    let configured_tools = setup_new_tools(
-        &root,
-        effective_passphrase,
-        args.passphrase_stdin,
-        args.tool.as_deref(),
-    )?;
+    let configured_tools = setup_new_tools(&root, args.tool.as_deref())?;
     update_gitignore(&root, &configured_tools)?;
     untrack_gitignored_tool_files(&root);
     let removed_legacy = remove_legacy_ai_artifacts(&root);
@@ -258,11 +230,7 @@ struct AiInitPayload {
 /// can pass it forward to subsequent operations such as AI member
 /// attestations in `setup_new_tools` without re-prompting. Returns `None`
 /// if auth was already initialised.
-fn ensure_human_auth_initialized(
-    root: &Path,
-    passphrase: Option<&str>,
-    passphrase_stdin: bool,
-) -> anyhow::Result<Option<String>> {
+fn ensure_human_auth_initialized(root: &Path) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
     // The human this command sets authentication up for: the name given
@@ -294,8 +262,7 @@ fn ensure_human_auth_initialized(
     // No session is left behind (operator, 2026-09-27): only `joy auth`
     // makes one. The passphrase chosen here still serves the rest of this
     // run, which is why it is handed back.
-    let bootstrapped =
-        crate::commands::auth::run_init(passphrase, passphrase_stdin, None, false, false)?;
+    let bootstrapped = crate::commands::auth::run_init(None, false, false)?;
     dprintln!();
     Ok(Some(bootstrapped))
 }
@@ -940,12 +907,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
 }
 
 /// Set up only NEW (not yet configured) tools. Returns list of all configured tool IDs.
-fn setup_new_tools(
-    root: &Path,
-    passphrase: Option<&str>,
-    passphrase_stdin: bool,
-    only: Option<&str>,
-) -> anyhow::Result<Vec<&'static str>> {
+fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'static str>> {
     dprintln!("{}", color::section("AI Tools"));
 
     let mut configured_tools: Vec<&'static str> = Vec::new();
@@ -1031,12 +993,8 @@ fn setup_new_tools(
                 // cannot attest, so a delegation session attests as the
                 // operator whose passphrase opens the identity.
                 let attester_id = joy_core::identity::acting_human_key(root)?;
-                let kp = crate::commands::project::derive_acting_keypair(
-                    &project,
-                    &attester_id,
-                    passphrase,
-                    passphrase_stdin,
-                )?;
+                let kp =
+                    crate::commands::project::derive_acting_keypair(root, &project, &attester_id)?;
                 acting = Some((attester_id, kp));
             }
             let (attester_id, attester_kp) = acting.as_ref().unwrap();

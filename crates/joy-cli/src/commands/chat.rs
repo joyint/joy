@@ -23,15 +23,6 @@ use clap::{Args, Subcommand};
 pub struct ChatArgs {
     #[command(subcommand)]
     command: ChatCommand,
-
-    /// Passphrase of the acting member, to read/write sealed chats
-    /// (non-interactive). Without it the CLI only sees unsealed chats.
-    #[arg(long, global = true)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin", global = true)]
-    passphrase_stdin: bool,
 }
 
 #[derive(Subcommand)]
@@ -352,49 +343,17 @@ fn session_chat_seed() -> Option<[u8; 32]> {
     delegation
 }
 
-/// The chat seed a standing session of the acting person carries, if the
-/// session is still valid for this project and member.
-fn stored_session_seed(root: &std::path::Path) -> Option<[u8; 32]> {
-    let identity = joy_core::identity::resolve_identity(root).ok()?;
-    if !identity.authenticated {
-        return None;
-    }
-    let project_id = joy_core::auth::session::project_id(root).ok()?;
-    let token = joy_core::auth::session::load_session(&project_id, &identity.member).ok()??;
-    if token.claims.expires <= chrono::Utc::now() {
-        return None;
-    }
-    let bytes = hex::decode(token.chat_seed.as_deref()?).ok()?;
-    bytes.try_into().ok()
-}
-
 /// Reading or writing a sealed chat needs the caller's identity seed.
 ///
-/// Where it comes from depends on who is acting, and on nothing else: a
-/// session that carries one brings its own, a person unwraps theirs with
-/// their passphrase. A person at a terminal who has an identity but gave
-/// no passphrase is ASKED, rather than shown an empty room; a script
-/// without one stays on the quiet path, so a bare `joy init` project (no
-/// identity at all) keeps working with no prompt.
-fn establish_reader_seed(
-    root: &std::path::Path,
-    passphrase: Option<&str>,
-    stdin: bool,
-) -> Result<()> {
+/// An AI brings its own in the delegation session. A person goes
+/// through the auth gate like every other command: the session of this
+/// terminal, else the passphrase (asked at a terminal, and the session
+/// is made). A script with no passphrase and no terminal stays on the
+/// quiet path, so a bare `joy init` project (no identity at all) keeps
+/// working with no prompt, and `joy chat ls` in CI shows what it can.
+fn establish_reader_seed(root: &std::path::Path) -> Result<()> {
     if let Some(seed) = session_chat_seed() {
         joy_chat_store::writer::set_seed(Some(seed));
-        return Ok(());
-    }
-    // A person with a standing session (joy auth) brings the seed the
-    // login cached (JOY-0269-BC): the session suffices, as for every
-    // other command; the passphrase is asked only without one.
-    if passphrase.is_none() && !stdin {
-        if let Some(seed) = stored_session_seed(root) {
-            joy_chat_store::writer::set_seed(Some(seed));
-            return Ok(());
-        }
-    }
-    if passphrase.is_none() && !stdin && !crate::prompt::is_interactive() {
         return Ok(());
     }
     let Ok(project) = joy_core::store::load_project(root) else {
@@ -409,8 +368,13 @@ fn establish_reader_seed(
     if member.verify_key.is_none() {
         return Ok(());
     }
-    let pass = crate::commands::auth::read_passphrase(passphrase, stdin, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(member, &pass)?;
+    let signed_in = joy_core::identity::resolve_identity(root)
+        .map(|id| id.authenticated)
+        .unwrap_or(false);
+    if !signed_in && !crate::auth_gate::passphrase_given() && !crate::prompt::is_interactive() {
+        return Ok(());
+    }
+    let unlocked = crate::auth_gate::unlock(root, &project, &member_key)?;
     joy_chat_store::writer::set_seed(Some(unlocked.seed));
     Ok(())
 }
@@ -418,7 +382,7 @@ fn establish_reader_seed(
 pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    establish_reader_seed(&root, args.passphrase.as_deref(), args.passphrase_stdin)?;
+    establish_reader_seed(&root)?;
     // EVERY verb pulls first (JOY-022A-4D): reads see replies from the
     // platform and other members, and writes append on the ADOPTED
     // remote state — sealing under the chat's existing crypt epoch. A

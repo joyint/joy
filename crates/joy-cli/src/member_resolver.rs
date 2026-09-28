@@ -62,9 +62,7 @@ fn session_members_key(root: &std::path::Path) -> Option<ZoneKey> {
 
 /// The members-zone key derived from `JOY_PASSPHRASE` for the current member.
 fn passphrase_members_key(root: &std::path::Path, project: &Project) -> Option<ZoneKey> {
-    let passphrase = std::env::var("JOY_PASSPHRASE")
-        .ok()
-        .filter(|s| !s.is_empty())?;
+    let passphrase = crate::auth_gate::passphrase_flag()?;
     let member_key = joy_core::identity::acting_human_key(root).ok()?;
     let member = project.member_by_key(&member_key)?;
     let unlocked = auth::unlock_identity(member, &passphrase).ok()?;

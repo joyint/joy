@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+mod auth_gate;
 mod color;
 mod commands;
 mod complete;
@@ -137,6 +138,14 @@ pub(crate) struct Cli {
     /// Act as this member
     #[arg(long, global = true, value_name = "ADDRESS")]
     user: Option<String>,
+
+    /// Passphrase (non-interactive)
+    #[arg(long, global = true, value_name = "PASSPHRASE")]
+    passphrase: Option<String>,
+
+    /// Read the passphrase from one line on stdin
+    #[arg(long = "passphrase-stdin", global = true)]
+    passphrase_stdin: bool,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -482,6 +491,18 @@ pub fn cli_main() -> anyhow::Result<()> {
     // as JOY_USER so joy-core's identity resolution reads it first.
     if let Some(ref user) = cli.user {
         std::env::set_var("JOY_USER", user);
+    }
+    // --passphrase and --passphrase-stdin are read by the auth gate
+    // wherever a command needs proof (auth_gate.rs), on every command;
+    // the environment carries them the same way JOY_SESSION is carried.
+    if cli.passphrase.is_some() && cli.passphrase_stdin {
+        anyhow::bail!("--passphrase and --passphrase-stdin are mutually exclusive");
+    }
+    if let Some(ref passphrase) = cli.passphrase {
+        std::env::set_var("JOY_PASSPHRASE", passphrase);
+    }
+    if cli.passphrase_stdin {
+        std::env::set_var("JOY_PASSPHRASE_STDIN", "1");
     }
 
     // Honour -w / --working-dir BEFORE anything that depends on cwd

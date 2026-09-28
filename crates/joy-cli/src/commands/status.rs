@@ -83,7 +83,7 @@ impl StatusArgs {
 }
 
 pub fn run(args: StatusArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     let new_status: Status = args
         .status
@@ -116,7 +116,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
             to: new_status.clone(),
         }
     };
-    ctx.enforce(&action, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &action, &item.id)?;
 
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)

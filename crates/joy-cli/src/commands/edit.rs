@@ -99,7 +99,7 @@ pub struct EditArgs {
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     let mut item = items::load_item(&ctx.root, &args.id)?;
     let before = item.clone();
@@ -331,7 +331,7 @@ pub fn run(args: EditArgs) -> Result<()> {
     } else {
         Action::UpdateItem
     };
-    ctx.enforce(&action, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &action, &item.id)?;
 
     let log_user = ctx.log_user();
     // Flags that replay the current values are a no-op: nothing to

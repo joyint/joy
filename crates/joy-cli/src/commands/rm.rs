@@ -25,11 +25,11 @@ pub struct RmArgs {
 }
 
 pub fn run(args: RmArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     let item = items::load_item(&ctx.root, &args.id)?;
 
-    ctx.enforce(&Action::DeleteItem, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::DeleteItem, &item.id)?;
 
     let mut to_delete = vec![item.id.clone()];
 

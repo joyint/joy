@@ -834,8 +834,6 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
         acronym: Some(acronym),
         language: Some(language),
         anonymous: false,
-        passphrase: None,
-        passphrase_stdin: false,
     })?;
 
     if prompt::ask_yn("Initialize AI tools now?", false)? {
