@@ -603,7 +603,7 @@ The same workflow works at every scale - you only opt into more controls.
 
 Joy uses passphrase-derived Ed25519 identity keys. You authenticate once per 24-hour session and every significant action is cryptographically signed.
 
-Every command that needs proof behaves the same way: with a session, nothing is asked; without one, the command asks for your passphrase (or takes `--passphrase`) and then makes the session itself, exactly as `joy auth` would, so the next command asks nothing. Only under `--user` does a passphrase prove that one call and leave no session behind. Without a terminal and without a passphrase, the command stops with `run `joy auth`, or pass --passphrase`.
+Every command that needs proof behaves the same way: with a session, nothing is asked; without one, the command asks for your passphrase (or takes `--passphrase`) and then makes the session itself, exactly as `joy auth` would, so the next command asks nothing. A passphrase you pass explicitly is always checked, session or not. Only under `--user` does a passphrase prove that one call and leave no session behind. Without a terminal and without a passphrase, the command stops with `run `joy auth`, or pass --passphrase`.
 
 **First time setup (solo):**
 

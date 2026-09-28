@@ -12,14 +12,17 @@
 //! carries. Every command now goes through [`unlock`] or [`enforce`],
 //! and they all answer the same way:
 //!
-//! 1. A live session of this terminal for the acting member carries
-//!    the identity seed (`chat_seed`, JOY-0269-BC): nothing is asked.
-//! 2. Otherwise the passphrase, from the global `--passphrase`,
-//!    `--passphrase-stdin` or `JOY_PASSPHRASE`, else asked at the
-//!    terminal. A correct passphrase makes the session `joy auth` would
+//! 1. A passphrase GIVEN to the call (the global `--passphrase`,
+//!    `--passphrase-stdin` or `JOY_PASSPHRASE`) is checked, session or
+//!    not: a wrong one is refused, never quietly ignored.
+//! 2. Otherwise a live session of this terminal for the acting member
+//!    carries the identity seed (`chat_seed`, JOY-0269-BC): nothing is
+//!    asked.
+//! 3. Otherwise the passphrase is asked at the terminal. A correct
+//!    passphrase (given or typed) makes the session `joy auth` would
 //!    make, so the next command asks nothing; except under `--user`,
 //!    which names a member for one call and remembers nothing.
-//! 3. Nothing to ask with (no terminal, no flag): the typed refusal
+//! 4. Nothing to ask with (no terminal, no flag): the typed refusal
 //!    that names both ways.
 //!
 //! An AI never comes through here with a passphrase: its identity is
@@ -80,20 +83,24 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
         .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", member_key))?;
     if member.verify_key.is_none() {
         anyhow::bail!(
-            "{} has no passphrase yet. Run `joy auth init` first.",
+            "{} has no identity yet. Run `joy auth init` first.",
             member_key
         );
     }
 
-    // 1. The session of this terminal, if it is this member's and still
-    //    carries the seed the login cached. `resolve_identity` did the
-    //    validating (signature, terminal, expiry); a `--user` on this
-    //    call answers unauthenticated there, so a named member always
-    //    proves themselves below.
-    if let Some(seed) = session_seed(root, project, member_key) {
+    // 2. The session of this terminal, if it is this member's and still
+    //    carries the seed the login cached, and no passphrase was given
+    //    (a given one is checked below, whatever the session says).
+    //    `resolve_identity` did the validating (signature, terminal,
+    //    expiry); a `--user` on this call answers unauthenticated there,
+    //    so a named member always proves themselves below.
+    let session = session_seed(root, project, member_key).and_then(|seed| {
         let keypair = IdentityKeypair::from_seed(&seed);
         let expected = member.verify_key.as_deref().unwrap_or_default();
-        if keypair.public_key().to_hex() == expected {
+        (keypair.public_key().to_hex() == expected).then_some((keypair, seed))
+    });
+    if !passphrase_given() {
+        if let Some((keypair, seed)) = session {
             return Ok(Unlocked {
                 member_key: member_key.to_string(),
                 keypair,
@@ -102,11 +109,12 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
         }
     }
 
-    // 2. The passphrase: flag, stdin, environment, or the terminal.
+    // 1 and 3. The passphrase: flag, stdin, environment, or the terminal.
     let passphrase = crate::commands::auth::read_passphrase("Passphrase: ")?;
-    if joy_core::identity::named_user().is_some() {
+    if joy_core::identity::named_user().is_some() || session.is_some() {
         // One call as this member, nothing remembered (operator,
-        // 2026-09-27): unwrap and go.
+        // 2026-09-27), or a session that already stands and a given
+        // passphrase that only had to be right: unwrap and go.
         let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
         return Ok(Unlocked {
             member_key: member_key.to_string(),
@@ -116,12 +124,15 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     }
     // The same login `joy auth` runs: attestation posture, the session
     // with the seed and the members zone key cached, re-locking of files
-    // left open. The next command asks nothing.
+    // left open. The next command asks nothing. Said on stderr, and not
+    // at all in `--json` mode, whose one envelope is all a caller reads.
     let outcome = joy_core::auth::login::login(root, member_key, &passphrase)?;
-    eprintln!(
-        "Authenticated as {}. Session active (24h).",
-        outcome.address
-    );
+    if !crate::output::is_json() {
+        eprintln!(
+            "Authenticated as {}. Session active (24h).",
+            outcome.address
+        );
+    }
     Ok(Unlocked {
         member_key: outcome.member_key,
         keypair: outcome.keypair,
