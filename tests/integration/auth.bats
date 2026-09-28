@@ -360,51 +360,45 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 # Session isolation per member (JOY-008A)
 # ============================================================
 
-@test "two members can have independent sessions" {
+@test "a second sign-in replaces the first session" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    # Dev redeems their invitation, which opens dev's session; naming dev
-    # in this repository's git config is what makes the bare commands
-    # below act as dev (JOY-02AE-1A, correcting D3.9).
+    # Dev redeems their invitation, which opens dev's session. There is
+    # one session per project and device (operator, 2026-09-27): the
+    # lead's is gone with it, and dev is who acts now, whatever git
+    # config says.
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
-    git config user.email dev@example.com
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 1 ]
     run joy auth status
     [ "$status" -eq 0 ]
     [[ "$output" == *"dev@example.com"* ]]
     [[ "$output" == *"Expires:"* ]]
-    # Both sessions are live at once: dev's redemption opened a slot of
-    # its own and left the lead's alone. `joy auth status` reports only
-    # whoever is acting, so the store is where two of them are visible.
-    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 2 ]
-    # Switch back to the lead, who is reported with a live session too.
+    # The lead signs in again: the one session is the lead's now.
     act_as_founder
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 1 ]
     run joy auth status
     [ "$status" -eq 0 ]
     [[ "$output" == *"test@example.com"* ]]
     [[ "$output" == *"Expires:"* ]]
 }
 
-@test "deauth only removes own session" {
+@test "deauth ends the one session" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
     DEV_OTP=$(joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE" | extract_otp)
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
-    # Naming dev in this repository's git config is what makes the bare
-    # `joy deauth` below act as dev (JOY-02AE-1A, correcting D3.9).
     git config user.email dev@example.com
-    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 2 ]
-    # Dev deauths
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 1 ]
+    # Dev deauths: nobody is signed in on this device any more.
     joy deauth
     run joy auth status
     [[ "$output" == *"No active session for dev@example.com"* ]]
-    # Exactly one session was removed, dev's own: the lead's is still
-    # there, and still reports as live when the lead acts.
-    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json | wc -l)" -eq 1 ]
-    act_as_founder
+    [ "$(ls "$XDG_STATE_HOME"/joy/sessions/*.json 2>/dev/null | wc -l)" -eq 0 ]
+    # The lead is known through git config, and not signed in either.
+    git config user.email "$FOUNDER_EMAIL"
     run joy auth status
-    [[ "$output" == *"test@example.com"* ]]
-    [[ "$output" == *"Expires:"* ]]
+    [[ "$output" == *"No active session for test@example.com"* ]]
 }
 
 # ============================================================
