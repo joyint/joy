@@ -98,6 +98,13 @@ After onboarding, set up AI tool integration if you use one:
 joy ai init
 ```
 
+Joy knows who you are from your session, else from `git config user.email`. `joy auth` makes the session (one per project and device; a new `joy auth` replaces it), and `--user` works on every command: with `joy auth` it says who signs in, on any other command it names the member for that one call and remembers nothing:
+
+```sh
+joy auth --user you@example.com          # sign in as you, whatever git config says
+joy ai init --user you@example.com       # this one call as you, no session
+```
+
 ---
 
 ## 2. Creating Items

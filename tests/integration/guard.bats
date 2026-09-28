@@ -251,7 +251,7 @@ EOF
     forget_this_device
     run joy comment "$ITEM_ID" "Stranger comment"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"not signed in"* ]]
 }
 
 # ============================================================

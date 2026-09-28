@@ -265,13 +265,13 @@ fn ensure_human_auth_initialized(
 ) -> anyhow::Result<Option<String>> {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let project = joy_core::store::read_project(&project_path)?;
-    // The human this command sets authentication up for: the operator
-    // behind a delegation session, else this repository's own git
-    // config, else the forge account (JOY-02AE-1A, correcting D3.9). It
-    // is already an at-rest member key, so anonymous mode (ADR-042) needs
-    // no second lookup path, and it is the same member `joy auth init`
-    // resolves, so the two cannot disagree about who is being
-    // initialised.
+    // The human this command sets authentication up for: the name given
+    // to this call (`--user`), else the operator behind a delegation
+    // session, else the person signed in at this terminal, else this
+    // repository's own git config, else the forge account. It is already
+    // an at-rest member key, so anonymous mode (ADR-042) needs no second
+    // lookup path, and it is the same member `joy auth init` resolves,
+    // so the two cannot disagree about who is being initialised.
     let member_key = joy_core::identity::acting_human_key(root)?;
     let member = project.member_by_key(&member_key).ok_or_else(|| {
         anyhow::anyhow!(
@@ -291,7 +291,11 @@ fn ensure_human_auth_initialized(
             "AI tool members are attested with your project key, so authentication is required before registration."
         )
     );
-    let bootstrapped = crate::commands::auth::run_init(passphrase, passphrase_stdin, None, false)?;
+    // No session is left behind (operator, 2026-09-27): only `joy auth`
+    // makes one. The passphrase chosen here still serves the rest of this
+    // run, which is why it is handed back.
+    let bootstrapped =
+        crate::commands::auth::run_init(passphrase, passphrase_stdin, None, false, false)?;
     dprintln!();
     Ok(Some(bootstrapped))
 }

@@ -211,7 +211,10 @@ fn a_joy_commit_leaves_the_persons_staged_work_where_it_was() {
 /// reads git config again, so removing the ONE key it actually reads
 /// (`user.email`) now takes the acting member away with it, `user.name`
 /// or not. This is the inverse of what this test asserted before the
-/// correction, checked on the same fixture.
+/// correction, checked on the same fixture. One thing stands in front
+/// of git config since 2026-09-27: the session Alice's enrolment left
+/// behind at this terminal, which names her by itself, so it is ended
+/// first; while it stands, the config may say what it likes.
 #[test]
 fn removing_user_email_takes_the_acting_member_with_it() {
     let (_dir, root, home) = machine();
@@ -247,11 +250,24 @@ fn removing_user_email_takes_the_acting_member_with_it() {
         "the configured name rides along while the address names the member"
     );
 
-    // Only `user.email` goes. `user.name` alone names nobody: D4.5's
-    // display name check is a question about a member ALREADY resolved,
-    // and with no address in the config (and no forge account, no
-    // remote here) nothing resolves one any more.
+    // Only `user.email` goes. While Alice's session stands it names her
+    // on its own (operator, 2026-09-27), and the commit still carries
+    // her address, from the member, with the configured name beside it.
     std::fs::write(home.join(".gitconfig"), "[user]\n\tname = Alice Anderson\n").unwrap();
+    let still = joy(&root, &home, &["add", "task", "Still hers"]);
+    assert!(still.status.success(), "{}", text(&still));
+    assert_eq!(
+        head_fields(&root)[1],
+        "alice@example.com",
+        "the session names the member without any address in the config"
+    );
+
+    // Signed out, `user.name` alone names nobody: D4.5's display name
+    // check is a question about a member ALREADY resolved, and with no
+    // address in the config (and no forge account, no remote here)
+    // nothing resolves one any more.
+    let deauth = joy(&root, &home, &["deauth"]);
+    assert!(deauth.status.success(), "{}", text(&deauth));
 
     let second = joy(&root, &home, &["add", "task", "Second thing"]);
     assert!(
@@ -260,7 +276,7 @@ fn removing_user_email_takes_the_acting_member_with_it() {
         text(&second)
     );
     assert!(
-        text(&second).contains("git config user.email"),
+        text(&second).contains("--user <address>"),
         "the refusal names the remedy: {}",
         text(&second)
     );

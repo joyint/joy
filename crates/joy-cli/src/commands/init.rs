@@ -31,11 +31,6 @@ pub struct InitArgs {
     #[arg(long)]
     pub acronym: Option<String>,
 
-    /// Creator member email (defaults to git config user.email, and on a
-    /// terminal joy asks when neither is there)
-    #[arg(long)]
-    pub user: Option<String>,
-
     /// Project language (ISO 639-1 code, e.g. en, de). Defaults to en.
     #[arg(long)]
     pub language: Option<String>,
@@ -107,7 +102,7 @@ pub fn run(args: InitArgs) -> Result<()> {
     let options = InitOptions {
         name: args.name,
         acronym: args.acronym,
-        user: args.user.clone(),
+        user: joy_core::identity::named_user(),
         language: args.language,
         host,
         ask: host
@@ -177,7 +172,13 @@ pub fn run(args: InitArgs) -> Result<()> {
                 // The founder init just registered, not git config: an
                 // anonymous project may be founded on a machine that has
                 // no git identity at all (D3.9).
-                crate::commands::auth::run_init(Some(pass), false, Some(&result.founder), true)?;
+                crate::commands::auth::run_init(
+                    Some(pass),
+                    false,
+                    Some(&result.founder),
+                    true,
+                    true,
+                )?;
             }
 
             println!();
@@ -212,7 +213,8 @@ pub fn run(args: InitArgs) -> Result<()> {
             let mut ask = host
                 .may_ask()
                 .then(|| Box::new(init::TerminalAsk::stdio()) as Box<dyn init::AskFounderAddress>);
-            match init::ensure_founder(&root, args.user.as_deref(), host, ask.as_deref_mut())? {
+            let user = joy_core::identity::named_user();
+            match init::ensure_founder(&root, user.as_deref(), host, ask.as_deref_mut())? {
                 init::FounderHeal::Registered(email) => {
                     println!("  Registered {email} as the founding member.");
                 }

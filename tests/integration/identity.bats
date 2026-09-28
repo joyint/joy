@@ -50,7 +50,7 @@ load setup
     forget_this_device
     run joy comment "$ITEM_ID" "Should fail"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"does not know who you are"* ]]
+    [[ "$output" == *"not signed in"* ]]
 }
 
 @test "AI member blocked from manage actions" {
