@@ -1,7 +1,7 @@
 id: JOY-02B3-5D
 title: 'Use the forge login as the joy authentication: signed in with gh, glab or tea, joy asks nothing'
 type: story
-status: new
+status: deferred
 priority: medium
 capabilities:
 - plan
@@ -9,7 +9,7 @@ capabilities:
 - review
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-27T09:19:03.685654621Z
-updated: 2026-09-27T10:35:31.924651582Z
+updated: 2026-09-29T06:23:56.152161213Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'Asked by users repeatedly: why must I authenticate with joy at all when I am already signed in at the forge with its own tool (gh auth login, glab, tea)? Corrected 2026-09-27 after a misunderstanding: this is not about joy holding anything from the forge, and not about a device wrap; no key material moves in either direction. The forge login itself IS the authentication. Today resolve_identity already finds the member through the forge account (step 5, JOY-02AE-1A: the responsible plugin''s identity verb, verified against the forge API, matched by verified address or alias) but answers ''unauthenticated'', so the guard refuses writes as soon as the project has AI members or the action is a manage action, and the person is sent to joy auth. Target: (1) an explicit binding, once, through the forge plugins: ''joy forge connect [--host H]'' (and the member card in the app) asks the responsible plugin who is signed in (login, user_id) and records host + user_id on the member in project.yaml, attested like every other member field; one binding per member and project, so a person signed in at several forges chooses the one this project uses; ''joy forge disconnect'' removes it; ''joy forge status'' shows it. (2) resolve_identity answers a member whose bound account the plugin reports as signed in on this device as AUTHENTICATED, with the source ''forge login at <host>'', so every command that needs no seed (add, status, assign, comment, ls, show, project settings, the app opening a project) runs with no passphrase and no joy auth; the plugin''s answer is cached the way forge_cache already caches, so this is not one API call per command; offline, the answer is what it is today (unauthenticated, session or passphrase). (3) What needs the identity seed keeps needing it, because the forge cannot provide it: crypt zones, sealed chats, attesting a new member, issuing an AI delegation token, anonymous mode. Those ask the passphrase once and then hold the session (JOY-02B2-65), or in the app use the keystore remember; the story does not change that and says so in the tutorial. (4) The event log names the member as it does now; the guard''s authenticated flag carries the source, so an audit can tell a forge login from a passphrase session. Security note for the design: a signed-in forge tool on this device is exactly the credential every push already trusts; joy adds no weaker path than the one git has. Depends on JOY-02B2-65 for the session part of (3). Out of scope: the platform, and any forge without an identity verb in its plugin.'
 comments:
