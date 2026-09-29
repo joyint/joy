@@ -1,3 +1,4 @@
 2026-09-29T06:23:56.162Z JOY-02B3-5D item.status_changed "new -> deferred" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-29T19:58:27.802Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-09-29T19:58:27.940Z JOY-02B4-46 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-09-29T19:58:28.025Z JOY-02B4-46 item.status_changed "in-progress -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
