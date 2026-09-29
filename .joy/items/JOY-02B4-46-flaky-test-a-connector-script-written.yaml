@@ -1,0 +1,24 @@
+id: JOY-02B4-46
+title: 'Flaky test: a connector script written by a test can be busy when joy starts it'
+type: bug
+status: in-progress
+priority: high
+tags:
+- tests
+- ci
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-29T19:58:27.931041101Z
+updated: 2026-09-29T19:58:27.931041101Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Seen in CI on 2026-09-29 on the umbrella's main: a_token_the_forge_refuses_exits_one_with_a_state (joy-cli, tests/forge_command.rs) answered plugin_failed where needs_sign_in was expected. The run before it was green on the same joy commit, so no code change caused it.
+
+  Cause: the tests of one binary run in threads and each starts children. A script written with std::fs::write is open for writing for a moment, and a thread that forks in that moment hands the handle to its child until that child's exec. joy, started right after, cannot run the script: Text file busy (os error 26), which reads as plugin_failed. Reproduced by holding a write handle on the connector while joy runs.
+
+  Fix: forge_command.rs and forge_sign_in.rs write their scripts through a child process, so the test process never holds a write handle. No production code changes.
+
+  Left open: the test files in joy-core that write a script and run it in their own process carry the same window (forge_plugin_runner, forge_twin_push, acting_member, resolve_identity_order, proxy_basic_auth and others). None of them has failed in CI so far.

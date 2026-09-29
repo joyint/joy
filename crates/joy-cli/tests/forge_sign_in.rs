@@ -35,6 +35,42 @@ use serde_json::Value;
 /// The connector as cargo built it for this test run.
 const CONNECTOR: &str = env!("CARGO_BIN_EXE_joy-forge");
 
+/// Write one executable script through a child process, so that THIS
+/// process never holds a write handle on it.
+///
+/// The tests of this binary run in threads and every one of them starts
+/// children. A script written with `std::fs::write` is open for writing
+/// for a moment, and a thread that forks in that moment hands the handle
+/// to its child until that child's `exec`. joy, started right after the
+/// write, then cannot run the script: "Text file busy", which reads as
+/// `plugin_failed` (seen in CI on 2026-09-29). joy runs in a process of
+/// its own here, so the test cannot retry the spawn; it keeps the handle
+/// out of reach instead.
+fn write_script(path: &std::path::Path, body: &str) {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+    let mut writer = joy_process::command("/bin/sh")
+        .arg("-c")
+        .arg("cat > \"$0\"")
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("start the writer of the script");
+    writer
+        .stdin
+        .take()
+        .expect("the writer's stdin")
+        .write_all(body.as_bytes())
+        .expect("hand the script to its writer");
+    assert!(
+        writer.wait().expect("the writer ends").success(),
+        "the script {} could not be written",
+        path.display()
+    );
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .expect("make the script executable");
+}
+
 /// One sandbox per case: its own config directory (the credential file
 /// of D2.6 lives there), its own state directory (the refresh locks of
 /// D2.6a and the login memory of D4.1c live there) and its own
@@ -106,9 +142,7 @@ impl Sandbox {
              if [ -z \"$user\" ]; then user=\"$GH_ACTIVE\"; fi\n\
              echo \"gh-token-of-$user\"\n";
         let path = bin.join("gh");
-        std::fs::write(&path, script).unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_script(&path, script);
         let config = self.path().join("gh-config");
         std::fs::create_dir_all(&config).unwrap();
         let mut hosts = format!("{host}:\n    users:\n");
