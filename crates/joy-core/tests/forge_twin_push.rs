@@ -77,17 +77,19 @@ impl Server {
         format!("http://127.0.0.1:{}/{path}", self.port)
     }
 
-    /// Answer 401 to exactly this password from now on, whatever else
+    /// Answer 401 to exactly this token from now on, whatever else
     /// arrives with it: R2's 401-renew-retry needs a forge that refuses
     /// the SPECIFIC stale token and nothing else, never "the machine
-    /// sends no credential at all". Revoking a second password leaves
-    /// the first revoked too, so a case can prove a renewal that does
-    /// NOT cure the 401 either.
-    fn revoke_password(&self, password: &str) {
+    /// sends no credential at all". Revoking a second token leaves the
+    /// first revoked too, so a case can prove a renewal that does NOT
+    /// cure the 401 either. (Named "token", not "password": the values
+    /// are fixture strings of a fake forge, and CodeQL reads a parameter
+    /// called password as a hard-coded credential.)
+    fn revoke_token(&self, token: &str) {
         self.revoke
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(password.to_string());
+            .insert(token.to_string());
     }
 }
 
@@ -1291,7 +1293,7 @@ fn a_401_for_a_token_that_worked_before_renews_once_and_retries_the_same_leg() {
     let forge_dir = tmp.path().join("forge.git");
     let base = forge_repository(&forge_dir);
     let server = serve(forge_dir.clone(), Answer::Ok);
-    server.revoke_password("stale-token");
+    server.revoke_token("stale-token");
     let machine = machine(&server.url("forge.git"), "stale-token");
     std::env::set_var(
         "JOY_STUB_RENEWED_TOKEN_JSON",
@@ -1336,13 +1338,13 @@ fn a_401_the_renewal_does_not_cure_still_ends_in_needs_sign_in() {
     let server = serve(forge_dir.clone(), Answer::Ok);
     // Both the original AND the renewed password are refused: a refresh
     // that granted a token the forge still will not take.
-    server.revoke_password("stale-token");
+    server.revoke_token("stale-token");
     let machine = machine(&server.url("forge.git"), "stale-token");
     std::env::set_var(
         "JOY_STUB_RENEWED_TOKEN_JSON",
         r#"{"known":true,"host":"127.0.0.1","login":"scotty-work","token":"still-no-good","username":"x-access-token","source":"keychain","chose_by":"only"}"#,
     );
-    server.revoke_password("still-no-good");
+    server.revoke_token("still-no-good");
 
     let checkout = tmp.path().join("checkout");
     checkout_ahead(&checkout, &forge_dir, &server.url("forge.git"), base);
@@ -1374,7 +1376,7 @@ fn a_transport_failure_during_the_renewal_reads_as_offline_not_needs_sign_in() {
     let forge_dir = tmp.path().join("forge.git");
     let base = forge_repository(&forge_dir);
     let server = serve(forge_dir.clone(), Answer::Ok);
-    server.revoke_password("stale-token");
+    server.revoke_token("stale-token");
     let machine = machine(&server.url("forge.git"), "stale-token");
     // The connector's own answer for R3's case: `--renew` was asked and
     // the refresh itself could not be completed (see
