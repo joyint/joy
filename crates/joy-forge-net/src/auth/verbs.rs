@@ -236,19 +236,29 @@ fn fresh(
     };
     // Under the lock: re read, and refresh only if the entry is still
     // the one this process saw (a fingerprint that moved means another
-    // holder already refreshed, or refused, it: this call spends no
-    // second refresh on top of that one, D2.6a's "at most one per lock
-    // holder") and is still expired, or `renew` was asked for.
+    // holder already refreshed it: this call spends no second refresh
+    // on top of that one, D2.6a's "at most one per lock holder") and is
+    // still expired, or `renew` was asked for.
     let (current, source) = ctx
         .vault()
         .get(host, login.as_deref())
         .unwrap_or((record, source));
-    if current.fingerprint() != before {
+    // A named refusal is checked on its own, BEFORE the fingerprint
+    // compare below: a refusal write only sets refused_reason/refused_at
+    // and never touches the token, so it never moves the fingerprint.
+    // Without this the second of two racing holders would see the same
+    // fingerprint it started with, fall through as if nothing happened,
+    // and spend a live request with the very refresh token the forge
+    // just named a refusal for.
+    if let Some(reason) = current.refused_reason.clone() {
         drop(guard);
-        return match current.refused_reason.clone() {
-            Some(reason) => Err(Stale::Refused(refused_message(host, &reason))),
-            None => Ok((current, source)),
-        };
+        return Err(Stale::Refused(refused_message(host, &reason)));
+    }
+    if current.fingerprint() != before {
+        // The refusal case is already handled above; a fingerprint that
+        // moved here means another holder refreshed it clean.
+        drop(guard);
+        return Ok((current, source));
     }
     if !renew && !current.is_expired() {
         drop(guard);

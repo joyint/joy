@@ -756,16 +756,24 @@ pub fn is_transport_failure(poll: &Poll) -> bool {
     matches!(poll, Poll::Failed { code, .. } if code == "network")
 }
 
-/// Whether the FORGE named this refusal, as against a failure on joy's
-/// own side or the wire's (R3, operator rule 2026-09-30): `invalid_grant`,
-/// `bad_refresh_token`, `unauthorized_client` for a refresh token already
-/// spent, and every other code the standard's `error` field carries.
-/// `network` (nobody answered) and `unsupported` (something answered
-/// that was not OAuth at all, which a 5xx error page produces as often
-/// as a broken forge) are NOT this: a failure on our side must never be
-/// read as the person's turn to sign in again.
+/// Whether the FORGE named THIS refresh token refused, as against a
+/// failure on joy's own side or the wire's (R3, operator rule
+/// 2026-09-30): `invalid_grant`, `bad_refresh_token`, and
+/// `unauthorized_client` for a refresh token already spent are the
+/// three words R3 names, and only those turn into the person's turn to
+/// sign in again. A code the RFC keeps for the client's OWN setup
+/// (`invalid_client`, `invalid_request`, `unsupported_grant_type`,
+/// `invalid_scope`) is a joy-side or forge-config fault, not a verdict
+/// on the person's refresh token, so it falls through to the same
+/// "our own failure" branch `network` and `unsupported` already take:
+/// sign-in again would only ask the person to fix something they did
+/// not break.
 pub fn is_named_refusal(poll: &Poll) -> bool {
-    matches!(poll, Poll::Failed { code, .. } if code != "network" && code != "unsupported")
+    matches!(
+        poll,
+        Poll::Failed { code, .. }
+            if code == "invalid_grant" || code == "bad_refresh_token" || code == "unauthorized_client"
+    )
 }
 
 /// The forge's own word for a [`is_named_refusal`] answer: `invalid_grant`
@@ -815,6 +823,33 @@ mod tests {
             form(&[("scope", "repo user:email"), ("client_id", "a b")]),
             "scope=repo%20user%3Aemail&client_id=a%20b"
         );
+    }
+
+    /// R3 names three words as a refusal of the refresh token itself:
+    /// `invalid_grant`, `bad_refresh_token`, `unauthorized_client`. A
+    /// code the RFC keeps for the client's OWN setup is joy's fault or
+    /// the forge's config, never the person's turn to sign in again,
+    /// so it reads the same as `network` and `unsupported`: not a
+    /// named refusal.
+    #[test]
+    fn only_r3s_three_words_are_a_named_refusal() {
+        let failed = |code: &str| Poll::Failed {
+            code: code.to_string(),
+            message: String::new(),
+        };
+        for code in ["invalid_grant", "bad_refresh_token", "unauthorized_client"] {
+            assert!(is_named_refusal(&failed(code)), "{code}");
+        }
+        for code in [
+            "network",
+            "unsupported",
+            "invalid_client",
+            "invalid_request",
+            "unsupported_grant_type",
+            "invalid_scope",
+        ] {
+            assert!(!is_named_refusal(&failed(code)), "{code}");
+        }
     }
 
     #[test]

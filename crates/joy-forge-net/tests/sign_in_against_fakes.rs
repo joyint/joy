@@ -1094,6 +1094,78 @@ fn a_named_refusal_marks_the_record_and_is_never_asked_about_twice() {
     );
 }
 
+/// R3, the race the sequential test above cannot see: two holders find
+/// the same expired, refreshable record at once (the ordinary shape of
+/// two concurrent operations against one host, not a rare edge case).
+/// One takes the lock, gets a named refusal, and writes the mark
+/// (`refused_reason`/`refused_at`; the token itself untouched, so the
+/// fingerprint it started with never moves). The other was queued on
+/// the SAME lock and acquires it right after: it must read that mark
+/// under the lock and answer `needs_sign_in` from it, never spend a
+/// second live request with the very refresh token the forge just
+/// refused.
+#[test]
+fn a_second_holder_queued_on_the_lock_reads_the_refusal_and_never_spends_the_forge_again() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            // Hold the door open a little so the second holder is
+            // genuinely queued on the lock, not merely lucky.
+            std::thread::sleep(std::time::Duration::from_millis(40));
+            return Reply::json(400, r#"{"error":"invalid_grant"}"#);
+        }
+        Reply::not_found()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    sandbox(dir.path())
+        .vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "stale".into(),
+                login: Some("scotty".into()),
+                expires_at: Some((chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339()),
+                refresh_token: Some("rt-old".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    let base = fake.base();
+    let root = dir.path().to_path_buf();
+    let handles: Vec<_> = (0..2)
+        .map(|_| {
+            let forge = TestForge::device(base.clone());
+            let ctx = sandbox(&root);
+            let host = Target::Host("forge.test".into());
+            std::thread::spawn(move || verbs::token(&forge, &host, None, &ctx))
+        })
+        .collect();
+    let answers: Vec<Value> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "the second holder must read the mark under the lock, not spend the forge on the same refused refresh token"
+    );
+    for answer in &answers {
+        assert_eq!(answer["known"], false);
+        assert_eq!(answer["reason"], "needs_sign_in");
+        let message = answer["message"].as_str().unwrap();
+        assert!(message.contains("invalid_grant"), "{message}");
+    }
+    let (record, _) = sandbox(dir.path())
+        .vault()
+        .get("forge.test", Some("scotty"))
+        .unwrap();
+    assert_eq!(record.refused_reason.as_deref(), Some("invalid_grant"));
+    assert_eq!(record.refresh_token.as_deref(), Some("rt-old"));
+}
+
 /// R3: a failure on joy's own side or the wire's (a 5xx page here) is
 /// NOT a named refusal. The record is untouched and the old token
 /// stands, exactly as an ordinary transport failure always has.
