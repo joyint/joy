@@ -954,7 +954,7 @@ pub fn host_facts(
             cache_facts(&key, &facts, ttl.max(Duration::from_secs(1)));
             facts
         }
-        // D2.6a's `busy`, still busy after the one extra wait
+        // D2.6a's `busy`, still busy after the one extra ask
         // [`ask_connector`] already gave it, or the connector could not
         // be asked at all: this call learnt nothing, so nothing is what
         // it answers, and NOTHING is cached (gap 3, operator rule
@@ -972,7 +972,7 @@ pub enum Renewal {
     Token(HostToken),
     /// The renewal could not really be attempted: joy's own failure or
     /// the wire's - a transport failure, D2.6a's lock still busy after
-    /// the one extra wait, or the connector could not be asked at all.
+    /// the one extra ask, or the connector could not be asked at all.
     /// R3: this must never be read as the person's turn to sign in; the
     /// caller's honest answer is that the forge could not be reached.
     Unreachable,
@@ -1024,22 +1024,11 @@ fn access_of(direction: ContactDirection) -> crate::forge_plugins::Access {
     }
 }
 
-/// D2.6a's own bound, mirrored here because the resolver never depends
-/// on the connector crate: the connector is a separate process this
-/// reaches only through its stdout. Ten seconds is the longest the
-/// connector itself waits for the refresh lock before it gives up and
-/// answers `busy`, so waiting it once more here gives the OTHER holder,
-/// wherever it is stuck, the one chance D2.6a promises before `busy` is
-/// read as "nobody is signed in" (gap 3, operator rule 2026-09-30). It
-/// only ever fires in that already rare case: an ordinary refresh never
-/// answers `busy` a second time.
-const LOCK_BOUND: Duration = Duration::from_secs(10);
-
 /// What [`ask_connector`] learned.
 enum Asked {
     /// A usable answer, cacheable exactly as it stands.
     Answered(HostFacts, Duration),
-    /// D2.6a's `busy`, still busy after the one extra wait this function
+    /// D2.6a's `busy`, still busy after the one extra ask this function
     /// gives it. Never cached as an absence (gap 3).
     Busy,
     /// `renew` asked for a REAL attempt and it could not be made: the
@@ -1094,7 +1083,12 @@ fn ask_connector(
     };
     let mut answer = ask();
     if matches!(&answer, Ok(a) if a.reason.as_deref() == Some("busy")) {
-        std::thread::sleep(LOCK_BOUND);
+        // D2.6a's `busy`: the connector waited its own lock bound for the
+        // OTHER holder and gave up. Asking once more gives that holder
+        // one more bound, and the connector returns the moment the lock
+        // frees, so this costs exactly as long as the other refresh still
+        // takes and not a second longer (gap 3, operator rule 2026-09-30;
+        // a blind sleep here would have cost the whole bound every time).
         answer = ask();
         if matches!(&answer, Ok(a) if a.reason.as_deref() == Some("busy")) {
             return Asked::Busy;

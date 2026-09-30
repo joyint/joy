@@ -529,7 +529,7 @@ case "$verb" in
       echo '{{"known":false,"reason":"busy"}}'
     elif [ -n "$JOY_STUB_BUSY_ONCE_MARKER" ] && [ ! -e "$JOY_STUB_BUSY_ONCE_MARKER" ]; then
       # busy exactly once: the marker file this call leaves behind is
-      # what makes the SECOND ask (the resolver's one extra wait, gap 3)
+      # what makes the SECOND ask (the resolver's one extra ask, gap 3)
       # answer normally, proving the lock holder only needed the one
       # chance D2.6a promises it.
       touch "$JOY_STUB_BUSY_ONCE_MARKER"
@@ -1408,16 +1408,13 @@ fn a_transport_failure_during_the_renewal_reads_as_offline_not_needs_sign_in() {
 // ---------------------------------------------------------------------
 
 /// D2.6a's `busy` is not "nobody is signed in": the door already waited
-/// its own lock bound once. The resolver gives the other holder ONE more
-/// chance at that same bound before it gives up, and a holder that
-/// finishes inside it is read correctly, not as an absent token.
-///
-/// This case really waits the ten seconds: the KEYRING_BOUND test in
-/// joy-forge-net does the same for the same reason, D2.6a's number is
-/// what is under test, and there is no fake clock a subprocess connector
-/// can be handed.
+/// its own lock bound once for the other holder. The resolver asks ONE
+/// more time (the connector's own wait is the bound, and it returns the
+/// moment the lock frees), and a holder that finished by then is read
+/// correctly, not as an absent token. The stub answers busy exactly once
+/// and leaves a marker, so a token in the answer proves the second ask.
 #[test]
-fn a_busy_answer_that_clears_within_the_one_extra_wait_is_read_correctly() {
+fn a_busy_answer_that_clears_on_the_one_extra_ask_is_read_correctly() {
     let _serial = lock();
     let machine = machine("https://127.0.0.1/never-dialled.git", "good-token");
     let marker = machine.root.join("busy-once.marker");
@@ -1432,17 +1429,19 @@ fn a_busy_answer_that_clears_within_the_one_extra_wait_is_read_correctly() {
     );
     assert!(
         facts.token.is_some(),
-        "a holder that finished inside the one extra wait is not an absent token"
+        "a holder that finished by the one extra ask is not an absent token"
     );
+    assert!(marker.exists(), "the stub was asked twice");
+    // the stub answers at once, so the resolver adds no wait of its own
     assert!(
-        started.elapsed() >= std::time::Duration::from_secs(9),
-        "the resolver waits the lock's bound once before it asks again: {:?}",
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "no blind wait between the two asks: {:?}",
         started.elapsed()
     );
     drop(machine);
 }
 
-/// Still `busy` after the one extra wait: this call learnt nothing, and
+/// Still `busy` after the one extra ask: this call learnt nothing, and
 /// NOTHING is what it caches. A `no-login` style absence cached here is
 /// what sent the next contact out with no credential at all and read a
 /// stuck lock as "nobody is signed in" (gap 3). The very next ask must
@@ -1462,10 +1461,10 @@ fn a_busy_answer_that_never_clears_is_never_cached_as_an_absence() {
         HostKind::Background,
         contact::ContactDirection::Fetch,
     );
-    assert!(facts.token.is_none(), "still busy after the one extra wait");
+    assert!(facts.token.is_none(), "still busy after the one extra ask");
     assert!(
-        started.elapsed() >= std::time::Duration::from_secs(9),
-        "{:?}",
+        started.elapsed() < std::time::Duration::from_secs(5),
+        "no blind wait between the two asks: {:?}",
         started.elapsed()
     );
 
