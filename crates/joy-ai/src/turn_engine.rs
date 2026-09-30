@@ -388,18 +388,19 @@ pub fn run_host_turn(
 pub fn usability_notice(alias: &str, usability: &Usability, sender: &str) -> Option<String> {
     match usability {
         Usability::Usable => None,
+        // One short line each (Horst 2026-09-30: nobody reads a paragraph
+        // in a chat): what is wrong, and where to fix it.
         Usability::NoKey => Some(format!(
-            "@{alias} is not configured for {sender}. An API key in Settings makes it usable."
+            "@{alias} has no API key for {sender}. Settings → AI members."
         )),
         Usability::NotDelegated => Some(format!(
-            "@{alias} is not delegated by {sender}. Delegate in Settings → AI members, \
-             then it can act for you."
+            "@{alias} is not delegated by {sender}. Settings → AI members."
         )),
         Usability::NotInstalled { hint } => {
-            Some(format!("@{alias} is not set up on this machine ({hint})"))
+            Some(format!("@{alias} is not set up on this machine ({hint})."))
         }
         Usability::NotActivated => Some(format!(
-            "@{alias} is not activated in this project. Settings, Local AI, Active."
+            "@{alias} is not activated here. Settings → Local AI."
         )),
     }
 }
@@ -423,10 +424,7 @@ pub fn turn_details(out: &TurnOutcome, level: InteractionLevel) -> Option<String
 
 /// What the room is told when a member's money is spent.
 pub fn budget_notice(alias: &str) -> String {
-    format!(
-        "@{alias} has reached its monthly budget for this project. \
-         Raise it in Settings → AI members to continue."
-    )
+    format!("@{alias} is over its monthly budget. Settings → AI members.")
 }
 
 /// Turn a raw adapter error into a human chat notice (operator
@@ -454,18 +452,46 @@ pub fn humanize_turn_error(alias: &str, raw: &str) -> String {
     }
     let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     let lower = cleaned.to_lowercase();
+    // The provider refused the key: nothing about the turn is wrong and no
+    // retry will help, so say what it is and who can fix it (Horst
+    // 2026-09-30: five retries on Integrate against an expired Mistral
+    // key, each answered "could not finish this turn: acp prompt: API
+    // error from mistral … Invalid API key").
+    if lower.contains("invalid api key")
+        || lower.contains("incorrect api key")
+        || lower.contains("api key expired")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+        || lower.contains(" 401")
+    {
+        let provider = lower
+            .find("api error from ")
+            .map(|i| {
+                lower[i + "api error from ".len()..]
+                    .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .filter(|p| !p.is_empty());
+        return match provider {
+            Some(p) => format!(
+                "@{alias}: API key for {p} invalid or expired. Renew in Settings → AI members."
+            ),
+            None => {
+                format!("@{alias}: API key invalid or expired. Renew in Settings → AI members.")
+            }
+        };
+    }
     if lower.contains("limit exceeded") || lower.contains("price limit") || lower.contains("budget")
     {
-        return format!(
-            "@{alias} stopped before finishing: this turn hit a spend limit. \
-             Adjust this agent's budget in Settings → AI members to continue."
-        );
+        return format!("@{alias} stopped at its spend limit. Settings → AI members.");
     }
-    let short: String = cleaned.chars().take(240).collect();
+    let short: String = cleaned.chars().take(120).collect();
     if short.is_empty() {
-        format!("@{alias} could not finish this turn. Please try again.")
+        format!("@{alias} could not finish. Try again.")
     } else {
-        format!("@{alias} could not finish this turn: {short}")
+        format!("@{alias} could not finish: {short}")
     }
 }
 
@@ -529,7 +555,31 @@ mod tests {
         assert!(outcome.reply.is_empty());
         assert_eq!(
             outcome.notice,
-            "@vibe could not finish this turn: connection reset by peer"
+            "@vibe could not finish: connection reset by peer"
+        );
+    }
+
+    /// An expired or invalid provider key is not the turn's fault and no
+    /// retry helps (Horst 2026-09-30, Integrate): the notice names the
+    /// provider and who can fix it, never the raw "acp prompt: API error".
+    #[test]
+    fn an_invalid_provider_key_is_named_and_points_at_the_administrator() {
+        let raw = "acp chat turn in joyint-project-x: acp prompt: API error from mistral \
+                   (model: devstral-small-latest): Invalid API key. Please check your API key \
+                   and try again.";
+        assert_eq!(
+            humanize_turn_error("vibe", raw),
+            "@vibe: API key for mistral invalid or expired. Renew in Settings → AI members."
+        );
+        // a bare 401 without a provider name still says what it is
+        assert_eq!(
+            humanize_turn_error("claude", "HTTP 401 Unauthorized"),
+            "@claude: API key invalid or expired. Renew in Settings → AI members."
+        );
+        // a spend stop is still a spend stop
+        assert!(
+            humanize_turn_error("vibe", "Price limit exceeded: $0.07 > $0.05")
+                .contains("spend limit")
         );
     }
 
@@ -678,7 +728,7 @@ mod tests {
         let raw = "acp chat turn in joyint-project-abc: <vibe_stop_event>ReadTimeout on upstream</vibe_stop_event>";
         assert_eq!(
             humanize_turn_error("vibe", raw),
-            "@vibe could not finish this turn: ReadTimeout on upstream"
+            "@vibe could not finish: ReadTimeout on upstream"
         );
     }
 
@@ -707,17 +757,14 @@ mod tests {
             "vibe",
             "chat turn in joyint-project-x: <err>connection reset by peer</err>",
         );
-        assert_eq!(
-            msg,
-            "@vibe could not finish this turn: connection reset by peer"
-        );
+        assert_eq!(msg, "@vibe could not finish: connection reset by peer");
     }
 
     #[test]
     fn humanize_never_posts_an_empty_reason() {
         assert_eq!(
             humanize_turn_error("qwen", "<only><tags></tags></only>"),
-            "@qwen could not finish this turn. Please try again."
+            "@qwen could not finish. Try again."
         );
     }
 }
