@@ -977,6 +977,217 @@ fn a_held_refresh_lock_answers_busy_and_refreshes_nothing() {
     drop(held);
 }
 
+/// R2 (operator rule 2026-09-30): `--renew` tells `fresh()` to attempt a
+/// refresh whatever the record's own local expiry says, which is the
+/// engine's one retry after a 401 for a token the local clock still
+/// believes is good.
+#[test]
+fn renew_forces_a_refresh_of_a_token_that_is_not_locally_expired() {
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let counter = refreshes.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::json(
+                200,
+                r#"{"access_token":"renewed","refresh_token":"rt-new","expires_in":3600}"#,
+            );
+        }
+        Reply::not_found()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "still-good-by-the-clock".into(),
+                login: Some("scotty".into()),
+                expires_at: Some(
+                    (chrono::Utc::now() + chrono::Duration::seconds(3600)).to_rfc3339(),
+                ),
+                refresh_token: Some("rt-old".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    // Without `--renew` the record is not locally expired, so it answers
+    // as it stands and the forge is never asked.
+    let plain = verbs::token(&forge, &host, None, &ctx);
+    assert_eq!(plain["token"], "still-good-by-the-clock");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0);
+
+    // `--renew` asks anyway (the engine's one retry after a 401 the
+    // local clock never saw coming), and the answer carries what the
+    // forge granted.
+    let renewed = verbs::token_with(&forge, &host, None, &ctx, true);
+    assert_eq!(renewed["token"], "renewed");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+    let (record, _) = ctx.vault().get("forge.test", Some("scotty")).unwrap();
+    assert_eq!(record.refresh_token.as_deref(), Some("rt-new"));
+}
+
+/// R3 (operator rule 2026-09-30): a refresh the forge itself REFUSES by
+/// name is not a transport hiccup. The record is marked with the
+/// refusal, the refresh token stays exactly where it was, the answer is
+/// `needs_sign_in` with the sentence naming the host and the forge's own
+/// word, and a second call never spends the forge asking again.
+#[test]
+fn a_named_refusal_marks_the_record_and_is_never_asked_about_twice() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::json(400, r#"{"error":"invalid_grant"}"#);
+        }
+        Reply::not_found()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "stale".into(),
+                login: Some("scotty".into()),
+                expires_at: Some((chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339()),
+                refresh_token: Some("rt-old".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    let answer = verbs::token(&forge, &host, None, &ctx);
+    assert_eq!(answer["known"], false);
+    assert_eq!(answer["reason"], "needs_sign_in");
+    let message = answer["message"].as_str().unwrap();
+    assert!(message.contains("forge.test"), "{message}");
+    assert!(message.contains("invalid_grant"), "{message}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    // The record is marked, and the refresh token is untouched: this is
+    // a mark that stops the NEXT spend, not a reason to throw it away.
+    let (record, _) = ctx.vault().get("forge.test", Some("scotty")).unwrap();
+    assert_eq!(record.refused_reason.as_deref(), Some("invalid_grant"));
+    assert!(record.refused_at.is_some());
+    assert_eq!(record.refresh_token.as_deref(), Some("rt-old"));
+
+    // A second call, even a fresh context reading the same file, never
+    // spends the forge again on a refusal it already has in writing.
+    let second = sandbox(dir.path());
+    let again = verbs::token(&forge, &host, None, &second);
+    assert_eq!(again["reason"], "needs_sign_in");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "a marked refusal is never asked about twice"
+    );
+}
+
+/// R3: a failure on joy's own side or the wire's (a 5xx page here) is
+/// NOT a named refusal. The record is untouched and the old token
+/// stands, exactly as an ordinary transport failure always has.
+#[test]
+fn a_5xx_during_a_refresh_marks_nothing_and_keeps_the_old_token() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::text(502, "Bad Gateway");
+        }
+        Reply::not_found()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "stale".into(),
+                login: Some("scotty".into()),
+                expires_at: Some((chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339()),
+                refresh_token: Some("rt-old".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    let answer = verbs::token(&forge, &host, None, &ctx);
+    assert_eq!(answer["token"], "stale", "the old token stands");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let (record, _) = ctx.vault().get("forge.test", Some("scotty")).unwrap();
+    assert!(
+        record.refused_reason.is_none(),
+        "our own failure marks nothing"
+    );
+    assert_eq!(record.refresh_token.as_deref(), Some("rt-old"));
+}
+
+/// R2/R3 (operator rule 2026-09-30): `--renew` asked for a REAL refresh
+/// attempt, and a 5xx page - joy's own failure or the wire's - is what
+/// answered. Handing back the stale token here would send the engine's
+/// retry at the SAME 401 it just saw and let it read as `needs_sign_in`;
+/// instead the door says plainly that the forge could not be reached,
+/// and marks nothing.
+#[test]
+fn renew_that_cannot_be_attempted_answers_offline_and_marks_nothing() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::text(502, "Bad Gateway");
+        }
+        Reply::not_found()
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let forge = TestForge::device(fake.base());
+    let ctx = sandbox(dir.path());
+    let host = Target::Host("forge.test".into());
+    ctx.vault()
+        .put(
+            "forge.test",
+            &Record {
+                token: "stale".into(),
+                login: Some("scotty".into()),
+                expires_at: Some(
+                    (chrono::Utc::now() + chrono::Duration::seconds(3600)).to_rfc3339(),
+                ),
+                refresh_token: Some("rt-old".into()),
+                token_endpoint: Some(format!("{}/login/oauth/access_token", fake.base())),
+                client_id: Some("test-client".into()),
+                ..Record::default()
+            },
+        )
+        .unwrap();
+
+    let answer = verbs::token_with(&forge, &host, None, &ctx, true);
+    assert_eq!(answer["known"], false, "{answer}");
+    assert_eq!(answer["reason"], "offline", "{answer}");
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    let (record, _) = ctx.vault().get("forge.test", Some("scotty")).unwrap();
+    assert!(
+        record.refused_reason.is_none(),
+        "our own failure marks nothing, even under --renew"
+    );
+    assert_eq!(record.refresh_token.as_deref(), Some("rt-old"));
+}
+
 /// D4.1c: a host with two logins and a repository only the second can
 /// reach. One probe per candidate, the answer says `"chose_by":"probe"`,
 /// and the winner is remembered so the next call spends nothing.
