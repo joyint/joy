@@ -354,6 +354,136 @@ fn two_processes_refreshing_one_entry_produce_one_refresh_and_one_busy() {
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
 }
 
+/// R2 (operator rule 2026-09-30): the engine's one retry after a 401 for
+/// a token that worked before, run against the real connector BINARY,
+/// not the library the case above drives in process. `token --renew`
+/// asks for a refresh whatever the record's own local clock says, and
+/// the plain `token` beside it proves the flag is what makes the
+/// difference: without it, a record that is not locally expired never
+/// spends the forge.
+#[test]
+fn renew_forces_the_connector_to_refresh_a_token_the_local_clock_still_calls_good() {
+    let refreshes = Arc::new(AtomicUsize::new(0));
+    let counter = refreshes.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::json(
+                200,
+                r#"{"access_token":"renewed","refresh_token":"rt-new",
+                    "expires_in":3600,"scope":"repo,user:email"}"#,
+            );
+        }
+        Reply::not_found()
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    sandbox.seed(
+        "forge.test",
+        "scotty",
+        serde_json::json!({
+            "token": "still-good-by-the-clock",
+            "login": "scotty",
+            "scopes": "repo user:email",
+            "expires_at": (chrono::Utc::now() + chrono::Duration::seconds(3600)).to_rfc3339(),
+            "refresh_token": "rt-old",
+            "token_endpoint": format!("{}/login/oauth/access_token", fake.base()),
+            "client_id": "test-client",
+        }),
+    );
+
+    let plain = sandbox
+        .connector()
+        .args(["github", "token", "--host", "forge.test"])
+        .output()
+        .expect("the plain call");
+    assert_eq!(answer_of(&plain)["token"], "still-good-by-the-clock");
+    assert_eq!(
+        refreshes.load(Ordering::SeqCst),
+        0,
+        "not locally expired, so the plain call never asks the forge"
+    );
+
+    let renewed = sandbox
+        .connector()
+        .args(["github", "token", "--host", "forge.test", "--renew"])
+        .output()
+        .expect("the --renew call");
+    let answer = answer_of(&renewed);
+    assert_eq!(answer["token"], "renewed", "{answer}");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+
+    // A third, plain call reads the rotated record back and refreshes
+    // nothing further: the renewal this test asked for is exactly one.
+    let third = sandbox
+        .connector()
+        .args(["github", "token", "--host", "forge.test"])
+        .output()
+        .expect("the third call");
+    assert_eq!(answer_of(&third)["token"], "renewed");
+    assert_eq!(refreshes.load(Ordering::SeqCst), 1);
+}
+
+/// R3 (operator rule 2026-09-30): the forge's own named refusal of a
+/// refresh, run against the real connector BINARY. The record is marked
+/// on disk, and a second connector process - a fresh one, reading the
+/// same file - never spends the forge again on a refusal it already has
+/// in writing.
+#[test]
+fn a_named_refusal_through_the_connector_binary_is_remembered_across_processes() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counter = calls.clone();
+    let fake = FakeForge::start(move |call| {
+        if call.path == "/login/oauth/access_token" {
+            counter.fetch_add(1, Ordering::SeqCst);
+            return Reply::json(400, r#"{"error":"invalid_grant"}"#);
+        }
+        Reply::not_found()
+    });
+    let sandbox = Sandbox::new("forge.test", "github", &format!("{}/api/v3", fake.base()));
+    sandbox.seed(
+        "forge.test",
+        "scotty",
+        serde_json::json!({
+            "token": "stale",
+            "login": "scotty",
+            "scopes": "repo user:email",
+            "expires_at": (chrono::Utc::now() - chrono::Duration::seconds(30)).to_rfc3339(),
+            "refresh_token": "rt-old",
+            "token_endpoint": format!("{}/login/oauth/access_token", fake.base()),
+            "client_id": "test-client",
+        }),
+    );
+
+    let first = sandbox
+        .connector()
+        .args(["github", "token", "--host", "forge.test"])
+        .output()
+        .expect("the first connector");
+    let answer = answer_of(&first);
+    assert_eq!(answer["known"], false);
+    assert_eq!(answer["reason"], "needs_sign_in");
+    assert!(
+        answer["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("forge.test"),
+        "{answer}"
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+
+    let second = sandbox
+        .connector()
+        .args(["github", "token", "--host", "forge.test"])
+        .output()
+        .expect("the second connector");
+    assert_eq!(answer_of(&second)["reason"], "needs_sign_in");
+    assert_eq!(
+        calls.load(Ordering::SeqCst),
+        1,
+        "a marked refusal is never asked about twice, even from a fresh process"
+    );
+}
+
 /// D2.4 and D5: `token-store` reads the token from STDIN, and `ps`
 /// during the run shows no token. `/proc/<pid>/cmdline` is what `ps`
 /// reads, so that is what this asserts, on the running child.
