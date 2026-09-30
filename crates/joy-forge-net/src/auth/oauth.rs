@@ -756,6 +756,28 @@ pub fn is_transport_failure(poll: &Poll) -> bool {
     matches!(poll, Poll::Failed { code, .. } if code == "network")
 }
 
+/// Whether the FORGE named this refusal, as against a failure on joy's
+/// own side or the wire's (R3, operator rule 2026-09-30): `invalid_grant`,
+/// `bad_refresh_token`, `unauthorized_client` for a refresh token already
+/// spent, and every other code the standard's `error` field carries.
+/// `network` (nobody answered) and `unsupported` (something answered
+/// that was not OAuth at all, which a 5xx error page produces as often
+/// as a broken forge) are NOT this: a failure on our side must never be
+/// read as the person's turn to sign in again.
+pub fn is_named_refusal(poll: &Poll) -> bool {
+    matches!(poll, Poll::Failed { code, .. } if code != "network" && code != "unsupported")
+}
+
+/// The forge's own word for a [`is_named_refusal`] answer: `invalid_grant`
+/// and the rest, exactly as the token endpoint sent it back. `None` for
+/// anything that never carried a code (a granted token, a pending poll).
+pub fn failed_code(poll: &Poll) -> Option<&str> {
+    match poll {
+        Poll::Failed { code, .. } => Some(code.as_str()),
+        _ => None,
+    }
+}
+
 /// The `error` event of D2.4.
 pub fn error_event(code: &str, message: &str) -> Value {
     json!({ "event": "error", "code": code, "message": message })

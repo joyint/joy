@@ -35,19 +35,35 @@ pub enum Own {
     /// changes nothing of it (D1.10, D3.8). The sentence names who has
     /// to sign in.
     Expired(String),
+    /// A refresh was tried and the forge itself named a refusal (R3,
+    /// operator rule 2026-09-30): `invalid_grant`, `bad_refresh_token`,
+    /// `unauthorized_client` for a refresh token already spent. The
+    /// record is marked and the refresh token is spent no further until
+    /// a new sign-in replaces it; the sentence names who has to sign in.
+    Refused(String),
+    /// `renew` asked for a REAL refresh attempt and joy's own side or
+    /// the wire's failed it: a transport failure, D2.6a's lock still
+    /// busy after the one extra wait, or the connector could not be
+    /// asked at all. R3: never the person's turn to sign in for a
+    /// failure that was never theirs.
+    Unreachable,
 }
 
 /// The connector's own credential for this host, chosen by the steps of
 /// D4.1c that spend no request (pin, memory, only login).
 pub fn own_token(ctx: &Ctx, host: &str) -> Option<Resolved> {
-    match own_token_full(ctx, host) {
+    match own_token_full(ctx, host, false) {
         Own::Found(resolved) => Some(*resolved),
         _ => None,
     }
 }
 
-/// [`own_token`] with the third answer: `busy`.
-pub fn own_token_full(ctx: &Ctx, host: &str) -> Own {
+/// [`own_token`] with the fuller answer: `busy`, `expired`, `refused`,
+/// and `renew`, R2's flag that tells [`fresh`] to attempt a refresh
+/// whatever the record's own local expiry says (operator rule
+/// 2026-09-30). Every caller other than the `token` verb's own `--renew`
+/// passes `false`, which is the engine exactly as it was.
+pub fn own_token_full(ctx: &Ctx, host: &str, renew: bool) -> Own {
     let vault = ctx.vault();
     if vault.is_none() {
         return Own::Nothing;
@@ -73,10 +89,12 @@ pub fn own_token_full(ctx: &Ctx, host: &str) -> Own {
     let Some((record, source)) = vault.get(host, login.as_deref()) else {
         return Own::Nothing;
     };
-    match fresh(ctx, host, record, source) {
+    match fresh(ctx, host, record, source, renew) {
         Ok((record, source)) => Own::Found(Box::new(resolved_of(record, source, chose_by))),
         Err(Stale::Busy) => Own::Busy,
         Err(Stale::Expired(message)) => Own::Expired(message),
+        Err(Stale::Refused(message)) => Own::Refused(message),
+        Err(Stale::Unreachable) => Own::Unreachable,
     }
 }
 
@@ -86,6 +104,10 @@ enum Stale {
     Busy,
     /// A refresh was needed and this call may not run one.
     Expired(String),
+    /// A refresh was tried and the forge named a specific refusal (R3).
+    Refused(String),
+    /// `renew` asked for a real attempt and it could not be made (R2/R3).
+    Unreachable,
 }
 
 /// The sentence a delegated session gets for a credential that expired
@@ -106,15 +128,66 @@ fn expired_answer(message: String) -> Value {
     json!({ "known": false, "reason": "expired", "message": message })
 }
 
+/// The sentence R3 gives, word for word, for a refresh the forge itself
+/// refused: it names the host and carries the forge's own code, so the
+/// detail is never invented.
+fn refused_message(host: &str, reason: &str) -> String {
+    format!("Your sign-in with {host} has expired. ({reason})")
+}
+
+/// The answer of R3 for a credential whose refresh the forge named a
+/// refusal for: `needs_sign_in`, because a refresh token the forge has
+/// already refused once is not a stale token waiting for its next use,
+/// it is one the door will not spend again until a new sign-in replaces
+/// it.
+fn refused_answer(message: String) -> Value {
+    json!({ "known": false, "reason": "needs_sign_in", "message": message })
+}
+
+/// The answer of R2/R3 for `--renew` when the attempt itself could not
+/// be made: `offline`, because this is joy's own failure or the wire's,
+/// never the person's turn to sign in. The engine reads this reason to
+/// tell "the forge refused" from "joy could not even ask" (operator rule
+/// 2026-09-30): a transport failure during a renewal must read as the
+/// forge being unreachable, and nothing else may say `needs_sign_in`
+/// because of it.
+fn renewal_unreachable_answer(host: &str) -> Value {
+    json!({
+        "known": false,
+        "reason": "offline",
+        "message": format!("{host} could not be reached while joy tried to renew this sign-in"),
+    })
+}
+
+/// Now, as the RFC 3339 text [`Record::refused_at`] keeps.
+fn now_rfc3339() -> String {
+    chrono::Utc::now().to_rfc3339()
+}
+
 /// The record, refreshed under the lock of D2.6a where it is past its
-/// lifetime and the forge gave joy a refresh token.
+/// lifetime (or `renew` says to try anyway, R2) and the forge gave joy a
+/// refresh token.
+///
+/// `renew` is D2.4's `--renew` flag, honoured HERE regardless of the
+/// local expiry check: the engine's one retry after a 401 for a token
+/// that worked before (operator rule 2026-09-30, R2) has evidence the
+/// forge already refused this access token, which the record's own
+/// `expires_at` may not know yet. It still runs under the same lock and
+/// spends at most one refresh per lock holder, exactly as an ordinary
+/// expiry does.
 ///
 /// The order matters and is the design's: gh, glab and tea are read
 /// BEFORE the lock is taken and never while it is held, because flock
 /// belongs to the open file description and a child that unlocks takes
 /// the parent's lock with it. Nothing here spawns anything.
-fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Record, Source), Stale> {
-    if !record.is_expired() {
+fn fresh(
+    ctx: &Ctx,
+    host: &str,
+    record: Record,
+    source: Source,
+    renew: bool,
+) -> Result<(Record, Source), Stale> {
+    if !renew && !record.is_expired() {
         return Ok((record, source));
     }
     // A delegated session may READ what the person stored and may
@@ -133,27 +206,51 @@ fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Recor
         // tells the person why.
         return Ok((record, source));
     }
+    // R3: a refresh token the forge has already named a refusal for is
+    // never spent again by a LATER process. The record still carries the
+    // refresh token itself (nothing here throws it away), but nothing
+    // below this line asks the forge with it until a new sign-in writes
+    // a whole new record.
+    if let Some(reason) = record.refused_reason.clone() {
+        return Err(Stale::Refused(refused_message(host, &reason)));
+    }
     let login = record.login.clone();
     let before = record.fingerprint();
     let guard = match lock::take(ctx.state_dir(), host, login.as_deref()) {
         Ok(guard) => guard,
         Err(_) => {
             // Re read once: another process may have finished the
-            // refresh while this one waited.
+            // refresh (or the refusal, R3) while this one waited. Either
+            // is real evidence, whatever `renew` asked for: this call
+            // never took the lock, so it never gets to spend one of its
+            // own.
             let again = ctx.vault().get(host, login.as_deref());
             return match again {
+                Some((record, _)) if record.refused_reason.is_some() => Err(Stale::Refused(
+                    refused_message(host, record.refused_reason.as_deref().unwrap_or_default()),
+                )),
                 Some((record, source)) if !record.is_expired() => Ok((record, source)),
                 _ => Err(Stale::Busy),
             };
         }
     };
     // Under the lock: re read, and refresh only if the entry is still
-    // the one this process saw and is still expired.
+    // the one this process saw (a fingerprint that moved means another
+    // holder already refreshed, or refused, it: this call spends no
+    // second refresh on top of that one, D2.6a's "at most one per lock
+    // holder") and is still expired, or `renew` was asked for.
     let (current, source) = ctx
         .vault()
         .get(host, login.as_deref())
         .unwrap_or((record, source));
-    if current.fingerprint() != before || !current.is_expired() {
+    if current.fingerprint() != before {
+        drop(guard);
+        return match current.refused_reason.clone() {
+            Some(reason) => Err(Stale::Refused(refused_message(host, &reason))),
+            None => Ok((current, source)),
+        };
+    }
+    if !renew && !current.is_expired() {
         drop(guard);
         return Ok((current, source));
     }
@@ -170,29 +267,71 @@ fn fresh(ctx: &Ctx, host: &str, record: Record, source: Source) -> Result<(Recor
         return Ok((current, source));
     };
     let outcome = oauth::refresh(&http, &endpoint, &client_id, &refresh_token);
-    let renewed = match outcome {
-        Poll::Granted(grant) => grant,
-        // A refresh that failed is not a reason to try again in a loop:
-        // ten thousand attempts against one dead refresh token got a
-        // whole OAuth app throttled once (D2.6a).
+    match outcome {
+        Poll::Granted(grant) => {
+            let mut next = current.clone();
+            next.expires_at = grant.expires_at();
+            next.token = grant.access_token;
+            // Rotation safety: Forgejo issues a NEW refresh token on
+            // every use and retires the old one, so the whole answer is
+            // written back and never merged with what was there.
+            next.refresh_token = grant.refresh_token.or(next.refresh_token);
+            if let Some(scope) = grant.scope {
+                next.scopes = crate::scope::parse_granted(&scope).join(" ");
+            }
+            // A fresh grant is proof the mark, if this record carried
+            // one from an earlier call, no longer applies: the forge
+            // just accepted the very refresh token it stood over.
+            next.refused_reason = None;
+            next.refused_at = None;
+            let stored = ctx.vault().put(host, &next).unwrap_or(source);
+            drop(guard);
+            Ok((next, stored))
+        }
+        ref failed if oauth::is_named_refusal(failed) => {
+            // The forge NAMED this refusal (R3): the record is marked so
+            // a later process never spends this refresh token again, and
+            // the refresh token itself stays exactly where it was. The
+            // write is best effort - a state directory that could not be
+            // written still answers the true refusal for THIS call, it
+            // just cannot promise the next one skips asking too.
+            let reason = oauth::failed_code(failed)
+                .unwrap_or("invalid_grant")
+                .to_string();
+            let mut next = current.clone();
+            next.refused_reason = Some(reason.clone());
+            next.refused_at = Some(now_rfc3339());
+            let _ = ctx.vault().put(host, &next);
+            drop(guard);
+            Err(Stale::Refused(refused_message(host, &reason)))
+        }
+        // A failure on joy's own side or the wire's - a transport
+        // failure, or an answer that was not OAuth at all (a 5xx error
+        // page) - is not a reason to try again in a loop, and NEVER a
+        // reason to mark the record: ten thousand attempts against one
+        // dead refresh token got a whole OAuth app throttled once
+        // (D2.6a), and R3 says our own failure must never read as the
+        // person's turn to sign in.
+        //
+        // Under `renew` specifically, that failure is answered rather
+        // than papered over: R2's caller explicitly asked for a REAL
+        // attempt, is about to retry the SAME leg with whatever this
+        // call hands back, and handing back the very token a 401 was
+        // just seen for would only reproduce that 401 and read as the
+        // person's turn to sign in, when the honest story is that this
+        // machine could not reach the forge just now. An ordinary
+        // expiry-triggered refresh (`renew` false) never asked for that
+        // distinction and keeps the old answer exactly as D2.6a always
+        // has.
+        _ if renew => {
+            drop(guard);
+            Err(Stale::Unreachable)
+        }
         _ => {
             drop(guard);
-            return Ok((current, source));
+            Ok((current, source))
         }
-    };
-    let mut next = current.clone();
-    next.expires_at = renewed.expires_at();
-    next.token = renewed.access_token;
-    // Rotation safety: Forgejo issues a NEW refresh token on every use
-    // and retires the old one, so the whole answer is written back and
-    // never merged with what was there.
-    next.refresh_token = renewed.refresh_token.or(next.refresh_token);
-    if let Some(scope) = renewed.scope {
-        next.scopes = crate::scope::parse_granted(&scope).join(" ");
     }
-    let stored = ctx.vault().put(host, &next).unwrap_or(source);
-    drop(guard);
-    Ok((next, stored))
 }
 
 fn resolved_of(record: Record, source: Source, chose_by: Option<ChoseBy>) -> Resolved {
@@ -223,6 +362,22 @@ fn resolved_of(record: Record, source: Source, chose_by: Option<ChoseBy>) -> Res
 /// only read, because a caller that stated no direction must not be
 /// refused a credential that would have worked.
 pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: &Ctx) -> Value {
+    token_with(forge, target, purpose, ctx, false)
+}
+
+/// [`token`] with D2.4's `--renew` flag (R2, operator rule 2026-09-30):
+/// the engine's one retry after a 401 for a token that worked before,
+/// asking [`fresh`] to attempt a refresh whatever the record's own local
+/// expiry says. An older connector never sees this flag at all and
+/// answers exactly as [`token`] always has, which is what keeps the
+/// plugin protocol backward compatible.
+pub fn token_with(
+    forge: &dyn Forge,
+    target: &Target,
+    purpose: Option<Purpose>,
+    ctx: &Ctx,
+    renew: bool,
+) -> Value {
     let Some(host) = target.host() else {
         return json!({ "known": false, "reason": "unsupported-host" });
     };
@@ -245,21 +400,38 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
     // the caller named (`--token-env`) is one of them. It becomes the
     // answer only where nothing else answers at all.
     let mut expired: Option<String> = None;
+    // The same holding pattern for R3's refusal (gap 2): a connector
+    // entry the forge has already refused to renew does not stop a
+    // `--token-env` or a foreign CLI's login from answering below it.
+    let mut refused: Option<String> = None;
     match chosen {
-        Some((login, chose_by)) => match named_login(forge, &host, &login, chose_by, ctx) {
+        Some((login, chose_by)) => match named_login(forge, &host, &login, chose_by, ctx, renew) {
             Own::Found(resolved) => return answer_or_wall(forge, &host, target, &resolved, ctx),
             Own::Busy => return lock::busy_answer(),
             Own::Expired(message) => expired = Some(message),
+            Own::Refused(message) => refused = Some(message),
+            // R2/R3: `--renew` could not really be attempted. This is
+            // answered AT ONCE and not held like `expired` or `refused`:
+            // the sources below this one (`--token-env`, a foreign CLI)
+            // are read through `Ctx::resolved_token`, which tries the
+            // CONNECTOR'S OWN ENTRY again first (D2.4's own order) - the
+            // very entry this call just could not renew, this time with
+            // no renewal asked for at all, which would answer with the
+            // same not-locally-expired-yet token `--renew` exists to
+            // look past and silently defeat the whole point of asking.
+            Own::Unreachable => return renewal_unreachable_answer(&host),
             // A login this machine no longer holds: fall through and
             // let the probe and the remaining sources decide.
             Own::Nothing => {}
         },
         // Nobody is named and no login is known by name either: the
         // `<host>` form of D2.6's entry addressing is what is left.
-        None if candidates.is_empty() => match own_token_full(ctx, &host) {
+        None if candidates.is_empty() => match own_token_full(ctx, &host, renew) {
             Own::Found(resolved) => return answer_or_wall(forge, &host, target, &resolved, ctx),
             Own::Busy => return lock::busy_answer(),
             Own::Expired(message) => expired = Some(message),
+            Own::Refused(message) => refused = Some(message),
+            Own::Unreachable => return renewal_unreachable_answer(&host),
             Own::Nothing => {}
         },
         None => {}
@@ -307,6 +479,10 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
     // the forge CLI, spawned.
     match ctx.resolved_token(forge.id(), &host) {
         Some(resolved) => answer(forge, &host, &resolved),
+        // Nothing below the entry answered either, so the credential
+        // this call did find, and the forge itself refused to renew, is
+        // the whole story (R3).
+        None if refused.is_some() => refused_answer(refused.expect("the sentence was held")),
         // Nothing below the entry answered either, so the credential
         // this call did find, and may not renew, is the whole story.
         None if expired.is_some() => expired_answer(expired.expect("the sentence was held")),
@@ -375,14 +551,23 @@ pub fn token_for_remote(forge: &dyn Forge, host: &str, ctx: &Ctx) -> Option<Reso
 
 /// The credential of ONE named login: the connector's own entry first,
 /// then the forge CLI for that login, spawned.
-fn named_login(forge: &dyn Forge, host: &str, login: &str, chose_by: ChoseBy, ctx: &Ctx) -> Own {
+fn named_login(
+    forge: &dyn Forge,
+    host: &str,
+    login: &str,
+    chose_by: ChoseBy,
+    ctx: &Ctx,
+    renew: bool,
+) -> Own {
     if let Some((record, source)) = ctx.vault().get(host, Some(login)) {
-        return match fresh(ctx, host, record, source) {
+        return match fresh(ctx, host, record, source, renew) {
             Ok((record, source)) => {
                 Own::Found(Box::new(resolved_of(record, source, Some(chose_by))))
             }
             Err(Stale::Busy) => Own::Busy,
             Err(Stale::Expired(message)) => Own::Expired(message),
+            Err(Stale::Refused(message)) => Own::Refused(message),
+            Err(Stale::Unreachable) => Own::Unreachable,
         };
     }
     match foreign_token(forge, host, login, chose_by) {
@@ -493,7 +678,7 @@ fn probe(
     // that lost the race.
     let mut answered_with: Option<String> = None;
     for login in candidates {
-        let candidate = match named_login(forge, host, login, ChoseBy::Probe, ctx) {
+        let candidate = match named_login(forge, host, login, ChoseBy::Probe, ctx, false) {
             Own::Found(resolved) => *resolved,
             _ => continue,
         };
@@ -1092,6 +1277,10 @@ fn finish(
         refresh_token: grant.refresh_token.clone(),
         token_endpoint: Some(config.token_endpoint.clone()),
         client_id: Some(config.client_id.clone()),
+        // A sign in is a whole new record: whatever an earlier one was
+        // marked with (R3) is exactly what a new sign-in clears.
+        refused_reason: None,
+        refused_at: None,
     };
     let guard = lock::take(ctx.state_dir(), host, Some(&account.login));
     if guard.is_err() {

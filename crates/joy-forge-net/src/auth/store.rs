@@ -113,6 +113,20 @@ pub struct Record {
     pub token_endpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub client_id: Option<String>,
+    /// The forge's OWN word for why a refresh was refused: `invalid_grant`,
+    /// `bad_refresh_token`, `unauthorized_client` and the like (R3,
+    /// operator rule 2026-09-30). Never a transport failure and never an
+    /// answer joy could not read (a 5xx page, a dropped connection): both
+    /// of those are a failure on joy's own side or the wire's, and leave
+    /// this untouched. The refresh token beside it is NOT cleared: this
+    /// is a mark that stops a later process from spending it again on a
+    /// refusal the forge already gave, not a reason to forget it. A new
+    /// sign-in replaces the whole record, and the mark goes with it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused_reason: Option<String>,
+    /// RFC 3339, when [`Record::refused_reason`] was written.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refused_at: Option<String>,
 }
 
 /// The record prints its FINGERPRINT and never its token.
@@ -139,6 +153,8 @@ impl std::fmt::Debug for Record {
             )
             .field("token_endpoint", &self.token_endpoint)
             .field("client_id", &self.client_id)
+            .field("refused_reason", &self.refused_reason)
+            .field("refused_at", &self.refused_at)
             .finish()
     }
 }
@@ -162,6 +178,14 @@ impl Record {
     /// token and named where to spend it.
     pub fn can_refresh(&self) -> bool {
         self.refresh_token.is_some() && self.token_endpoint.is_some()
+    }
+
+    /// Whether the forge already named a refusal for this refresh token
+    /// (R3, operator rule 2026-09-30): a later process reads this and
+    /// spends the refresh token no further until a new sign-in replaces
+    /// the whole record.
+    pub fn is_refused(&self) -> bool {
+        self.refused_reason.is_some()
     }
 
     /// The fingerprint D2.6a compares under the lock.

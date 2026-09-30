@@ -132,6 +132,11 @@ enum Command {
         /// wins".
         #[arg(long = "for")]
         purpose: Option<String>,
+        /// Attempt a refresh whatever the record's own local expiry
+        /// says (R2, operator rule 2026-09-30): the engine's one retry
+        /// after a 401 for a token that worked before.
+        #[arg(long)]
+        renew: bool,
     },
     /// Read ONE token from stdin, validate it with `identity` and store
     /// it. The token is never an argument (D2.4).
@@ -361,13 +366,16 @@ fn answer(forge: &dyn Forge, command: &Command, ctx: &Ctx) -> i32 {
             remote,
             host,
             purpose,
+            renew,
         } => {
             let purpose = match parse_purpose(purpose.as_deref()) {
                 Ok(purpose) => purpose,
                 Err(code) => return code,
             };
             match target(remote.as_deref(), host.as_deref()) {
-                Some(target) => crate::auth::verbs::token(forge, &target, purpose, ctx),
+                Some(target) => {
+                    crate::auth::verbs::token_with(forge, &target, purpose, ctx, *renew)
+                }
                 None => json!({ "known": false, "reason": "unsupported-host" }),
             }
         }
