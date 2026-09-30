@@ -158,6 +158,7 @@ mod tests {
             action: None,
             next_try: None,
             self_imposed: false,
+            renew_hint: false,
         }))
     }
 
@@ -210,6 +211,7 @@ mod tests {
             action: Some(page.to_string()),
             next_try: None,
             self_imposed: false,
+            renew_hint: false,
         }));
         let refusal = Refusal::of("github.com", &error);
         assert_eq!(refusal.state, "needs_org_approval");

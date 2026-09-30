@@ -794,6 +794,7 @@ mod sync_tests {
             action: None,
             next_try: None,
             self_imposed: false,
+            renew_hint: false,
         }))
     }
 

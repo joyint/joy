@@ -1120,7 +1120,9 @@ pub fn plugin_verdict(evidence: &PluginEvidence, host: &str) -> Verdict {
 /// One connector answer as the error joy carries upwards, the way
 /// [`failed`] does it for a libgit2 failure.
 pub fn plugin_failed(evidence: &PluginEvidence, host: &str) -> anyhow::Error {
-    error_of(plugin_verdict(evidence, host))
+    // A connector's own answer never carries R2's evidence: there is no
+    // token here that a 401 could have refused.
+    error_of(plugin_verdict(evidence, host), false)
 }
 
 // ---- the detail line (D1.8b, wording rules) --------------------------
@@ -1192,6 +1194,13 @@ pub struct ContactError {
     /// a lie about somebody else (JOY-02AC-C3, Horst on Windows
     /// 2026-09-19).
     pub self_imposed: bool,
+    /// Whether this failure is [`wants_token_refresh`]'s own case (R2,
+    /// operator rule 2026-09-30): a token that worked before, refused
+    /// with a 401 on THIS leg. The engine reads it once, before the
+    /// failure is allowed to stand, to decide whether one renewal is
+    /// worth asking the connector for and the SAME leg worth one more
+    /// try.
+    pub renew_hint: bool,
 }
 
 impl std::fmt::Display for ContactError {
@@ -1209,7 +1218,7 @@ impl std::error::Error for ContactError {}
 /// upwards: the classifier decides the state, the state decides the
 /// sentence, and libgit2's own words go to the detail line.
 pub fn failed(evidence: &ContactEvidence) -> anyhow::Error {
-    error_of(verdict(evidence))
+    error_of(verdict(evidence), wants_token_refresh(evidence))
 }
 
 /// One verdict as the error joy carries upwards. The sentence and the
@@ -1217,7 +1226,11 @@ pub fn failed(evidence: &ContactEvidence) -> anyhow::Error {
 /// joins libgit2's own words on the detail line, which is where D1.8c
 /// puts the proxy's alternative and where a surface that cannot render
 /// a button finds the instruction at all.
-fn error_of(verdict: Verdict) -> anyhow::Error {
+///
+/// `renew_hint` is [`wants_token_refresh`]'s own verdict on the SAME
+/// evidence, carried onto the error so the engine can read it back
+/// without re-running the classifier (R2).
+fn error_of(verdict: Verdict, renew_hint: bool) -> anyhow::Error {
     let message = match &verdict.next_step {
         Some(step) => format!("{} ({step})", verdict.sentence),
         None => verdict.sentence.clone(),
@@ -1234,6 +1247,7 @@ fn error_of(verdict: Verdict) -> anyhow::Error {
         action: verdict.action,
         next_try: verdict.wait.map(|w| SystemTime::now() + w),
         self_imposed: false,
+        renew_hint,
     })
 }
 
@@ -1276,6 +1290,15 @@ pub fn failure_of(error: &anyhow::Error) -> Failure {
         Some(c) => c.failure,
         None => Failure::Error,
     }
+}
+
+/// Whether this failure is worth ONE renewal before it is allowed to
+/// stand (R2, operator rule 2026-09-30): see [`ContactError::renew_hint`]
+/// and [`wants_token_refresh`], whose verdict this carries.
+pub fn wants_retry(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<ContactError>()
+        .is_some_and(|c| c.renew_hint)
 }
 
 /// Whether the wait an error carries is joy's own (the held poll of
@@ -2160,6 +2183,11 @@ pub fn run<T>(
                 // a contact that went out and failed is the forge's
                 // answer, never a wait joy chose
                 self_imposed: false,
+                // R2's own verdict, carried through the re-wrap exactly
+                // as the action above is: the inner error already
+                // classified this evidence once, and asking again here
+                // would need the evidence this function never receives.
+                renew_hint: wants_retry(&e),
             }))
         }
     }
@@ -2201,6 +2229,9 @@ pub fn run_poll<T>(
                 action: None,
                 next_try: Some(next_try),
                 self_imposed: true,
+                // a wait joy imposed on itself, with no token and no 401
+                // anywhere in it, is never R2's case
+                renew_hint: false,
             }));
         }
     }

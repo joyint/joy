@@ -1342,10 +1342,17 @@ fn fresh_memory(
 fn leg_auth(auth: &Auth, leg: &Leg) -> Auth {
     match &leg.credential {
         LegCredential::Machine => auth.clone(),
-        LegCredential::Token(token) => match token.kind {
-            Some(kind) => Auth::token_for(token.token.clone(), kind),
-            None => Auth::token(token.token.clone()),
-        },
+        LegCredential::Token(token) => auth_of_token(token),
+    }
+}
+
+/// The `Auth` of one connector token, however it reached this call: a
+/// leg's own credential, or R2's renewed one for the SAME leg tried
+/// again.
+fn auth_of_token(token: &super::resolver::HostToken) -> Auth {
+    match token.kind {
+        Some(kind) => Auth::token_for(token.token.clone(), kind),
+        None => Auth::token(token.token.clone()),
     }
 }
 
@@ -1416,6 +1423,31 @@ fn nobody_answered(host: &str, verb: &'static str) -> anyhow::Error {
         action: None,
         next_try: None,
         self_imposed: false,
+        // nobody answered at all: no token was ever refused
+        renew_hint: false,
+    })
+}
+
+/// R2/R3's own failure (operator rule 2026-09-30): the engine asked the
+/// connector to renew a token after a 401, and joy's own side or the
+/// wire's failed that attempt - a transport failure, D2.6a's lock still
+/// busy after the one extra wait, or the connector could not be spoken
+/// to at all. The state is `offline`, on purpose and never
+/// `needs_sign_in`: the forge never got a chance to refuse anything, and
+/// a failure that was never the person's must never send them at a sign
+/// in door.
+fn renewal_unreachable(host: &str) -> anyhow::Error {
+    anyhow::Error::new(super::contact::ContactError {
+        failure: super::contact::Failure::Offline,
+        message: super::contact::Failure::Offline.sentence(host),
+        detail: Some(format!(
+            "joy: a 401 for {host} asked the forge connector for a renewal, and the renewal \
+             itself could not be completed (R2, R3)"
+        )),
+        action: None,
+        next_try: None,
+        self_imposed: false,
+        renew_hint: false,
     })
 }
 
@@ -1453,68 +1485,98 @@ fn over_plan_inner<T>(
             action: None,
             next_try: None,
             self_imposed: false,
+            // no probe ran at all: nothing was ever refused
+            renew_hint: false,
         }));
     }
+    // The project root a renewal asks the connector under (R2): the same
+    // one `contact_plan` read `host_facts` under a moment ago, so the
+    // cache a renewal writes is the cache the NEXT contact on this host
+    // reads.
+    let root = repo.workdir().map(Path::to_path_buf);
     let last_leg = plan.legs.len().saturating_sub(1);
     let mut last: Option<anyhow::Error> = None;
     for (at, leg) in plan.legs.iter().enumerate() {
         let auth_for_leg = leg_auth(auth, leg);
-        // Whatever an earlier contact on this thread left in the two
-        // cells is not this leg's. The credential cell is taken below,
-        // inside the contact; the ssh refusal cell is taken HERE,
-        // because `clone` and every verb that contacts outside a plan
-        // set it too and nothing there clears it, and because a leg the
-        // throttle holds back never enters the closure at all. A
-        // refusal that is not this leg's would send the next operation
-        // to the twin and write a 24 hour `ssh-failed` row for a host
-        // whose ssh credential was never refused (D1.2 rule 3b).
-        super::resolver::took_ssh_auth_failure();
-        let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
-        let outcome = {
-            let repo = &repo;
-            let work = &mut work;
-            let auth_for_leg = &auth_for_leg;
-            let used = &used;
-            let contact = move || -> anyhow::Result<T> {
-                take_used_credential();
-                let mut remote = leg_remote(repo, leg, direction)?;
-                let answer = work(repo, &mut remote, auth_for_leg, leg);
-                used.set(take_used_credential());
-                answer
-            };
-            if poll {
-                super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
-            } else {
-                super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
-            }
-        };
-        // Read before the next leg runs: one contact's refusal must
-        // never be read as the next one's.
-        let ssh_auth_failed = super::resolver::took_ssh_auth_failure();
+        let (outcome, mut ssh_auth_failed, used) =
+            attempt_leg(&repo, leg, &auth_for_leg, direction, verb, poll, &mut work);
         match outcome {
             Ok(value) => {
-                remember_success(&plan, leg, used.get());
-                // A leg that carried a forge token is a signed in host,
-                // whether or not the forge asked for it: a public
-                // repository answers the first request without a
-                // challenge, so the callback never ran and `run` has just
-                // written down "nothing was presented". Left standing,
-                // that note put the host into the no anonymous polling
-                // lane of D1.9 (once every fifteen minutes, "Nobody is
-                // signed in for github.com") with the token right there,
-                // until the next push presented it and cleared the note
-                // (JOY-02AC-C3, Horst on Windows 2026-09-19, a public
-                // repository behind an ssh remote whose key libgit2
-                // could not use).
-                if leg.credential.is_token() {
-                    super::contact::note_credential_in_hand(
-                        &plan.host,
-                        super::contact::transport_of(&leg.url),
-                    );
-                }
+                remember_success(&plan, leg, used);
+                note_token_leg_in_hand(&plan, leg);
                 return Ok(value);
             }
-            Err(e) => {
+            Err(mut e) => {
+                // R2 (operator rule 2026-09-30): a token that worked
+                // before, refused with a 401 on THIS leg, is worth one
+                // renewal before the failure stands. The retry is the
+                // SAME leg, never the next one in the plan - `may_follow`
+                // below decides whether a DIFFERENT leg is worth trying,
+                // and this is not that question, and it is spent at most
+                // once: the renewed credential either works or it does
+                // not, and a second 401 on the SAME leg is not asked
+                // about again.
+                if leg.credential.is_token() && super::contact::wants_retry(&e) {
+                    // `leg.url` and not the plan's originally CONFIGURED
+                    // remote: for the common shapes (a configured https
+                    // remote, or an ssh remote whose twin is the only
+                    // leg) the two are the same string. Where they are
+                    // not - an ssh remote with both a machine leg and a
+                    // twin leg - the cache [`resolver::renew_token`]
+                    // writes keys on the twin's own url, so the very
+                    // next operation's `host_facts` (keyed on the
+                    // CONFIGURED remote, D1.7) asks the connector once
+                    // more instead of reading this renewal back. That
+                    // costs one extra connector call, never a wrong
+                    // token or a lost renewal, and keeping the plan's
+                    // configured url on hand for every caller of this
+                    // function only to save that one call was not worth
+                    // the field.
+                    match super::resolver::renew_token(
+                        &leg.url,
+                        root.as_deref(),
+                        auth.host_kind(),
+                        direction,
+                    ) {
+                        super::resolver::Renewal::Token(token) => {
+                            let renewed_auth = auth_of_token(&token);
+                            let (retry, retry_ssh_failed, retry_used) = attempt_leg(
+                                &repo,
+                                leg,
+                                &renewed_auth,
+                                direction,
+                                verb,
+                                poll,
+                                &mut work,
+                            );
+                            match retry {
+                                Ok(value) => {
+                                    remember_success(&plan, leg, retry_used);
+                                    note_token_leg_in_hand(&plan, leg);
+                                    return Ok(value);
+                                }
+                                Err(e2) => {
+                                    e = e2;
+                                    ssh_auth_failed = retry_ssh_failed;
+                                }
+                            }
+                        }
+                        // R3: joy's own failure while trying to renew -
+                        // never the forge's refusal - must never stand as
+                        // `needs_sign_in`. The original 401 is replaced
+                        // with the honest story: the forge could not be
+                        // reached to say either way.
+                        super::resolver::Renewal::Unreachable => {
+                            e = renewal_unreachable(&plan.host);
+                        }
+                        // A clean, definite answer that is not a token
+                        // (a named refusal, nobody signed in any more, a
+                        // wall): nothing this retry can use, and the
+                        // original failure is exactly the right one to
+                        // stand.
+                        super::resolver::Renewal::NotAvailable => {}
+                    }
+                }
                 let follow = at < last_leg
                     && may_follow(leg, ssh_auth_failed, super::contact::failure_of(&e));
                 remember_failure(&plan, leg, ssh_auth_failed);
@@ -1526,6 +1588,71 @@ fn over_plan_inner<T>(
         }
     }
     Err(last.unwrap_or_else(|| anyhow::anyhow!("no remote configured")))
+}
+
+/// One contact of a leg, whichever `Auth` it carries: extracted so a leg
+/// can be tried again unchanged with a renewed credential (R2) without
+/// building a second copy of the throttle, the used-credential cell and
+/// the ssh refusal cell around it.
+fn attempt_leg<T>(
+    repo: &git2::Repository,
+    leg: &Leg,
+    auth_for_leg: &Auth,
+    direction: super::contact::ContactDirection,
+    verb: &'static str,
+    poll: bool,
+    work: &mut dyn FnMut(
+        &git2::Repository,
+        &mut git2::Remote<'_>,
+        &Auth,
+        &Leg,
+    ) -> anyhow::Result<T>,
+) -> (anyhow::Result<T>, bool, Option<&'static str>) {
+    // Whatever an earlier contact on this thread left in the two cells
+    // is not this leg's. The credential cell is taken below, inside the
+    // contact; the ssh refusal cell is taken HERE, because `clone` and
+    // every verb that contacts outside a plan set it too and nothing
+    // there clears it, and because a leg the throttle holds back never
+    // enters the closure at all. A refusal that is not this leg's would
+    // send the next operation to the twin and write a 24 hour
+    // `ssh-failed` row for a host whose ssh credential was never refused
+    // (D1.2 rule 3b).
+    super::resolver::took_ssh_auth_failure();
+    let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
+    let outcome = {
+        let used = &used;
+        let contact = move || -> anyhow::Result<T> {
+            take_used_credential();
+            let mut remote = leg_remote(repo, leg, direction)?;
+            let answer = work(repo, &mut remote, auth_for_leg, leg);
+            used.set(take_used_credential());
+            answer
+        };
+        if poll {
+            super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
+        } else {
+            super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
+        }
+    };
+    // Read before the next leg (or the retry) runs: one contact's
+    // refusal must never be read as the next one's.
+    let ssh_auth_failed = super::resolver::took_ssh_auth_failure();
+    (outcome, ssh_auth_failed, used.get())
+}
+
+/// A leg that carried a forge token is a signed in host, whether or not
+/// the forge asked for it: a public repository answers the first
+/// request without a challenge, so the callback never ran and `run` has
+/// just written down "nothing was presented". Left standing, that note
+/// put the host into the no anonymous polling lane of D1.9 (once every
+/// fifteen minutes, "Nobody is signed in for github.com") with the token
+/// right there, until the next push presented it and cleared the note
+/// (JOY-02AC-C3, Horst on Windows 2026-09-19, a public repository behind
+/// an ssh remote whose key libgit2 could not use).
+fn note_token_leg_in_hand(plan: &Plan, leg: &Leg) {
+    if leg.credential.is_token() {
+        super::contact::note_credential_in_hand(&plan.host, super::contact::transport_of(&leg.url));
+    }
 }
 
 /// Whether this plan has any credential to present at all: every leg is
@@ -1666,6 +1793,8 @@ impl PushStatus {
             action: None,
             next_try: None,
             self_imposed: false,
+            // a named ref rejection, never a 401: nothing here was refused
+            renew_hint: false,
         }))
     }
 }

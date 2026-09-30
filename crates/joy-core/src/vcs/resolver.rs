@@ -944,20 +944,122 @@ pub fn host_facts(
     direction: ContactDirection,
 ) -> HostFacts {
     let host = super::contact::host_of(remote);
-    let access = match direction {
-        ContactDirection::Push => crate::forge_plugins::Access::Write,
-        ContactDirection::Fetch => crate::forge_plugins::Access::Read,
-    };
+    let access = access_of(direction);
     let key = facts_key(&host, remote, access);
     if let Some(facts) = cached_facts(&key) {
         return facts;
     }
+    match ask_connector(remote, &host, root, kind, access, false) {
+        Asked::Answered(facts, ttl) => {
+            cache_facts(&key, &facts, ttl.max(Duration::from_secs(1)));
+            facts
+        }
+        // D2.6a's `busy`, still busy after the one extra ask
+        // [`ask_connector`] already gave it, or the connector could not
+        // be asked at all: this call learnt nothing, so nothing is what
+        // it answers, and NOTHING is cached (gap 3, operator rule
+        // 2026-09-30). Caching this as an absence is what sent the next
+        // contact out with no credential at all and read a stuck lock as
+        // "nobody is signed in".
+        Asked::Busy | Asked::Unreachable => HostFacts::none(),
+    }
+}
+
+/// What R2's one re-ask (operator rule 2026-09-30) learned, for
+/// [`renew_token`]'s caller to act on.
+pub enum Renewal {
+    /// A usable token: the SAME leg is worth retrying with it.
+    Token(HostToken),
+    /// The renewal could not really be attempted: joy's own failure or
+    /// the wire's - a transport failure, D2.6a's lock still busy after
+    /// the one extra ask, or the connector could not be asked at all.
+    /// R3: this must never be read as the person's turn to sign in; the
+    /// caller's honest answer is that the forge could not be reached.
+    Unreachable,
+    /// A clean, definite answer that is not a token: the forge named a
+    /// refusal (R3's mark), nobody is signed in any more, or the
+    /// connector's own wall stands. The original failure stands
+    /// unchanged; this call is not the one that speaks for it.
+    NotAvailable,
+}
+
+/// R2's one re-ask: the SAME leg a 401 just fell out of, for a token
+/// that worked before. It never reads the cache - a 401 already
+/// invalidated it (D1.7) - and asks the connector with `--renew`, which
+/// tells `fresh()` to attempt a refresh whatever the record's own local
+/// expiry says. A usable answer is cached exactly as an ordinary
+/// [`host_facts`] answer would be, so the retry this call belongs to and
+/// the very next operation on this host both read it without a second
+/// connector call.
+pub fn renew_token(
+    remote: &str,
+    root: Option<&Path>,
+    kind: HostKind,
+    direction: ContactDirection,
+) -> Renewal {
+    let host = super::contact::host_of(remote);
+    let access = access_of(direction);
+    match ask_connector(remote, &host, root, kind, access, true) {
+        Asked::Answered(facts, ttl) => match facts.token.clone() {
+            Some(token) => {
+                cache_facts(
+                    &facts_key(&host, remote, access),
+                    &facts,
+                    ttl.max(Duration::from_secs(1)),
+                );
+                Renewal::Token(token)
+            }
+            None => Renewal::NotAvailable,
+        },
+        Asked::Busy | Asked::Unreachable => Renewal::Unreachable,
+    }
+}
+
+/// The [`crate::forge_plugins::Access`] one contact direction asks a
+/// connector for.
+fn access_of(direction: ContactDirection) -> crate::forge_plugins::Access {
+    match direction {
+        ContactDirection::Push => crate::forge_plugins::Access::Write,
+        ContactDirection::Fetch => crate::forge_plugins::Access::Read,
+    }
+}
+
+/// What [`ask_connector`] learned.
+enum Asked {
+    /// A usable answer, cacheable exactly as it stands.
+    Answered(HostFacts, Duration),
+    /// D2.6a's `busy`, still busy after the one extra ask this function
+    /// gives it. Never cached as an absence (gap 3).
+    Busy,
+    /// `renew` asked for a REAL attempt and it could not be made: the
+    /// connector could not be spawned or answered, or the plugin's own
+    /// `token` verb said `reason: "offline"` (R2/R3's own answer for a
+    /// transport failure during the refresh itself). Only ever produced
+    /// under `renew`: an ordinary [`host_facts`] call never asked for
+    /// this distinction and keeps its long standing behaviour of caching
+    /// a plugin error as a plain absence.
+    Unreachable,
+}
+
+/// One call into the connector, shared by [`host_facts`] and
+/// [`renew_token`], `renew` choosing which `token` verb they ask for
+/// (D2.4's `--renew`, R2). Everything here is best effort exactly as
+/// before this function existed: a machine with no connector answers
+/// [`HostFacts::none`].
+fn ask_connector(
+    remote: &str,
+    host: &str,
+    root: Option<&Path>,
+    kind: HostKind,
+    access: crate::forge_plugins::Access,
+    renew: bool,
+) -> Asked {
     let mut context = match root {
         Some(root) => crate::forge_plugins::CallContext::in_project(root),
         None => crate::forge_plugins::CallContext::rootless(),
     }
     .with_host_kind(kind);
-    if let Some(login) = root.and_then(|root| pinned_login(root, &host)) {
+    if let Some(login) = root.and_then(|root| pinned_login(root, host)) {
         context = context.with_facts(crate::forge_plugins::CallerFacts {
             login: Some(login),
             ..Default::default()
@@ -970,11 +1072,45 @@ pub fn host_facts(
     else {
         // Nothing claimed it. Remembered as well, so a poll on a
         // machine with no connector spawns nothing per contact.
-        let facts = HostFacts::none();
-        cache_facts(&key, &facts, FACTS_TTL);
-        return facts;
+        return Asked::Answered(HostFacts::none(), FACTS_TTL);
     };
-    let answer = crate::forge_plugins::token_for(spec, &target, access, &context);
+    let ask = || {
+        if renew {
+            crate::forge_plugins::token_for_renew(spec, &target, access, &context)
+        } else {
+            crate::forge_plugins::token_for(spec, &target, access, &context)
+        }
+    };
+    let mut answer = ask();
+    if matches!(&answer, Ok(a) if a.reason.as_deref() == Some("busy")) {
+        // D2.6a's `busy`: the connector waited its own lock bound for the
+        // OTHER holder and gave up. Asking once more gives that holder
+        // one more bound, and the connector returns the moment the lock
+        // frees, so this costs exactly as long as the other refresh still
+        // takes and not a second longer (gap 3, operator rule 2026-09-30;
+        // a blind sleep here would have cost the whole bound every time).
+        answer = ask();
+        if matches!(&answer, Ok(a) if a.reason.as_deref() == Some("busy")) {
+            return Asked::Busy;
+        }
+    }
+    // R2/R3, and only under `renew`: the connector could not be spoken
+    // to at all, or its own `token` verb answered `offline` (the token
+    // endpoint itself was unreachable while joy tried to renew, D2.6a's
+    // `fresh()`). Neither is the forge's refusal, so neither may be
+    // read, downstream, as `needs_sign_in`; an ordinary (non renewing)
+    // call never asked for the distinction and falls through to the
+    // ANSWERED path below exactly as it always has, `token: None`
+    // included.
+    if renew {
+        if let Err(ref e) = answer {
+            tracing::debug!(forge = %host, error = %e, "the forge connector could not be asked for a renewal");
+            return Asked::Unreachable;
+        }
+        if matches!(&answer, Ok(a) if !a.known && a.reason.as_deref() == Some("offline")) {
+            return Asked::Unreachable;
+        }
+    }
     let mut ttl = FACTS_TTL;
     let mut walled = false;
     let token = match answer {
@@ -988,11 +1124,11 @@ pub fn host_facts(
             // of D1.8b need it on the FIRST contact of a process
             // (JOY-02A9-48).
             if validated_by_connector(answer.source.as_deref(), answer.chose_by.as_deref()) {
-                note_token_worked(&host, TokenProof::Connector);
+                note_token_worked(host, TokenProof::Connector);
             }
             // A token for this remote is the opposite of a wall around
             // it, whatever was remembered a moment ago.
-            note_no_org_wall(&host, remote);
+            note_no_org_wall(host, remote);
             answer
                 .token
                 .filter(|t| !t.is_empty())
@@ -1010,8 +1146,8 @@ pub fn host_facts(
             // the classifier, which would otherwise read the forge's
             // 404 as "github.com does not have this repository".
             if answer.reason.as_deref() == Some("needs_org_approval") {
-                note_org_wall(&host, remote, answer.action.clone());
-                note_token_worked(&host, TokenProof::Connector);
+                note_org_wall(host, remote, answer.action.clone());
+                note_token_worked(host, TokenProof::Connector);
                 // A wall is not "nobody is signed in": it ends when an
                 // owner of the organisation acts, which is minutes away
                 // at best, so this answer keeps the full TTL instead of
@@ -1020,10 +1156,12 @@ pub fn host_facts(
                 // question whose answer cannot change that fast.
                 walled = true;
             } else {
-                note_no_org_wall(&host, remote);
+                note_no_org_wall(host, remote);
             }
             None
         }
+        // Reached only when `!renew`: the `renew` branch above already
+        // answered `Unreachable` for this case.
         Err(e) => {
             tracing::debug!(forge = %host, error = %e, "the forge connector answered no token");
             None
@@ -1041,8 +1179,7 @@ pub fn host_facts(
         web_url: crate::forge_plugins::web_url(spec, &target, &context),
         token,
     };
-    cache_facts(&key, &facts, ttl.max(Duration::from_secs(1)));
-    facts
+    Asked::Answered(facts, ttl)
 }
 
 /// Whether a `token` answer implies a token the CONNECTOR validated.

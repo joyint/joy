@@ -2282,6 +2282,37 @@ pub fn token_for(
     )
 }
 
+/// [`token_for`] with the connector's `--renew` flag (R2, operator rule
+/// 2026-09-30): the engine's one retry after a 401 for a token that
+/// worked before, spent on the SAME leg that just saw it, never as a
+/// matter of course (R1). It asks `fresh()` to attempt a refresh
+/// whatever the record's own local expiry says.
+///
+/// Backward compatible by DEGRADING, not by negotiating: a connector
+/// built before this flag existed does not know it and answers however
+/// its own `clap` parser reacts to an argument it has never seen, which
+/// this call reads as an ordinary [`PluginError`] - exactly what
+/// [`resolver::renew_token`](crate::vcs::resolver::renew_token) already
+/// treats as "no renewal available" (the caller's leg retry is simply
+/// not tried, and the ORIGINAL failure stands, which is the whole
+/// engine exactly as it was before this call existed). Every ordinary
+/// `token` call, with or without `--for`, is untouched: this is one new
+/// flag on one verb, never a new protocol number.
+pub fn token_for_renew(
+    spec: &ForgePluginSpec,
+    target: &Target,
+    access: Access,
+    ctx: &CallContext,
+) -> Result<ForgeToken, PluginError> {
+    query(
+        spec,
+        "token",
+        Some(target),
+        &["--for", access.as_str(), "--renew"],
+        ctx,
+    )
+}
+
 /// The verbs that need a person at the machine (D3.11): compiled into a
 /// build that asked for them, and into no other. A binary without the
 /// feature cannot call `login`, `logout` or `token-store`, because the
