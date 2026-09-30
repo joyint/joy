@@ -1,0 +1,30 @@
+id: JOY-02B5-F3
+title: A 401 at the git door refreshes once and retries; a refused refresh is remembered with its reason; busy is not no-token
+type: bug
+status: in-progress
+priority: critical
+assignees:
+- member: ai:claude@joy
+tags:
+- forge
+- auth
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-30T06:18:45.003194229Z
+updated: 2026-09-30T06:19:08.629234270Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Operator rules 2026-09-30 (R1-R4, see platform item JP-015D-DC). The local sign-in door (joy-forge-net) already renews on demand, under the D2.6a lock, and never discards a refresh token. Three gaps remain in the engine and the door:
+
+  1. R2, the engine: on a 401 for a token that worked before, contact_failed (joy-core/src/vcs/forge.rs:212-246) only invalidates the facts cache; the current operation fails with needs_sign_in and the person sees 'Sign in to X' although the refresh token would have cured it. The engine asks the connector once more with a renewal requested (a new flag on the token verb, e.g. --renew, honoured by joy-forge-net's fresh() regardless of the local expiry check) and runs the SAME leg once more (over_plan_inner). Only when that retry is refused too does the failure stand.
+  2. R3, the door: fresh() (joy-forge-net/src/auth/verbs.rs:116-196) collapses every non-Granted refresh answer into 'return the old record'. It now tells a refusal the forge names (invalid_grant, bad_refresh_token, unauthorized_client 'already used') from a transport failure: the named refusal is written on the record (refused_at, refused_reason; the refresh token itself stays), the token verb answers known:false, reason 'needs_sign_in' with the message 'Your sign-in with <host> has expired.' plus the forge's word, and no later process spends that refresh token again until a new sign-in replaces the record. A transport failure changes nothing on the record and answers the old token, as today.
+  3. The resolver: host_facts (joy-core/src/vcs/resolver.rs:940-1046) treats the door's reason 'busy' (another process is refreshing, D2.6a) as 'no token' and caches that for NO_TOKEN_TTL; the contact then runs without a credential and 401s. 'busy' gets its own branch: wait the lock's bound once and ask again, never cache it as absence.
+
+  Surface wording (CLI, desktop through the same path): 'Sign-in with <host> expired. Run joy forge login <host>.' No other case may say 'sign in' after this change: a transport failure during a renewal reads as the forge being unreachable.
+
+  Tests: sign_in_against_fakes.rs gets a named-refusal case (record unchanged except the mark, second call does not hit the forge); joy-cli/tests/forge_sign_in.rs gets the 401-renew-retry journey against the fake forge (exactly one refresh, the same leg run twice, success); a resolver test for busy.
+
+  Design: forge-connection-ng.md D1.7/D2.6a gain the 401-renew-retry rule and the refused mark.
