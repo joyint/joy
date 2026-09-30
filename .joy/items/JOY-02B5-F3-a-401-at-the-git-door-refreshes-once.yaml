@@ -1,7 +1,7 @@
 id: JOY-02B5-F3
 title: A 401 at the git door refreshes once and retries; a refused refresh is remembered with its reason; busy is not no-token
 type: bug
-status: in-progress
+status: review
 priority: critical
 assignees:
 - member: ai:claude@joy
@@ -14,7 +14,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-30T06:18:45.003194229Z
-updated: 2026-09-30T06:19:08.629234270Z
+updated: 2026-09-30T07:47:58.263271075Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Operator rules 2026-09-30 (R1-R4, see platform item JP-015D-DC). The local sign-in door (joy-forge-net) already renews on demand, under the D2.6a lock, and never discards a refresh token. Three gaps remain in the engine and the door:
