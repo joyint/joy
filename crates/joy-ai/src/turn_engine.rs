@@ -454,6 +454,41 @@ pub fn humanize_turn_error(alias: &str, raw: &str) -> String {
     }
     let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
     let lower = cleaned.to_lowercase();
+    // The provider refused the key: nothing about the turn is wrong and no
+    // retry will help, so say what it is and who can fix it (Horst
+    // 2026-09-30: five retries on Integrate against an expired Mistral
+    // key, each answered "could not finish this turn: acp prompt: API
+    // error from mistral … Invalid API key").
+    if lower.contains("invalid api key")
+        || lower.contains("incorrect api key")
+        || lower.contains("api key expired")
+        || lower.contains("unauthorized")
+        || lower.contains("authentication")
+        || lower.contains(" 401")
+    {
+        let provider = lower
+            .find("api error from ")
+            .map(|i| {
+                lower[i + "api error from ".len()..]
+                    .split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+                    .next()
+                    .unwrap_or("")
+                    .to_string()
+            })
+            .filter(|p| !p.is_empty());
+        return match provider {
+            Some(p) => format!(
+                "@{alias} cannot answer right now: its API key for {p} is invalid or has \
+                 expired. An administrator has to renew it in Settings → AI members; \
+                 retrying does not help."
+            ),
+            None => format!(
+                "@{alias} cannot answer right now: its API key is invalid or has expired. \
+                 An administrator has to renew it in Settings → AI members; retrying does \
+                 not help."
+            ),
+        };
+    }
     if lower.contains("limit exceeded") || lower.contains("price limit") || lower.contains("budget")
     {
         return format!(
@@ -530,6 +565,33 @@ mod tests {
         assert_eq!(
             outcome.notice,
             "@vibe could not finish this turn: connection reset by peer"
+        );
+    }
+
+    /// An expired or invalid provider key is not the turn's fault and no
+    /// retry helps (Horst 2026-09-30, Integrate): the notice names the
+    /// provider and who can fix it, never the raw "acp prompt: API error".
+    #[test]
+    fn an_invalid_provider_key_is_named_and_points_at_the_administrator() {
+        let raw = "acp chat turn in joyint-project-x: acp prompt: API error from mistral \
+                   (model: devstral-small-latest): Invalid API key. Please check your API key \
+                   and try again.";
+        assert_eq!(
+            humanize_turn_error("vibe", raw),
+            "@vibe cannot answer right now: its API key for mistral is invalid or has \
+             expired. An administrator has to renew it in Settings → AI members; retrying \
+             does not help."
+        );
+        // a bare 401 without a provider name still says what it is
+        assert_eq!(
+            humanize_turn_error("claude", "HTTP 401 Unauthorized"),
+            "@claude cannot answer right now: its API key is invalid or has expired. An \
+             administrator has to renew it in Settings → AI members; retrying does not help."
+        );
+        // a spend stop is still a spend stop
+        assert!(
+            humanize_turn_error("vibe", "Price limit exceeded: $0.07 > $0.05")
+                .contains("spend limit")
         );
     }
 
