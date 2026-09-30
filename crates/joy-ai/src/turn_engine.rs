@@ -388,18 +388,19 @@ pub fn run_host_turn(
 pub fn usability_notice(alias: &str, usability: &Usability, sender: &str) -> Option<String> {
     match usability {
         Usability::Usable => None,
+        // One short line each (Horst 2026-09-30: nobody reads a paragraph
+        // in a chat): what is wrong, and where to fix it.
         Usability::NoKey => Some(format!(
-            "@{alias} is not configured for {sender}. An API key in Settings makes it usable."
+            "@{alias} has no API key for {sender}. Settings → AI members."
         )),
         Usability::NotDelegated => Some(format!(
-            "@{alias} is not delegated by {sender}. Delegate in Settings → AI members, \
-             then it can act for you."
+            "@{alias} is not delegated by {sender}. Settings → AI members."
         )),
         Usability::NotInstalled { hint } => {
-            Some(format!("@{alias} is not set up on this machine ({hint})"))
+            Some(format!("@{alias} is not set up on this machine ({hint})."))
         }
         Usability::NotActivated => Some(format!(
-            "@{alias} is not activated in this project. Settings, Local AI, Active."
+            "@{alias} is not activated here. Settings → Local AI."
         )),
     }
 }
@@ -423,10 +424,7 @@ pub fn turn_details(out: &TurnOutcome, level: InteractionLevel) -> Option<String
 
 /// What the room is told when a member's money is spent.
 pub fn budget_notice(alias: &str) -> String {
-    format!(
-        "@{alias} has reached its monthly budget for this project. \
-         Raise it in Settings → AI members to continue."
-    )
+    format!("@{alias} is over its monthly budget. Settings → AI members.")
 }
 
 /// Turn a raw adapter error into a human chat notice (operator
@@ -478,29 +476,22 @@ pub fn humanize_turn_error(alias: &str, raw: &str) -> String {
             .filter(|p| !p.is_empty());
         return match provider {
             Some(p) => format!(
-                "@{alias} cannot answer right now: its API key for {p} is invalid or has \
-                 expired. An administrator has to renew it in Settings → AI members; \
-                 retrying does not help."
+                "@{alias}: API key for {p} invalid or expired. Renew in Settings → AI members."
             ),
-            None => format!(
-                "@{alias} cannot answer right now: its API key is invalid or has expired. \
-                 An administrator has to renew it in Settings → AI members; retrying does \
-                 not help."
-            ),
+            None => {
+                format!("@{alias}: API key invalid or expired. Renew in Settings → AI members.")
+            }
         };
     }
     if lower.contains("limit exceeded") || lower.contains("price limit") || lower.contains("budget")
     {
-        return format!(
-            "@{alias} stopped before finishing: this turn hit a spend limit. \
-             Adjust this agent's budget in Settings → AI members to continue."
-        );
+        return format!("@{alias} stopped at its spend limit. Settings → AI members.");
     }
-    let short: String = cleaned.chars().take(240).collect();
+    let short: String = cleaned.chars().take(120).collect();
     if short.is_empty() {
-        format!("@{alias} could not finish this turn. Please try again.")
+        format!("@{alias} could not finish. Try again.")
     } else {
-        format!("@{alias} could not finish this turn: {short}")
+        format!("@{alias} could not finish: {short}")
     }
 }
 
@@ -564,7 +555,7 @@ mod tests {
         assert!(outcome.reply.is_empty());
         assert_eq!(
             outcome.notice,
-            "@vibe could not finish this turn: connection reset by peer"
+            "@vibe could not finish: connection reset by peer"
         );
     }
 
@@ -578,15 +569,12 @@ mod tests {
                    and try again.";
         assert_eq!(
             humanize_turn_error("vibe", raw),
-            "@vibe cannot answer right now: its API key for mistral is invalid or has \
-             expired. An administrator has to renew it in Settings → AI members; retrying \
-             does not help."
+            "@vibe: API key for mistral invalid or expired. Renew in Settings → AI members."
         );
         // a bare 401 without a provider name still says what it is
         assert_eq!(
             humanize_turn_error("claude", "HTTP 401 Unauthorized"),
-            "@claude cannot answer right now: its API key is invalid or has expired. An \
-             administrator has to renew it in Settings → AI members; retrying does not help."
+            "@claude: API key invalid or expired. Renew in Settings → AI members."
         );
         // a spend stop is still a spend stop
         assert!(
@@ -740,7 +728,7 @@ mod tests {
         let raw = "acp chat turn in joyint-project-abc: <vibe_stop_event>ReadTimeout on upstream</vibe_stop_event>";
         assert_eq!(
             humanize_turn_error("vibe", raw),
-            "@vibe could not finish this turn: ReadTimeout on upstream"
+            "@vibe could not finish: ReadTimeout on upstream"
         );
     }
 
@@ -769,17 +757,14 @@ mod tests {
             "vibe",
             "chat turn in joyint-project-x: <err>connection reset by peer</err>",
         );
-        assert_eq!(
-            msg,
-            "@vibe could not finish this turn: connection reset by peer"
-        );
+        assert_eq!(msg, "@vibe could not finish: connection reset by peer");
     }
 
     #[test]
     fn humanize_never_posts_an_empty_reason() {
         assert_eq!(
             humanize_turn_error("qwen", "<only><tags></tags></only>"),
-            "@qwen could not finish this turn. Please try again."
+            "@qwen could not finish. Try again."
         );
     }
 }
