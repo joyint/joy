@@ -186,11 +186,14 @@ load setup
     SESSION_FILE=$(find "$XDG_STATE_HOME/joy/sessions" -name "*.json" -newer .joy/project.yaml | head -1)
     if [ -n "$SESSION_FILE" ]; then
         sed_inplace 's/"expires": *"[^"]*"/"expires": "2020-01-01T00:00:00Z"/' "$SESSION_FILE"
-        # Expired session should not authenticate as AI
+        # An expired session authenticates nobody: not the AI, and not
+        # the person who signed in on this machine either. A process that
+        # carries JOY_SESSION never falls back to a human session, so the
+        # write is refused and the AI is told why.
         run joy comment "$ITEM_ID" "Should not be AI"
-        # Falls back to human (who is authenticated), so succeeds but not as AI
-        [ "$status" -eq 0 ]
-        ! grep -q "author: ai:test@joy" .joy/items/*.yaml
+        [ "$status" -ne 0 ]
+        [[ "$output" == *"JOY_SESSION is no longer valid"* ]]
+        ! grep -q "Should not be AI" .joy/items/*.yaml
     fi
 }
 

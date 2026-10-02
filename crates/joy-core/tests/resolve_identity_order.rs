@@ -293,6 +293,36 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "ai:claude@joy",
         "a live delegation session outranks git config and a human session"
     );
+
+    // A delegation that no longer stands never turns the agent into the
+    // person who signed in here. Bea's session is live at this very
+    // terminal, and the process still carries JOY_SESSION: it goes on as
+    // unproven as git config, and never as bea.
+    let project_file = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let with_delegation = std::fs::read_to_string(&project_file).unwrap();
+    let mut project = joy_core::store::load_project(root).unwrap();
+    project
+        .member_by_key_mut("a@b.c")
+        .unwrap()
+        .ai_delegations
+        .clear();
+    joy_core::store::write_yaml(&project_file, &project).unwrap();
+    let cut_off = resolve_identity(root).unwrap();
+    assert_eq!(
+        cut_off.member.id(),
+        "a@b.c",
+        "a removed delegation leaves the agent with what git config says"
+    );
+    assert!(
+        !cut_off.authenticated,
+        "and never with the session a person made here"
+    );
+    std::fs::write(&project_file, with_delegation).unwrap();
+    // the same for a value that names no session at all
+    std::env::set_var("JOY_SESSION", "joy_s_not-a-session");
+    let nobody = resolve_identity(root).unwrap();
+    assert_ne!(nobody.member.id(), "bea@example.com");
+    assert!(!nobody.authenticated);
     std::env::remove_var("JOY_SESSION");
 
     // Step 2 before step 3: git config names a@b.c, bea's session names
@@ -334,6 +364,34 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "carol@example.com",
         "nothing of the name remains"
     );
+
+    // A session that ran out is not honoured, and it is cleared away the
+    // first time it is met, so its end is said once and not on every
+    // command after it.
+    {
+        let keypair = IdentityKeypair::from_seed(&[33u8; 32]);
+        let project_id = session::project_id(root).unwrap();
+        let ended = session::create_session(
+            &keypair,
+            "bea@example.com",
+            &project_id,
+            Some(chrono::Duration::hours(-1)),
+        );
+        // saving it replaces carol's, as every sign-in does
+        session::save_session(&project_id, &ended).unwrap();
+        assert!(session::load_session(&project_id, "bea@example.com")
+            .unwrap()
+            .is_some());
+        let after = resolve_identity(root).unwrap();
+        assert_eq!(after.member.id(), "a@b.c", "an ended session names nobody");
+        assert!(!after.authenticated);
+        assert!(
+            session::load_session(&project_id, "bea@example.com")
+                .unwrap()
+                .is_none(),
+            "and it is removed once it was met"
+        );
+    }
 
     // Signing out gives git config its turn again.
     sign_out(root, "carol@example.com");

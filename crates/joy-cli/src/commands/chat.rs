@@ -382,7 +382,15 @@ fn establish_reader_seed(root: &std::path::Path) -> Result<()> {
 pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    establish_reader_seed(&root)?;
+    // The listing asks for nothing it cannot use: it fetches first, and
+    // only when a sealed chat is there does it go through the gate. A
+    // project with no chat at all answered "Passphrase:" before it could
+    // say "No chats.". Every other verb opens or writes a chat and needs
+    // the seed at the door.
+    let is_ls = matches!(args.command, ChatCommand::Ls { .. });
+    if !is_ls {
+        establish_reader_seed(&root)?;
+    }
     // EVERY verb pulls first (JOY-022A-4D): reads see replies from the
     // platform and other members, and writes append on the ADOPTED
     // remote state — sealing under the chat's existing crypt epoch. A
@@ -402,6 +410,9 @@ pub fn run(args: ChatArgs) -> Result<()> {
     // the common case instead of three.
     if is_read {
         sync_ref(&root);
+    }
+    if is_ls && joy_chat_store::chat_store::any_sealed(&root) {
+        establish_reader_seed(&root)?;
     }
     let is_show = matches!(args.command, ChatCommand::Show { .. });
     let result = run_command(&root, args.command);
