@@ -1,15 +1,17 @@
 id: JOY-02B9-B0
 title: Stage a file without scanning the working tree
 type: task
-status: new
+status: review
 priority: high
 parent: JOY-02B6-1B
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T19:20:49.987285015Z
-updated: 2026-10-02T19:20:49.987285015Z
+updated: 2026-10-02T19:38:42.615376503Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   stage_paths (joy-core/src/vcs/forge.rs) stages a single file with index.add_all followed by index.update_all. libgit2 computes a full index to working tree comparison for each of the two calls and applies the path as a filter afterwards, so staging one file costs two scans of the whole working tree. A write command stages at least the item file and the event log: four scans. Measured: joy add in a repository with 60000 tracked files takes 320 ms instead of 11 ms, with about 265000 stat calls; in the 160 item test project the scans are 1152 of 3841 accesses.

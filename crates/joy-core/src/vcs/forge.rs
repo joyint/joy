@@ -2833,20 +2833,54 @@ pub fn is_ignored(dir: &Path, path: &str) -> bool {
 /// Stage `paths` (relative to `dir`) the way `git add` does: new and
 /// changed files go in, deleted ones come out, untracked ignored ones stay
 /// out.
+///
+/// A file is staged by its own path and costs nothing but that path.
+/// `git_index_add_all` and `git_index_update_all` compare the WHOLE
+/// index with the WHOLE working tree before they look at the pathspec
+/// (index.c, `index_apply_to_wd_diff`), so naming one file to them cost
+/// two walks of the checkout, and a joy write stages at least two files
+/// (JOY-02B9-B0). Only a directory still goes that way, because staging
+/// one means finding what changed beneath it.
 pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
     let repo = open(dir).map_err(err)?;
-    let specs: Vec<String> = paths
-        .iter()
-        .map(|path| {
-            workdir_relative(&repo, dir, path)
-                .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))
-        })
-        .collect::<anyhow::Result<_>>()?;
+    let workdir = repo
+        .workdir()
+        .ok_or_else(|| anyhow::anyhow!("a bare repository has no working tree to stage from"))?
+        .to_path_buf();
     let mut index = repo.index().map_err(err)?;
-    index
-        .add_all(specs.iter(), git2::IndexAddOption::DEFAULT, None)
-        .map_err(err)?;
-    index.update_all(specs.iter(), None).map_err(err)?;
+    let mut directories: Vec<String> = Vec::new();
+    for path in paths {
+        let spec = workdir_relative(&repo, dir, path)
+            .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))?;
+        let entry = Path::new(&spec);
+        // `symlink_metadata`, so a dangling symlink is a file that is
+        // there and not a deletion.
+        match std::fs::symlink_metadata(workdir.join(entry)) {
+            Ok(meta) if meta.is_dir() => directories.push(spec),
+            Ok(_) => {
+                // A tracked file is updated whatever `.gitignore` says;
+                // an untracked one only goes in when no rule matches it.
+                let tracked = index.get_path(entry, 0).is_some();
+                if tracked || !repo.is_path_ignored(entry).map_err(err)? {
+                    index.add_path(entry).map_err(err)?;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // Gone from the working tree: the entry leaves the index,
+                // and so does everything beneath it if it was a directory.
+                // Neither call minds a path the index never held.
+                index.remove_path(entry).map_err(err)?;
+                index.remove_dir(entry, 0).map_err(err)?;
+            }
+            Err(e) => return Err(anyhow::anyhow!("{path}: {e}")),
+        }
+    }
+    if !directories.is_empty() {
+        index
+            .add_all(directories.iter(), git2::IndexAddOption::DEFAULT, None)
+            .map_err(err)?;
+        index.update_all(directories.iter(), None).map_err(err)?;
+    }
     index.write().map_err(err)
 }
 
@@ -5429,6 +5463,146 @@ mod tests {
             .unwrap();
         assert!(tree.get_path(Path::new(".joy/project.yaml")).is_err());
         assert!(tree.get_path(Path::new("src.rs")).is_err());
+    }
+
+    /// The staged content of `path`, or `None` when the index holds no
+    /// entry for it.
+    fn staged_content(repo: &git2::Repository, path: &str) -> Option<String> {
+        let mut index = repo.index().unwrap();
+        index.read(true).unwrap();
+        let entry = index.get_path(Path::new(path), 0)?;
+        let blob = repo.find_blob(entry.id).unwrap();
+        Some(String::from_utf8_lossy(blob.content()).into_owned())
+    }
+
+    /// JOY-02B9-B0: staging one file touches that file's entry and no
+    /// other. What else changed in the working tree, tracked or new,
+    /// stays out of the index, as it did when the path was a filter on
+    /// a walk of the whole tree.
+    #[test]
+    fn staging_one_path_leaves_the_rest_of_the_tree_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy/items")).unwrap();
+        std::fs::write(dir.path().join("tracked.rs"), "as committed").unwrap();
+        stage_paths(dir.path(), &["tracked.rs"]).unwrap();
+
+        std::fs::write(dir.path().join("tracked.rs"), "edited, not staged").unwrap();
+        std::fs::write(dir.path().join("new.rs"), "untracked").unwrap();
+        std::fs::write(dir.path().join(".joy/items/a.yaml"), "id: a").unwrap();
+        stage_paths(dir.path(), &[".joy/items/a.yaml"]).unwrap();
+
+        assert_eq!(
+            staged_content(&repo, ".joy/items/a.yaml").as_deref(),
+            Some("id: a")
+        );
+        assert_eq!(
+            staged_content(&repo, "tracked.rs").as_deref(),
+            Some("as committed"),
+            "a tracked file that changed elsewhere is not swept in"
+        );
+        assert_eq!(staged_content(&repo, "new.rs"), None);
+
+        // A change to the staged file goes in on the next call.
+        std::fs::write(dir.path().join(".joy/items/a.yaml"), "id: a\ntitle: b").unwrap();
+        stage_paths(dir.path(), &[".joy/items/a.yaml"]).unwrap();
+        assert_eq!(
+            staged_content(&repo, ".joy/items/a.yaml").as_deref(),
+            Some("id: a\ntitle: b")
+        );
+    }
+
+    /// A file that is gone leaves the index, a directory that is gone
+    /// takes its entries with it, and a path the index never held is
+    /// not an error.
+    #[test]
+    fn staging_a_path_that_is_gone_removes_it_from_the_index() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy/items")).unwrap();
+        std::fs::write(dir.path().join(".joy/items/a.yaml"), "a").unwrap();
+        std::fs::write(dir.path().join(".joy/items/b.yaml"), "b").unwrap();
+        std::fs::write(dir.path().join("keep.rs"), "keep").unwrap();
+        stage_paths(
+            dir.path(),
+            &[".joy/items/a.yaml", ".joy/items/b.yaml", "keep.rs"],
+        )
+        .unwrap();
+
+        std::fs::remove_file(dir.path().join(".joy/items/a.yaml")).unwrap();
+        stage_paths(dir.path(), &[".joy/items/a.yaml"]).unwrap();
+        assert_eq!(staged_content(&repo, ".joy/items/a.yaml"), None);
+        assert_eq!(
+            staged_content(&repo, ".joy/items/b.yaml").as_deref(),
+            Some("b")
+        );
+
+        std::fs::remove_dir_all(dir.path().join(".joy")).unwrap();
+        stage_paths(dir.path(), &[".joy"]).unwrap();
+        assert_eq!(staged_content(&repo, ".joy/items/b.yaml"), None);
+        assert_eq!(staged_content(&repo, "keep.rs").as_deref(), Some("keep"));
+
+        stage_paths(dir.path(), &["never/was/here.yaml"]).unwrap();
+    }
+
+    /// `.gitignore` keeps an untracked file out and does not stop a
+    /// tracked one from being updated, which is what `git add` does.
+    #[test]
+    fn staging_honours_gitignore_for_untracked_files_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("tracked.log"), "first").unwrap();
+        stage_paths(dir.path(), &["tracked.log"]).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "*.log\n").unwrap();
+
+        std::fs::write(dir.path().join("fresh.log"), "ignored").unwrap();
+        std::fs::write(dir.path().join("tracked.log"), "second").unwrap();
+        stage_paths(dir.path(), &["fresh.log", "tracked.log"]).unwrap();
+
+        assert_eq!(staged_content(&repo, "fresh.log"), None);
+        assert_eq!(
+            staged_content(&repo, "tracked.log").as_deref(),
+            Some("second")
+        );
+    }
+
+    /// A directory is still staged as a whole: what is new or changed
+    /// beneath it goes in, and nothing beside it.
+    #[test]
+    fn staging_a_directory_takes_what_changed_beneath_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy/items")).unwrap();
+        std::fs::write(dir.path().join(".joy/project.yaml"), "name: p").unwrap();
+        std::fs::write(dir.path().join(".joy/items/a.yaml"), "a").unwrap();
+        std::fs::write(dir.path().join("beside.rs"), "not joy's").unwrap();
+        stage_paths(dir.path(), &[".joy"]).unwrap();
+
+        assert_eq!(
+            staged_content(&repo, ".joy/project.yaml").as_deref(),
+            Some("name: p")
+        );
+        assert_eq!(
+            staged_content(&repo, ".joy/items/a.yaml").as_deref(),
+            Some("a")
+        );
+        assert_eq!(staged_content(&repo, "beside.rs"), None);
+    }
+
+    /// `dir` may sit below the repository root; the path is given
+    /// relative to it.
+    #[test]
+    fn staging_from_a_subdirectory_resolves_the_path_from_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        let sub = dir.path().join("project");
+        std::fs::create_dir_all(sub.join(".joy")).unwrap();
+        std::fs::write(sub.join(".joy/project.yaml"), "name: p").unwrap();
+        stage_paths(&sub, &[".joy/project.yaml"]).unwrap();
+        assert_eq!(
+            staged_content(&repo, "project/.joy/project.yaml").as_deref(),
+            Some("name: p")
+        );
     }
 
     /// D4.5: no member, no commit, and the sentence says what to do.
