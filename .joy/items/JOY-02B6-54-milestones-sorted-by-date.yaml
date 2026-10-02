@@ -1,0 +1,14 @@
+id: JOY-02B6-54
+title: Milestones sorted by date
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-10-02T19:41:29.882781175Z
+updated: 2026-10-02T19:41:29.882781175Z
+updated_by: horst.schwarz@joydev.com
+description: The joy milestone LS should always sort the milestones by target date because it looks strange if the target date it’s the newest the end of the list only because of the new creation date of the milestone. Maybe it should be the default, but there should also be a common line option to change this.
