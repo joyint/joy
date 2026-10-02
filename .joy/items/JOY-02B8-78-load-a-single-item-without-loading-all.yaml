@@ -1,0 +1,27 @@
+id: JOY-02B8-78
+title: Load a single item without loading all items
+type: task
+status: new
+priority: high
+parent: JOY-02B6-1B
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-02T19:20:49.901874291Z
+updated: 2026-10-02T19:20:49.901874291Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  load_item (joy-core/src/items.rs) reads the target file and then loads every item, only to resolve short IDs in parent and deps. 22 call sites in joy-cli go through it, so show, status, comment, assign, edit, deps and rm each pay for the whole item set, some of them twice. Measured: joy show <ID> opens each of 160 item files 4 times (3608 accesses on item files).
+
+  Change:
+  - load_item reads only its own file. Short IDs are resolved from the IDs in the file names of the directory listing that find_item_file already fetches. Milestones are read only when the item carries a milestone reference.
+  - Commands that need the whole set load it once and pass it on: rm -r loads it for the descendants and again in remove_references; status has three separate load_items calls.
+
+  Unchanged: show, deps and rm still need one pass, because blockers, children and references live in the content of other items. A locked item in a crypt zone without a key is refused as before.
+
+  Done when:
+  - A test with the read counter shows that load_item reads exactly one item file.
+  - A test shows that short IDs in parent and deps resolve to the same full IDs as load_items produces, including the ambiguous case that is left untouched.
+  - No command reads the item files more than once per run.
+  - Access counts for show, status and rm in the 160 item test project are reported on the parent.
