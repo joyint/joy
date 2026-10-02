@@ -129,18 +129,19 @@ pub struct LockedItem {
     pub zone: String,
 }
 
-/// Load all items from `.joy/items/`, separating decryptable ones from
-/// encrypted blobs the caller has no zone-key for. Plaintext items and
-/// items whose zone key is currently active are returned as `Item`;
-/// items in zones without an active key are returned as
-/// [`LockedItem`] placeholders. See JOY-0174-D3.
 /// Read one item file: YAML (decrypting a JOYCRYPT blob inside
 /// `store::read_yaml`), then the item schema migrations
 /// (`migrations::item_yaml`), then the strict typed model. Every item
-/// read goes through here, so the model never needs a tolerant field;
-/// the migrated form persists when the item is next saved.
+/// read goes through here or through [`item_from_bytes`], so the model
+/// never needs a tolerant field; the migrated form persists when the
+/// item is next saved.
 pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
-    let value: serde_yaml_ng::Value = store::read_yaml(path)?;
+    item_from_bytes(path, read_item_bytes(path)?)
+}
+
+/// [`read_item_file`] for a caller that already holds the file's bytes.
+fn item_from_bytes(path: &Path, bytes: Vec<u8>) -> Result<Item, JoyError> {
+    let value: serde_yaml_ng::Value = store::yaml_from_bytes(path, bytes)?;
     let (value, _migrated) = crate::migrations::item_yaml::apply(value);
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
         path: path.to_path_buf(),
@@ -148,13 +149,53 @@ pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
     })
 }
 
+/// The one place an item or job file is read from disk. A read costs
+/// the same handful of file accesses whatever the file holds, and on a
+/// slow filesystem those accesses are the whole cost of a command, so
+/// every pass reads a file once and hands the bytes on (JOY-02B7-B7).
+fn read_item_bytes(path: &Path) -> Result<Vec<u8>, JoyError> {
+    #[cfg(test)]
+    read_count::bump();
+    std::fs::read(path).map_err(|e| JoyError::ReadFile {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
+/// How many item files this thread has read, so a test can say that a
+/// pass reads each file once.
+#[cfg(test)]
+pub(crate) mod read_count {
+    use std::cell::Cell;
+
+    thread_local! {
+        static READS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn bump() {
+        READS.with(|reads| reads.set(reads.get() + 1));
+    }
+
+    /// The reads `work` caused on this thread.
+    pub(crate) fn during<T>(work: impl FnOnce() -> T) -> (T, usize) {
+        let before = READS.with(Cell::get);
+        let out = work();
+        (out, READS.with(Cell::get) - before)
+    }
+}
+
+/// Load all items from `.joy/items/`, separating decryptable ones from
+/// encrypted blobs the caller has no zone-key for. Plaintext items and
+/// items whose zone key is currently active are returned as `Item`;
+/// items in zones without an active key are returned as
+/// [`LockedItem`] placeholders. See JOY-0174-D3.
 pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
-    let mut metas = list_item_metadata(root)?;
-    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    let mut files = scan_dir(root, store::ITEMS_DIR)?;
+    files.sort_by(|a, b| a.meta.path.file_name().cmp(&b.meta.path.file_name()));
 
     let mut items: Vec<Item> = Vec::new();
     let mut locked: Vec<LockedItem> = Vec::new();
-    for meta in metas {
+    for ScannedFile { meta, bytes } in files {
         if let Some(zone) = meta.encrypted_zone.as_deref() {
             if crate::crypt::active_zone_key(zone).is_none() {
                 locked.push(LockedItem {
@@ -164,7 +205,7 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item = item_from_bytes(&meta.path, bytes)?;
         items.push(item);
     }
 
@@ -190,16 +231,16 @@ pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
 /// from [`load_items`]: default views never touch this directory, the
 /// `-J` views and job-targeted lookups do. JOY-01FE-37.
 pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
-    let mut metas = list_job_metadata(root)?;
-    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    let mut files = scan_dir(root, store::JOBS_DIR)?;
+    files.sort_by(|a, b| a.meta.path.file_name().cmp(&b.meta.path.file_name()));
     let mut jobs: Vec<Item> = Vec::new();
-    for meta in metas {
+    for ScannedFile { meta, bytes } in files {
         if let Some(zone) = meta.encrypted_zone.as_deref() {
             if crate::crypt::active_zone_key(zone).is_none() {
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item = item_from_bytes(&meta.path, bytes)?;
         jobs.push(item);
     }
     Ok(jobs)
@@ -433,18 +474,38 @@ pub fn list_job_metadata(root: &Path) -> Result<Vec<ItemMeta>, JoyError> {
 }
 
 fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
+    Ok(scan_dir(root, sub)?
+        .into_iter()
+        .map(|file| file.meta)
+        .collect())
+}
+
+/// One item file as the directory walk met it: what the walk learned
+/// about it, and the bytes it read to learn that. A caller that goes on
+/// to parse the item takes the bytes instead of reading the file again.
+struct ScannedFile {
+    meta: ItemMeta,
+    bytes: Vec<u8>,
+}
+
+fn scan_dir(root: &Path, sub: &str) -> Result<Vec<ScannedFile>, JoyError> {
     let items_dir = store::joy_dir(root).join(sub);
-    if !items_dir.is_dir() {
-        return Ok(Vec::new());
-    }
+    let entries = match std::fs::read_dir(&items_dir) {
+        Ok(entries) => entries,
+        // No such directory is a project without items of this kind.
+        Err(_) if !items_dir.is_dir() => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(JoyError::ReadFile {
+                path: items_dir.clone(),
+                source: e,
+            })
+        }
+    };
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&items_dir).map_err(|e| JoyError::ReadFile {
-        path: items_dir.clone(),
-        source: e,
-    })? {
+    for entry in entries {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
-        if !path.is_file() {
+        if !is_regular_file(&entry, &path) {
             continue;
         }
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -453,23 +514,34 @@ fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
         let Some(id) = id_from_filename(name) else {
             continue;
         };
-        let bytes = std::fs::read(&path).map_err(|e| JoyError::ReadFile {
-            path: path.clone(),
-            source: e,
-        })?;
+        let bytes = read_item_bytes(&path)?;
         let (encrypted_zone, plaintext_crypt_zone) = if joy_crypt::zone::looks_like_blob(&bytes) {
             (parse_blob_zone(&bytes), None)
         } else {
             (None, parse_plaintext_crypt_zone(&bytes))
         };
-        out.push(ItemMeta {
-            id,
-            path,
-            encrypted_zone,
-            plaintext_crypt_zone,
+        out.push(ScannedFile {
+            meta: ItemMeta {
+                id,
+                path,
+                encrypted_zone,
+                plaintext_crypt_zone,
+            },
+            bytes,
         });
     }
     Ok(out)
+}
+
+/// Whether a directory entry is a file, the way `Path::is_file` answers
+/// (a link to a file counts). The listing already carries the type on
+/// the filesystems joy meets, so only a link costs a further access.
+fn is_regular_file(entry: &std::fs::DirEntry, path: &Path) -> bool {
+    match entry.file_type() {
+        Ok(kind) if kind.is_file() => true,
+        Ok(kind) if kind.is_dir() => false,
+        _ => path.is_file(),
+    }
 }
 
 fn id_from_filename(name: &str) -> Option<String> {
@@ -1141,6 +1213,68 @@ mod tests {
         let items = load_items(dir.path()).unwrap();
         assert_eq!(items[0].id, "JOY-0001");
         assert_eq!(items[1].id, "JOY-0002");
+    }
+
+    /// JOY-02B7-B7: a pass over the items reads each file once. The walk
+    /// that finds the crypt zone hands its bytes to the parser, so the
+    /// second read that used to follow it is gone, for the locked-aware
+    /// loader and for the metadata walk alike.
+    #[test]
+    fn a_pass_over_the_items_reads_each_file_once() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        for n in 1..=5 {
+            let item = Item::new(
+                format!("JOY-000{n}-AB"),
+                format!("Item number {n}"),
+                ItemType::Task,
+                Priority::Low,
+                vec![],
+            );
+            save_item(dir.path(), &item).unwrap();
+        }
+
+        let (items, reads) = read_count::during(|| load_items(dir.path()).unwrap());
+        assert_eq!(items.len(), 5);
+        assert_eq!(reads, 5, "one read per item file");
+
+        let (metas, reads) = read_count::during(|| list_item_metadata(dir.path()).unwrap());
+        assert_eq!(metas.len(), 5);
+        assert_eq!(reads, 5, "the metadata walk reads each file once too");
+    }
+
+    /// The walk skips what is not an item file, as it did when it asked
+    /// `is_file()` of every entry: a directory, and a file whose name
+    /// carries no item id.
+    #[test]
+    fn the_walk_skips_directories_and_foreign_files() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let items_dir = dir.path().join(".joy").join("items");
+        std::fs::create_dir_all(items_dir.join("JOY-0009-AB-a-directory.yaml")).unwrap();
+        std::fs::write(items_dir.join("notes.txt"), "not an item").unwrap();
+        let item = Item::new(
+            "JOY-0001-AB".into(),
+            "The only item".into(),
+            ItemType::Task,
+            Priority::Low,
+            vec![],
+        );
+        save_item(dir.path(), &item).unwrap();
+
+        let (items, reads) = read_count::during(|| load_items(dir.path()).unwrap());
+        assert_eq!(items.len(), 1);
+        assert_eq!(reads, 1);
+    }
+
+    /// No items directory at all is an empty project, not an error.
+    #[test]
+    fn a_missing_items_directory_is_an_empty_listing() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        assert!(load_items(dir.path()).unwrap().is_empty());
+        assert!(load_jobs(dir.path()).unwrap().is_empty());
+        assert!(list_item_metadata(dir.path()).unwrap().is_empty());
     }
 
     #[test]

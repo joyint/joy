@@ -1,15 +1,17 @@
 id: JOY-02B7-B7
 title: Read each item file once per pass
 type: task
-status: new
+status: in-progress
 priority: high
 parent: JOY-02B6-1B
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T19:20:49.804011428Z
-updated: 2026-10-02T19:20:49.804011428Z
+updated: 2026-10-02T19:23:50.057073959Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   A pass over the items reads every file twice. list_metadata_in (joy-core/src/items.rs) reads the whole file only to detect the crypt zone, then load_items_with_locked and load_jobs read the same file again through read_item_file. On top of that, path.is_file() costs one more access per file. Measured: 11 accesses per item where 5 are needed (160 items: 1766 instead of about 800 for joy ls).
