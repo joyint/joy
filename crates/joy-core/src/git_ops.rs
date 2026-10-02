@@ -34,19 +34,13 @@ pub fn auto_git_add(root: &Path, paths: &[&str]) {
     if !level.should_add() || paths.is_empty() {
         return;
     }
-    let vcs = default_vcs();
-    let kept: Vec<&str> = paths
-        .iter()
-        .copied()
-        .filter(|p| !vcs.is_ignored(root, p))
-        .collect();
-    if kept.is_empty() {
-        return;
-    }
-    if let Err(e) = vcs.add(root, &kept) {
-        eprintln!("Warning: auto-git add failed: {e}");
-        return;
-    }
+    let kept = match default_vcs().add_unignored(root, paths) {
+        Ok(kept) => kept,
+        Err(e) => {
+            eprintln!("Warning: auto-git add failed: {e}");
+            return;
+        }
+    };
     remember_joy_paths(root, &kept);
 }
 

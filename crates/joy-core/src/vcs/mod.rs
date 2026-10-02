@@ -154,6 +154,18 @@ impl GitVcs {
         forge::stage_paths(root, paths).map_err(|e| JoyError::Git(format!("git add failed: {e}")))
     }
 
+    /// Stage the files joy itself wrote: [`GitVcs::add`] without the
+    /// paths a `.gitignore` rule matches, over one open of the
+    /// repository. The paths that were staged come back.
+    pub fn add_unignored<'p>(
+        &self,
+        root: &Path,
+        paths: &[&'p str],
+    ) -> Result<Vec<&'p str>, JoyError> {
+        forge::stage_unignored_paths(root, paths)
+            .map_err(|e| JoyError::Git(format!("git add failed: {e}")))
+    }
+
     /// True if `path` matches one of the .gitignore patterns
     /// (regardless of whether it is currently tracked). Errors are
     /// treated as "not ignored" so that genuine staging attempts surface

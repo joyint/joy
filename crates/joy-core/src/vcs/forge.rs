@@ -2757,6 +2757,22 @@ pub fn local_config_get(dir: &Path, key: &str) -> Option<String> {
     local.get_string(key).ok()
 }
 
+/// Several values of the repository's own config file with ONE open of
+/// the repository, in the order of `keys`; `None` when `dir` is in no
+/// working tree. An open costs some three dozen file accesses, so a
+/// path that every joy invocation takes asks its questions together
+/// (JOY-02BA-45).
+pub fn local_config_values(dir: &Path, keys: &[&str]) -> Option<Vec<Option<String>>> {
+    let repo = open(dir).ok()?;
+    repo.workdir()?;
+    let local = repo
+        .config()
+        .ok()?
+        .open_level(git2::ConfigLevel::Local)
+        .ok()?;
+    Some(keys.iter().map(|key| local.get_string(key).ok()).collect())
+}
+
 /// Write a value into the repository's own config file
 /// (`git config --local <key> <value>`).
 pub fn local_config_set(dir: &Path, key: &str, value: &str) -> anyhow::Result<()> {
@@ -2843,25 +2859,68 @@ pub fn is_ignored(dir: &Path, path: &str) -> bool {
 /// one means finding what changed beneath it.
 pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
     let repo = open(dir).map_err(err)?;
+    stage_in(&repo, dir, paths, Ignored::KeepsUntrackedOut).map(|_| ())
+}
+
+/// [`stage_paths`] for joy's own writes: a path a `.gitignore` rule
+/// matches is left out, tracked or not, and the paths that were staged
+/// come back. This is `is_ignored` and `stage_paths` over one open of
+/// the repository, where asking the two one after the other opened it
+/// twice for every file joy wrote (JOY-02BA-45).
+pub fn stage_unignored_paths<'p>(dir: &Path, paths: &[&'p str]) -> anyhow::Result<Vec<&'p str>> {
+    let repo = open(dir).map_err(err)?;
+    stage_in(&repo, dir, paths, Ignored::IsLeftOut)
+}
+
+/// What a `.gitignore` match means to [`stage_in`].
+#[derive(Clone, Copy, PartialEq)]
+enum Ignored {
+    /// `git add`'s rule: an untracked ignored file stays out, a tracked
+    /// one is updated all the same.
+    KeepsUntrackedOut,
+    /// joy's rule for its own writes: an ignored path is not staged at
+    /// all, so an entry that should never have been tracked is not
+    /// refreshed on every run.
+    IsLeftOut,
+}
+
+/// Stage `paths` into the index of `repo` and write it; the paths that
+/// were not left out for being ignored come back.
+fn stage_in<'p>(
+    repo: &git2::Repository,
+    dir: &Path,
+    paths: &[&'p str],
+    ignored: Ignored,
+) -> anyhow::Result<Vec<&'p str>> {
     let workdir = repo
         .workdir()
         .ok_or_else(|| anyhow::anyhow!("a bare repository has no working tree to stage from"))?
         .to_path_buf();
     let mut index = repo.index().map_err(err)?;
+    let mut staged: Vec<&'p str> = Vec::new();
     let mut directories: Vec<String> = Vec::new();
-    for path in paths {
-        let spec = workdir_relative(&repo, dir, path)
+    for &path in paths {
+        let spec = workdir_relative(repo, dir, path)
             .ok_or_else(|| anyhow::anyhow!("{path} is outside the working tree"))?;
         let entry = Path::new(&spec);
+        // Errors count as not ignored, so a real staging problem shows
+        // in the staging itself.
+        if ignored == Ignored::IsLeftOut && repo.is_path_ignored(entry).unwrap_or(false) {
+            continue;
+        }
+        staged.push(path);
         // `symlink_metadata`, so a dangling symlink is a file that is
         // there and not a deletion.
         match std::fs::symlink_metadata(workdir.join(entry)) {
             Ok(meta) if meta.is_dir() => directories.push(spec),
             Ok(_) => {
                 // A tracked file is updated whatever `.gitignore` says;
-                // an untracked one only goes in when no rule matches it.
-                let tracked = index.get_path(entry, 0).is_some();
-                if tracked || !repo.is_path_ignored(entry).map_err(err)? {
+                // an untracked one only goes in when no rule matches it,
+                // which `IsLeftOut` has already asked.
+                let goes_in = ignored == Ignored::IsLeftOut
+                    || index.get_path(entry, 0).is_some()
+                    || !repo.is_path_ignored(entry).map_err(err)?;
+                if goes_in {
                     index.add_path(entry).map_err(err)?;
                 }
             }
@@ -2875,13 +2934,17 @@ pub fn stage_paths(dir: &Path, paths: &[&str]) -> anyhow::Result<()> {
             Err(e) => return Err(anyhow::anyhow!("{path}: {e}")),
         }
     }
+    if staged.is_empty() {
+        return Ok(staged);
+    }
     if !directories.is_empty() {
         index
             .add_all(directories.iter(), git2::IndexAddOption::DEFAULT, None)
             .map_err(err)?;
         index.update_all(directories.iter(), None).map_err(err)?;
     }
-    index.write().map_err(err)
+    index.write().map_err(err)?;
+    Ok(staged)
 }
 
 /// Stage every change in the working tree, as `git add -A` does: new and
@@ -5563,6 +5626,67 @@ mod tests {
         assert_eq!(
             staged_content(&repo, "tracked.log").as_deref(),
             Some("second")
+        );
+    }
+
+    /// JOY-02BA-45: joy's own writes are staged with the ignore check
+    /// and the staging over one open. An ignored path is left out even
+    /// when it is tracked, which is the rule `auto_git_add` always had,
+    /// and the paths that were staged come back for the commit scope.
+    #[test]
+    fn joys_own_writes_leave_ignored_paths_out_even_when_tracked() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy/items")).unwrap();
+        std::fs::write(dir.path().join(".joy/local.yaml"), "first").unwrap();
+        stage_paths(dir.path(), &[".joy/local.yaml"]).unwrap();
+        std::fs::write(dir.path().join(".gitignore"), ".joy/local.yaml\n").unwrap();
+
+        std::fs::write(dir.path().join(".joy/local.yaml"), "second").unwrap();
+        std::fs::write(dir.path().join(".joy/items/a.yaml"), "a").unwrap();
+        let staged =
+            stage_unignored_paths(dir.path(), &[".joy/local.yaml", ".joy/items/a.yaml"]).unwrap();
+
+        assert_eq!(staged, vec![".joy/items/a.yaml"]);
+        assert_eq!(
+            staged_content(&repo, ".joy/items/a.yaml").as_deref(),
+            Some("a")
+        );
+        assert_eq!(
+            staged_content(&repo, ".joy/local.yaml").as_deref(),
+            Some("first"),
+            "an ignored entry is not refreshed"
+        );
+
+        // Nothing but ignored paths: nothing staged, and no error.
+        let staged = stage_unignored_paths(dir.path(), &[".joy/local.yaml"]).unwrap();
+        assert!(staged.is_empty());
+
+        // A deletion of joy's own file is staged like any other write.
+        std::fs::remove_file(dir.path().join(".joy/items/a.yaml")).unwrap();
+        let staged = stage_unignored_paths(dir.path(), &[".joy/items/a.yaml"]).unwrap();
+        assert_eq!(staged, vec![".joy/items/a.yaml"]);
+        assert_eq!(staged_content(&repo, ".joy/items/a.yaml"), None);
+    }
+
+    /// Several local config values come back in the order they were
+    /// asked for, an unset one as `None`, and outside a working tree
+    /// there is no answer at all.
+    #[test]
+    fn local_config_values_are_read_together() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(local_config_values(dir.path(), &["joy.a"]).is_none());
+
+        git2::Repository::init(dir.path()).unwrap();
+        local_config_set(dir.path(), "joy.a", "one").unwrap();
+        local_config_set(dir.path(), "joy.c", "three").unwrap();
+        assert_eq!(
+            local_config_values(dir.path(), &["joy.c", "joy.b", "joy.a"]),
+            Some(vec![
+                Some("three".to_string()),
+                None,
+                Some("one".to_string())
+            ])
         );
     }
 

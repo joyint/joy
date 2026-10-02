@@ -861,6 +861,50 @@ pub fn ensure_lazy_activation(root: &Path) -> Result<(), JoyError> {
     Ok(())
 }
 
+/// What every joy invocation asks of this clone before it runs, read
+/// with one open of the repository: the version that last synced it and
+/// whether the merge driver is registered as this binary writes it.
+/// Asked one by one through [`last_sync_version`] and
+/// [`ensure_lazy_activation`], the same answers opened the repository
+/// eight times before the command had started (JOY-02BA-45).
+pub struct CloneState {
+    pub last_sync_version: Option<String>,
+    merge_driver_registered: bool,
+}
+
+/// The [`CloneState`] of the repository that holds `root`; `None` when
+/// `root` is in no working tree, where there is no clone to sync.
+pub fn clone_state(root: &Path) -> Option<CloneState> {
+    let mut values = crate::vcs::forge::local_config_values(
+        root,
+        &[
+            LAST_SYNC_VERSION_KEY,
+            MERGE_DRIVER_NAME_KEY,
+            MERGE_DRIVER_CMD_KEY,
+        ],
+    )?
+    .into_iter();
+    let last_sync_version = values.next().flatten();
+    let name = values.next().flatten();
+    let cmd = values.next().flatten();
+    Some(CloneState {
+        last_sync_version,
+        merge_driver_registered: name.as_deref() == Some(MERGE_DRIVER_NAME_VALUE)
+            && cmd.as_deref() == Some(MERGE_DRIVER_CMD_VALUE),
+    })
+}
+
+/// [`ensure_lazy_activation`] for a caller that already holds the
+/// clone's state: the merge driver is only written when the state says
+/// it is missing or stale, and nothing is asked of the repository again.
+pub fn ensure_lazy_activation_for(root: &Path, state: &CloneState) -> Result<(), JoyError> {
+    ensure_gitattributes(root)?;
+    if !state.merge_driver_registered {
+        register_merge_driver(root)?;
+    }
+    Ok(())
+}
+
 /// Per-clone git config key recording the joy version that last synced
 /// this repo. Compared against `env!("CARGO_PKG_VERSION")` to drive the
 /// auto-sync hook. See JOY-0164-B5.
@@ -1280,6 +1324,43 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(second.matches(GITATTRIBUTES_BLOCK_START).count(), 1);
+    }
+
+    /// JOY-02BA-45: the clone's state is read with one open and says
+    /// what the single reads say: the sync marker, and whether the merge
+    /// driver is registered as this binary writes it.
+    #[test]
+    fn the_clone_state_answers_what_the_single_reads_answer() {
+        let dir = tempdir().unwrap();
+        // No repository: no clone to sync, as `last_sync_version` says.
+        assert!(clone_state(dir.path()).is_none());
+        assert_eq!(last_sync_version(dir.path()), None);
+
+        git2::Repository::init(dir.path()).unwrap();
+        let state = clone_state(dir.path()).expect("a working tree has a state");
+        assert_eq!(state.last_sync_version, None);
+        assert!(!state.merge_driver_registered);
+
+        // A fresh clone gets the driver, and `.gitattributes`.
+        ensure_lazy_activation_for(dir.path(), &state).unwrap();
+        set_last_sync_version(dir.path(), "1.2.3").unwrap();
+        let state = clone_state(dir.path()).unwrap();
+        assert_eq!(state.last_sync_version.as_deref(), Some("1.2.3"));
+        assert_eq!(state.last_sync_version, last_sync_version(dir.path()));
+        assert!(state.merge_driver_registered);
+        assert!(dir.path().join(".gitattributes").is_file());
+
+        // A driver an older binary registered is stale, and is rewritten.
+        let vcs = default_vcs();
+        vcs.config_set(dir.path(), MERGE_DRIVER_CMD_KEY, "joy merge old")
+            .unwrap();
+        let state = clone_state(dir.path()).unwrap();
+        assert!(!state.merge_driver_registered);
+        ensure_lazy_activation_for(dir.path(), &state).unwrap();
+        assert_eq!(
+            vcs.config_get(dir.path(), MERGE_DRIVER_CMD_KEY).unwrap(),
+            MERGE_DRIVER_CMD_VALUE
+        );
     }
 
     #[test]
