@@ -1,15 +1,17 @@
 id: JOY-02B8-78
 title: Load a single item without loading all items
 type: task
-status: new
+status: review
 priority: high
 parent: JOY-02B6-1B
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T19:20:49.901874291Z
-updated: 2026-10-02T19:20:49.901874291Z
+updated: 2026-10-02T19:34:51.636239640Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   load_item (joy-core/src/items.rs) reads the target file and then loads every item, only to resolve short IDs in parent and deps. 22 call sites in joy-cli go through it, so show, status, comment, assign, edit, deps and rm each pay for the whole item set, some of them twice. Measured: joy show <ID> opens each of 160 item files 4 times (3608 accesses on item files).
