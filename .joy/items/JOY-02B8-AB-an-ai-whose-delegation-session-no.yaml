@@ -1,7 +1,7 @@
 id: JOY-02B8-AB
 title: An AI whose delegation session no longer stands acts as the person who signed in on the machine
 type: bug
-status: in-progress
+status: review
 priority: critical
 tags:
 - auth
@@ -12,7 +12,7 @@ capabilities:
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T20:08:05.119184482Z
-updated: 2026-10-02T20:08:05.119184482Z
+updated: 2026-10-02T20:08:14.910630204Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Review of 2026-09-30. resolve_identity step 1 (JOY_SESSION) had no else: an expired, removed, rotated or unparsable AI session fell through to step 2, the human session of this terminal. A human session made without a terminal (the desktop's sign-in, a piped --passphrase-stdin) matches every process without a terminal, because None == None. So an agent whose delegation ended wrote as the person, authenticated, with their chat seed and no delegated_by in the log. Two bats cases had this fallback written down as expected.
