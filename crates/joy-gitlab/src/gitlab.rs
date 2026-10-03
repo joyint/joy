@@ -232,7 +232,7 @@ fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The ACTOR answer (docs/plugins.md `identity`), same shape as the
+/// The ACTOR answer (`identity`), same shape as the
 /// GitHub twin: handed-in caller facts win over glab's config.
 pub fn identity_answer(target: &Target, ctx: &Ctx) -> Value {
     let host = target.host().unwrap_or_else(|| "gitlab.com".to_string());
@@ -248,7 +248,7 @@ pub fn identity_answer(target: &Target, ctx: &Ctx) -> Value {
     })
 }
 
-/// The PURE address attribution (docs/plugins.md `resolve`).
+/// The PURE address attribution (`resolve`).
 pub fn resolve_answer(email: &str) -> Value {
     match parse_alias(email) {
         Some(alias) => json!({

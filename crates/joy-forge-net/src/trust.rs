@@ -56,8 +56,8 @@ const GIT_CONFIG: &str = "git config";
 /// intercepting CA reads ONE instruction and not two, whichever half of
 /// joy made the contact.
 pub fn foreign_ca_sentence(key: &str, source: &str) -> String {
-    // The connector ships for Linux, macOS and Windows and nothing else
-    // (docs/plugins.md, "The size of the connector"), and Linux never
+    // The connector ships for Linux, macOS and Windows and nothing else,
+    // and Linux never
     // reaches this sentence, so the two stores that refuse are the
     // whole of the choice.
     let step = if cfg!(windows) {
