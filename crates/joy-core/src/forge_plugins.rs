@@ -8,7 +8,7 @@
 //! All forge knowledge (host names, alias address formats, API access)
 //! lives in the connector binary; this module knows only the binary
 //! NAMES, where to look for them, the protocol number and the JSON query
-//! protocol (docs/plugins.md, "Forge plugins").
+//! protocol.
 //!
 //! Three things happen here, in this order:
 //!
@@ -1809,7 +1809,7 @@ pub fn query_resolved_noted<T: serde::de::DeserializeOwned>(
 // The verbs joy-core itself asks
 // ---------------------------------------------------------------------
 
-/// A forge connector's identity answer (docs/plugins.md).
+/// A forge connector's identity answer.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ForgeIdentity {
     pub known: bool,

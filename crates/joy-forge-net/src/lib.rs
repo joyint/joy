@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The shared half of the Joy forge connectors (JOY-0298-E4, design
-//! `docs/design/forge-connection-ng.md`, package J2).
+//! The shared half of the Joy forge connectors (JOY-0298-E4, the forge
+//! connection design, package J2).
 //!
 //! One binary, `joy-forge`, carries every forge (D2.1); the forge
 //! knowledge stays in the per forge crates and everything they share

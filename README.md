@@ -145,8 +145,6 @@ AI members can do what you allow them to (plan, implement, review, ...), but nev
 - [VISION.md](./VISION.md) - product vision and data model
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - technical overview
 - [CONTRIBUTING.md](./CONTRIBUTING.md) - conventions, testing, release
-- [Plugins](docs/plugins.md) - writing `joy-<name>` plugins (joy-bi is the reference), and the forge connector contract
-- [Upgrading](docs/migration/forge-connection-ng.md) - what an upgrade across the forge connection rebuild does with what is already on your machine
 
 More on [joyint.com/joy/docs](https://joyint.com/joy/docs/):
 

@@ -267,7 +267,7 @@ fn current_account(ctx: &Ctx, host: &str) -> Option<(Option<Value>, Option<Vec<S
     Some((answer.json(), scopes))
 }
 
-/// The ACTOR answer (docs/plugins.md `identity`): who acts on GitHub.
+/// The ACTOR answer (`identity`): who acts on GitHub.
 /// Handed-in caller facts (a multi-account host's session) win over
 /// local discovery (gh's config). `known: false` when nobody is known.
 pub fn identity_answer(target: &Target, ctx: &Ctx) -> Value {
@@ -300,7 +300,7 @@ pub fn identity_answer(target: &Target, ctx: &Ctx) -> Value {
     })
 }
 
-/// The PURE address attribution (docs/plugins.md `resolve`): derived
+/// The PURE address attribution (`resolve`): derived
 /// from the address alone. Never consults ambient state, by contract.
 pub fn resolve_answer(email: &str) -> Value {
     match parse_alias(email) {

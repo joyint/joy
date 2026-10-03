@@ -3,8 +3,8 @@
 
 //! Forge abstraction: create releases on hosting platforms.
 //!
-//! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS
-//! (docs/plugins.md): joy-core's registry names them, `claims` decides
+//! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS:
+//! joy-core's registry names them, `claims` decides
 //! whose remote a project is, and the connector's `release` verb does
 //! the actual work (over its own HTTP client since JOY-0298-E4, design
 //! D2.8; a forge without a release backend answers `unsupported` and
