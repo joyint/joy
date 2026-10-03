@@ -5,7 +5,7 @@
 //! is a `joy-<name>` binary that computes on the project via joy-core and
 //! prints ONE JoyNode tree as JSON on stdout; errors go to stderr with a
 //! non-zero exit. Everything else (discovery, rendering, charts) is the
-//! caller's job. docs/plugins.md is the author guide.
+//! caller's job.
 
 mod nodes;
 mod report;
