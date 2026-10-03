@@ -5,7 +5,7 @@
 //!
 //! Resolves the acting user's identity from, in this order (operator
 //! decision 2026-09-19, item JOY-02AE-1A, correcting D3.9 of
-//! docs/design/forge-connection-ng.md, and the operator's decisions of
+//! the forge connection design, and the operator's decisions of
 //! 2026-09-27, which added the name on the call and put the person's
 //! own session in front of git config):
 //! 0. The name given to this very call: the global `--user <address>`,

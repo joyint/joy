@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! `joy-forge-auth`: the connector's own credential, and the doors that
-//! fill it (JOY-029B-B0, design `docs/design/forge-connection-ng.md`,
+//! fill it (JOY-029B-B0, the forge connection design,
 //! package J3).
 //!
 //! Until J3 the connector had no credential of its own: every verb took
