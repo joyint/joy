@@ -129,18 +129,19 @@ pub struct LockedItem {
     pub zone: String,
 }
 
-/// Load all items from `.joy/items/`, separating decryptable ones from
-/// encrypted blobs the caller has no zone-key for. Plaintext items and
-/// items whose zone key is currently active are returned as `Item`;
-/// items in zones without an active key are returned as
-/// [`LockedItem`] placeholders. See JOY-0174-D3.
 /// Read one item file: YAML (decrypting a JOYCRYPT blob inside
 /// `store::read_yaml`), then the item schema migrations
 /// (`migrations::item_yaml`), then the strict typed model. Every item
-/// read goes through here, so the model never needs a tolerant field;
-/// the migrated form persists when the item is next saved.
+/// read goes through here or through [`item_from_bytes`], so the model
+/// never needs a tolerant field; the migrated form persists when the
+/// item is next saved.
 pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
-    let value: serde_yaml_ng::Value = store::read_yaml(path)?;
+    item_from_bytes(path, read_item_bytes(path)?)
+}
+
+/// [`read_item_file`] for a caller that already holds the file's bytes.
+fn item_from_bytes(path: &Path, bytes: Vec<u8>) -> Result<Item, JoyError> {
+    let value: serde_yaml_ng::Value = store::yaml_from_bytes(path, bytes)?;
     let (value, _migrated) = crate::migrations::item_yaml::apply(value);
     serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
         path: path.to_path_buf(),
@@ -148,13 +149,53 @@ pub fn read_item_file(path: &Path) -> Result<Item, JoyError> {
     })
 }
 
+/// The one place an item or job file is read from disk. A read costs
+/// the same handful of file accesses whatever the file holds, and on a
+/// slow filesystem those accesses are the whole cost of a command, so
+/// every pass reads a file once and hands the bytes on (JOY-02B7-B7).
+fn read_item_bytes(path: &Path) -> Result<Vec<u8>, JoyError> {
+    #[cfg(test)]
+    read_count::bump();
+    std::fs::read(path).map_err(|e| JoyError::ReadFile {
+        path: path.to_path_buf(),
+        source: e,
+    })
+}
+
+/// How many item files this thread has read, so a test can say that a
+/// pass reads each file once.
+#[cfg(test)]
+pub(crate) mod read_count {
+    use std::cell::Cell;
+
+    thread_local! {
+        static READS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn bump() {
+        READS.with(|reads| reads.set(reads.get() + 1));
+    }
+
+    /// The reads `work` caused on this thread.
+    pub(crate) fn during<T>(work: impl FnOnce() -> T) -> (T, usize) {
+        let before = READS.with(Cell::get);
+        let out = work();
+        (out, READS.with(Cell::get) - before)
+    }
+}
+
+/// Load all items from `.joy/items/`, separating decryptable ones from
+/// encrypted blobs the caller has no zone-key for. Plaintext items and
+/// items whose zone key is currently active are returned as `Item`;
+/// items in zones without an active key are returned as
+/// [`LockedItem`] placeholders. See JOY-0174-D3.
 pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>), JoyError> {
-    let mut metas = list_item_metadata(root)?;
-    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    let mut files = scan_dir(root, store::ITEMS_DIR)?;
+    files.sort_by(|a, b| a.meta.path.file_name().cmp(&b.meta.path.file_name()));
 
     let mut items: Vec<Item> = Vec::new();
     let mut locked: Vec<LockedItem> = Vec::new();
-    for meta in metas {
+    for ScannedFile { meta, bytes } in files {
         if let Some(zone) = meta.encrypted_zone.as_deref() {
             if crate::crypt::active_zone_key(zone).is_none() {
                 locked.push(LockedItem {
@@ -164,7 +205,7 @@ pub fn load_items_with_locked(root: &Path) -> Result<(Vec<Item>, Vec<LockedItem>
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item = item_from_bytes(&meta.path, bytes)?;
         items.push(item);
     }
 
@@ -190,16 +231,16 @@ pub fn load_items(root: &Path) -> Result<Vec<Item>, JoyError> {
 /// from [`load_items`]: default views never touch this directory, the
 /// `-J` views and job-targeted lookups do. JOY-01FE-37.
 pub fn load_jobs(root: &Path) -> Result<Vec<Item>, JoyError> {
-    let mut metas = list_job_metadata(root)?;
-    metas.sort_by(|a, b| a.path.file_name().cmp(&b.path.file_name()));
+    let mut files = scan_dir(root, store::JOBS_DIR)?;
+    files.sort_by(|a, b| a.meta.path.file_name().cmp(&b.meta.path.file_name()));
     let mut jobs: Vec<Item> = Vec::new();
-    for meta in metas {
+    for ScannedFile { meta, bytes } in files {
         if let Some(zone) = meta.encrypted_zone.as_deref() {
             if crate::crypt::active_zone_key(zone).is_none() {
                 continue;
             }
         }
-        let item = read_item_file(&meta.path)?;
+        let item = item_from_bytes(&meta.path, bytes)?;
         jobs.push(item);
     }
     Ok(jobs)
@@ -433,18 +474,38 @@ pub fn list_job_metadata(root: &Path) -> Result<Vec<ItemMeta>, JoyError> {
 }
 
 fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
+    Ok(scan_dir(root, sub)?
+        .into_iter()
+        .map(|file| file.meta)
+        .collect())
+}
+
+/// One item file as the directory walk met it: what the walk learned
+/// about it, and the bytes it read to learn that. A caller that goes on
+/// to parse the item takes the bytes instead of reading the file again.
+struct ScannedFile {
+    meta: ItemMeta,
+    bytes: Vec<u8>,
+}
+
+fn scan_dir(root: &Path, sub: &str) -> Result<Vec<ScannedFile>, JoyError> {
     let items_dir = store::joy_dir(root).join(sub);
-    if !items_dir.is_dir() {
-        return Ok(Vec::new());
-    }
+    let entries = match std::fs::read_dir(&items_dir) {
+        Ok(entries) => entries,
+        // No such directory is a project without items of this kind.
+        Err(_) if !items_dir.is_dir() => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(JoyError::ReadFile {
+                path: items_dir.clone(),
+                source: e,
+            })
+        }
+    };
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&items_dir).map_err(|e| JoyError::ReadFile {
-        path: items_dir.clone(),
-        source: e,
-    })? {
+    for entry in entries {
         let Ok(entry) = entry else { continue };
         let path = entry.path();
-        if !path.is_file() {
+        if !is_regular_file(&entry, &path) {
             continue;
         }
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
@@ -453,23 +514,34 @@ fn list_metadata_in(root: &Path, sub: &str) -> Result<Vec<ItemMeta>, JoyError> {
         let Some(id) = id_from_filename(name) else {
             continue;
         };
-        let bytes = std::fs::read(&path).map_err(|e| JoyError::ReadFile {
-            path: path.clone(),
-            source: e,
-        })?;
+        let bytes = read_item_bytes(&path)?;
         let (encrypted_zone, plaintext_crypt_zone) = if joy_crypt::zone::looks_like_blob(&bytes) {
             (parse_blob_zone(&bytes), None)
         } else {
             (None, parse_plaintext_crypt_zone(&bytes))
         };
-        out.push(ItemMeta {
-            id,
-            path,
-            encrypted_zone,
-            plaintext_crypt_zone,
+        out.push(ScannedFile {
+            meta: ItemMeta {
+                id,
+                path,
+                encrypted_zone,
+                plaintext_crypt_zone,
+            },
+            bytes,
         });
     }
     Ok(out)
+}
+
+/// Whether a directory entry is a file, the way `Path::is_file` answers
+/// (a link to a file counts). The listing already carries the type on
+/// the filesystems joy meets, so only a link costs a further access.
+fn is_regular_file(entry: &std::fs::DirEntry, path: &Path) -> bool {
+    match entry.file_type() {
+        Ok(kind) if kind.is_file() => true,
+        Ok(kind) if kind.is_dir() => false,
+        _ => path.is_file(),
+    }
 }
 
 fn id_from_filename(name: &str) -> Option<String> {
@@ -649,6 +721,16 @@ pub fn title_hash_suffix(title: &str) -> String {
 /// Accepts both full IDs (JOY-0042-A3) and short-form (JOY-0042).
 /// Short-form returns an error if ambiguous (multiple matches).
 pub fn find_item_file(root: &Path, id: &str) -> Result<std::path::PathBuf, JoyError> {
+    let (dir, names) = item_dir_names(root, id)?;
+    Ok(dir.join(match_item_name(&names, id)?))
+}
+
+/// The directory an ID routes to, and the names in it: one listing that
+/// a lookup and the reference resolution after it can both use.
+fn item_dir_names(
+    root: &Path,
+    id: &str,
+) -> Result<(std::path::PathBuf, Vec<std::ffi::OsString>), JoyError> {
     // The -JOB- segment routes to .joy/jobs/; everything else lives in
     // .joy/items/. Never scans both. JOY-01FE-37.
     let sub = if is_job_id(id) {
@@ -661,50 +743,53 @@ pub fn find_item_file(root: &Path, id: &str) -> Result<std::path::PathBuf, JoyEr
         return Err(JoyError::ItemNotFound(id.to_string()));
     }
 
-    // Normalize: uppercase the ID for matching
-    let id_upper = id.to_uppercase();
-
-    let entries: Vec<_> = std::fs::read_dir(&items_dir)
+    let names = std::fs::read_dir(&items_dir)
         .map_err(|e| JoyError::ReadFile {
             path: items_dir.clone(),
             source: e,
         })?
         .filter_map(|e| e.ok())
+        .map(|entry| entry.file_name())
         .collect();
+    Ok((items_dir, names))
+}
+
+/// The name in `names` that carries `id`, full or short form.
+fn match_item_name<'n>(
+    names: &'n [std::ffi::OsString],
+    id: &str,
+) -> Result<&'n std::ffi::OsStr, JoyError> {
+    // Normalize: uppercase the ID for matching
+    let id_upper = id.to_uppercase();
 
     // First try exact match (full ID)
     let exact_prefix = format!("{}-", id_upper);
-    for entry in &entries {
-        let name = entry.file_name();
+    for name in names {
         let name_upper = name.to_string_lossy().to_uppercase();
         if name_upper.starts_with(&exact_prefix) {
-            return Ok(entry.path());
+            return Ok(name);
         }
     }
 
     // Then try short-form match (prefix without suffix)
     // JOY-0042 matches JOY-0042-A3-some-title.yaml
     let short_prefix = format!("{}-", id_upper);
-    let mut matches: Vec<std::path::PathBuf> = Vec::new();
-    for entry in &entries {
-        let name = entry.file_name();
+    let mut matches: Vec<&std::ffi::OsStr> = Vec::new();
+    for name in names {
         let name_upper = name.to_string_lossy().to_uppercase();
         if name_upper.starts_with(&short_prefix) {
-            matches.push(entry.path());
+            matches.push(name);
         }
     }
 
     match matches.len() {
         0 => Err(JoyError::ItemNotFound(id.to_string())),
-        1 => Ok(matches.into_iter().next().unwrap()),
+        1 => Ok(matches[0]),
         _ => {
             // Extract full IDs from filenames for the error message
             let ids: Vec<String> = matches
                 .iter()
-                .filter_map(|p| {
-                    let name = p.file_name()?.to_string_lossy().to_string();
-                    extract_full_id(&name)
-                })
+                .filter_map(|name| extract_full_id(&name.to_string_lossy()))
                 .collect();
             Err(JoyError::Other(format!("ambiguous ID: {}", ids.join(", "))))
         }
@@ -769,22 +854,84 @@ fn extract_full_id(filename: &str) -> Option<String> {
 
 /// Load a single item by ID.
 ///
-/// Goes through `load_items` so that short-form ID references in
-/// `parent` and `deps` are normalized to full form before the caller
-/// sees them. This guarantees that any subsequent `update_item` call
-/// persists the normalized form.
+/// Short-form ID references in `parent`, `deps` and `milestone` are
+/// normalized to full form before the caller sees them, as
+/// [`load_items`] does for the whole set. This guarantees that any
+/// subsequent `update_item` call persists the normalized form.
+///
+/// It reads the item's own file and nothing else, unless the item
+/// still carries a short-form reference: then the files that reference
+/// could mean are read to learn their IDs (JOY-02B8-78). Loading the
+/// whole set here made every command on one item cost a pass over all
+/// of them.
 pub fn load_item(root: &Path, id: &str) -> Result<Item, JoyError> {
-    let path = find_item_file(root, id)?;
-    let target_id: String = read_item_file(&path)?.id;
-    let items = if is_job_id(id) {
-        load_jobs(root)?
-    } else {
-        load_items(root)?
+    let (dir, names) = item_dir_names(root, id)?;
+    let path = dir.join(match_item_name(&names, id)?);
+    let mut item = read_item_file(&path)?;
+    // Jobs carry no references that are normalized (see `load_jobs`).
+    if !is_job_id(id) {
+        resolve_short_id_refs(&mut item, &dir, &names);
+        resolve_short_milestone_ref(root, &mut item);
+    }
+    Ok(item)
+}
+
+/// [`normalize_id_refs`] for one item: rewrite a short-form `parent` or
+/// dependency to the full ID it stands for, and leave it alone when no
+/// item or more than one answers to it.
+///
+/// The IDs come from the files a reference could mean, not from their
+/// names: a legacy `ACRONYM-XXXX` file whose title starts with two hex
+/// characters reads like a suffixed ID by name alone. A file that cannot
+/// be read (a zone without a key) does not answer, as it is absent from
+/// the set [`load_items`] normalizes over.
+fn resolve_short_id_refs(item: &mut Item, dir: &Path, names: &[std::ffi::OsString]) {
+    let resolve = |reference: &str| -> Option<String> {
+        // Already a full ID: nothing it could be short for.
+        if short_form(reference).is_some() {
+            return None;
+        }
+        let prefix = format!("{reference}-");
+        let mut full: Option<String> = None;
+        for name in names {
+            if !name.to_string_lossy().starts_with(&prefix) {
+                continue;
+            }
+            let Ok(candidate) = read_item_file(&dir.join(name)) else {
+                continue;
+            };
+            if short_form(&candidate.id) == Some(reference) {
+                if full.is_some() {
+                    return None;
+                }
+                full = Some(candidate.id);
+            }
+        }
+        full
     };
-    items
-        .into_iter()
-        .find(|i| i.id == target_id)
-        .ok_or(JoyError::ItemNotFound(target_id))
+    if let Some(full) = item.parent.as_deref().and_then(resolve) {
+        item.parent = Some(full);
+    }
+    for dep in &mut item.deps {
+        if let Some(full) = resolve(dep) {
+            *dep = full;
+        }
+    }
+}
+
+/// [`normalize_milestone_refs`] for one item. The milestones are only
+/// read when the item names one in a form that could be short.
+fn resolve_short_milestone_ref(root: &Path, item: &mut Item) {
+    let Some(milestone) = item.milestone.as_deref() else {
+        return;
+    };
+    if milestone_short_form(milestone).is_some() {
+        return;
+    }
+    let milestone_ids: Vec<String> = crate::milestones::load_milestones(root)
+        .map(|list| list.into_iter().map(|m| m.id).collect())
+        .unwrap_or_default();
+    normalize_milestone_refs(std::slice::from_mut(item), &milestone_ids);
 }
 
 /// Delete an item by ID. Returns the deleted item.
@@ -809,11 +956,28 @@ pub fn remove_references(
     deleted_id: &str,
     updated_by: &str,
 ) -> Result<Vec<String>, JoyError> {
-    let items = load_items(root)?;
+    let mut items = load_items(root)?;
+    remove_references_in(root, &mut items, deleted_id, updated_by)
+}
+
+/// [`remove_references`] over a set the caller already loaded, so a
+/// command that deletes several items reads the item files once and not
+/// once per deleted item (JOY-02B8-78).
+///
+/// `items` is kept true to the disk: the deleted item leaves it and a
+/// dereferenced item is changed in it, so the next call neither writes
+/// the deleted item back nor undoes an earlier dereference.
+pub fn remove_references_in(
+    root: &Path,
+    items: &mut Vec<Item>,
+    deleted_id: &str,
+    updated_by: &str,
+) -> Result<Vec<String>, JoyError> {
+    items.retain(|item| item.id != deleted_id);
     let mut updated = Vec::new();
-    for mut item in items {
+    for item in items.iter_mut() {
         let mut changed = false;
-        if item.deps.contains(&deleted_id.to_string()) {
+        if item.deps.iter().any(|d| d == deleted_id) {
             item.deps.retain(|d| d != deleted_id);
             changed = true;
         }
@@ -822,8 +986,8 @@ pub fn remove_references(
             changed = true;
         }
         if changed {
-            touch_for_attribute_change(&mut item, updated_by);
-            update_item(root, &item)?;
+            touch_for_attribute_change(item, updated_by);
+            update_item(root, item)?;
             updated.push(item.id.clone());
         }
     }
@@ -1141,6 +1305,209 @@ mod tests {
         let items = load_items(dir.path()).unwrap();
         assert_eq!(items[0].id, "JOY-0001");
         assert_eq!(items[1].id, "JOY-0002");
+    }
+
+    /// JOY-02B7-B7: a pass over the items reads each file once. The walk
+    /// that finds the crypt zone hands its bytes to the parser, so the
+    /// second read that used to follow it is gone, for the locked-aware
+    /// loader and for the metadata walk alike.
+    #[test]
+    fn a_pass_over_the_items_reads_each_file_once() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        for n in 1..=5 {
+            let item = Item::new(
+                format!("JOY-000{n}-AB"),
+                format!("Item number {n}"),
+                ItemType::Task,
+                Priority::Low,
+                vec![],
+            );
+            save_item(dir.path(), &item).unwrap();
+        }
+
+        let (items, reads) = read_count::during(|| load_items(dir.path()).unwrap());
+        assert_eq!(items.len(), 5);
+        assert_eq!(reads, 5, "one read per item file");
+
+        let (metas, reads) = read_count::during(|| list_item_metadata(dir.path()).unwrap());
+        assert_eq!(metas.len(), 5);
+        assert_eq!(reads, 5, "the metadata walk reads each file once too");
+    }
+
+    /// The walk skips what is not an item file, as it did when it asked
+    /// `is_file()` of every entry: a directory, and a file whose name
+    /// carries no item id.
+    #[test]
+    fn the_walk_skips_directories_and_foreign_files() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let items_dir = dir.path().join(".joy").join("items");
+        std::fs::create_dir_all(items_dir.join("JOY-0009-AB-a-directory.yaml")).unwrap();
+        std::fs::write(items_dir.join("notes.txt"), "not an item").unwrap();
+        let item = Item::new(
+            "JOY-0001-AB".into(),
+            "The only item".into(),
+            ItemType::Task,
+            Priority::Low,
+            vec![],
+        );
+        save_item(dir.path(), &item).unwrap();
+
+        let (items, reads) = read_count::during(|| load_items(dir.path()).unwrap());
+        assert_eq!(items.len(), 1);
+        assert_eq!(reads, 1);
+    }
+
+    /// No items directory at all is an empty project, not an error.
+    #[test]
+    fn a_missing_items_directory_is_an_empty_listing() {
+        let dir = tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
+        assert!(load_items(dir.path()).unwrap().is_empty());
+        assert!(load_jobs(dir.path()).unwrap().is_empty());
+        assert!(list_item_metadata(dir.path()).unwrap().is_empty());
+    }
+
+    fn task(id: &str, title: &str) -> Item {
+        Item::new(
+            id.into(),
+            title.into(),
+            ItemType::Task,
+            Priority::Low,
+            vec![],
+        )
+    }
+
+    /// JOY-02B8-78: loading one item reads its file and no other. It
+    /// used to load the whole set to normalize references that, in a
+    /// project of full IDs, need no normalizing at all.
+    #[test]
+    fn loading_one_item_reads_one_file() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        save_item(dir.path(), &task("JOY-0001-AA", "The parent")).unwrap();
+        save_item(dir.path(), &task("JOY-0002-BB", "A dependency")).unwrap();
+        let mut item = task("JOY-0003-CC", "The one that is loaded");
+        item.parent = Some("JOY-0001-AA".into());
+        item.deps = vec!["JOY-0002-BB".into()];
+        save_item(dir.path(), &item).unwrap();
+
+        let (loaded, reads) = read_count::during(|| load_item(dir.path(), "JOY-0003-CC").unwrap());
+        assert_eq!(loaded.id, "JOY-0003-CC");
+        assert_eq!(reads, 1);
+
+        // The short form of its own ID finds it just the same.
+        let (loaded, reads) = read_count::during(|| load_item(dir.path(), "JOY-0003").unwrap());
+        assert_eq!(loaded.id, "JOY-0003-CC");
+        assert_eq!(reads, 1);
+    }
+
+    /// One item's short-form references come out as the whole set's
+    /// normalization writes them: the unique one in full, the ambiguous
+    /// and the unknown one as they stand.
+    #[test]
+    fn loading_one_item_resolves_short_references_like_the_whole_set() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        save_item(dir.path(), &task("JOY-0001-AA", "The parent")).unwrap();
+        save_item(dir.path(), &task("JOY-0002-BB", "A dependency")).unwrap();
+        // Two items share the short form JOY-0005.
+        save_item(dir.path(), &task("JOY-0005-11", "One of two")).unwrap();
+        save_item(dir.path(), &task("JOY-0005-22", "Two of two")).unwrap();
+        let mut item = task("JOY-0003-CC", "The one that is loaded");
+        item.parent = Some("JOY-0001".into());
+        item.deps = vec![
+            "JOY-0002".into(),
+            "JOY-0005".into(),
+            "JOY-0099".into(),
+            "JOY-0002-BB".into(),
+        ];
+        save_item(dir.path(), &item).unwrap();
+
+        let one = load_item(dir.path(), "JOY-0003-CC").unwrap();
+        assert_eq!(one.parent.as_deref(), Some("JOY-0001-AA"));
+        assert_eq!(
+            one.deps,
+            vec!["JOY-0002-BB", "JOY-0005", "JOY-0099", "JOY-0002-BB"]
+        );
+
+        let of_the_set = load_items(dir.path())
+            .unwrap()
+            .into_iter()
+            .find(|i| i.id == "JOY-0003-CC")
+            .unwrap();
+        assert_eq!(one.parent, of_the_set.parent);
+        assert_eq!(one.deps, of_the_set.deps);
+    }
+
+    /// A legacy ID is a full ID. Its file name can read like a suffixed
+    /// one when the title starts with two hex characters, which is why
+    /// the IDs are taken from the files and not from their names: the
+    /// reference stays what it is.
+    #[test]
+    fn a_legacy_reference_is_not_taken_for_a_short_form() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        // Saved as JOY-0042-be-careful.yaml.
+        save_item(dir.path(), &task("JOY-0042", "Be careful")).unwrap();
+        let mut item = task("JOY-0043-CC", "Child of a legacy item");
+        item.parent = Some("JOY-0042".into());
+        item.deps = vec!["JOY-0042".into()];
+        save_item(dir.path(), &item).unwrap();
+
+        let one = load_item(dir.path(), "JOY-0043-CC").unwrap();
+        assert_eq!(one.parent.as_deref(), Some("JOY-0042"));
+        assert_eq!(one.deps, vec!["JOY-0042"]);
+    }
+
+    /// A short-form milestone reference is resolved for one item as it
+    /// is for the set.
+    #[test]
+    fn loading_one_item_resolves_a_short_milestone_reference() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        let milestone = crate::model::Milestone::new("JOY-MS-01-A1".into(), "First".into());
+        crate::milestones::save_milestone(dir.path(), &milestone).unwrap();
+        let mut item = task("JOY-0001-AA", "In the milestone");
+        item.milestone = Some("JOY-MS-01".into());
+        save_item(dir.path(), &item).unwrap();
+
+        let one = load_item(dir.path(), "JOY-0001-AA").unwrap();
+        assert_eq!(one.milestone.as_deref(), Some("JOY-MS-01-A1"));
+    }
+
+    /// JOY-02B8-78: deleting several items works on one loaded set. The
+    /// set follows the disk, so a second dereference of the same item
+    /// keeps the first, and a deleted item is not written back.
+    #[test]
+    fn references_are_removed_from_a_set_that_follows_the_disk() {
+        let dir = tempdir().unwrap();
+        setup_project(dir.path());
+        save_item(dir.path(), &task("JOY-0001-AA", "First to go")).unwrap();
+        save_item(dir.path(), &task("JOY-0002-BB", "Second to go")).unwrap();
+        let mut item = task("JOY-0003-CC", "Refers to both");
+        item.parent = Some("JOY-0001-AA".into());
+        item.deps = vec!["JOY-0002-BB".into()];
+        save_item(dir.path(), &item).unwrap();
+
+        let mut set = load_items(dir.path()).unwrap();
+        let (_, reads) = read_count::during(|| {
+            delete_item(dir.path(), "JOY-0001-AA").unwrap();
+            let updated = remove_references_in(dir.path(), &mut set, "JOY-0001-AA", "m").unwrap();
+            assert_eq!(updated, vec!["JOY-0003-CC"]);
+            delete_item(dir.path(), "JOY-0002-BB").unwrap();
+            let updated = remove_references_in(dir.path(), &mut set, "JOY-0002-BB", "m").unwrap();
+            assert_eq!(updated, vec!["JOY-0003-CC"]);
+        });
+        // delete_item reads the file it deletes; nothing else is read.
+        assert_eq!(reads, 2);
+
+        let left = load_items(dir.path()).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].id, "JOY-0003-CC");
+        assert_eq!(left[0].parent, None);
+        assert!(left[0].deps.is_empty());
     }
 
     #[test]

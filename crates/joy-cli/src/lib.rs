@@ -332,7 +332,16 @@ fn auto_sync_repo() {
     // binary, refuse to touch anything and warn once. Running an old
     // binary against newer joy-managed files risks dropping schema
     // fields and rolling templates back. See JOY-016B-A1.
-    if let Some(marker) = update_registry::marker_ahead_of(&root, current) {
+    //
+    // The guard, the lazy activation and the sync decision below all
+    // ask this clone's git config. They ask it together: every joy
+    // invocation comes through here, and each open of the repository
+    // is file accesses a slow filesystem makes a person wait for.
+    let state = joy_core::init::clone_state(&root);
+    let recorded = state
+        .as_ref()
+        .and_then(|state| state.last_sync_version.clone());
+    if let Some(marker) = joy_core::update::marker_ahead(recorded.as_deref(), current) {
         eprintln!(
             "warning: this repo was last synced with joy {marker}; you are running joy {current}.\n\
              Update joy before continuing to avoid downgrading repo state."
@@ -340,8 +349,11 @@ fn auto_sync_repo() {
         return;
     }
 
-    // Always reassert lazy activation (cheap and idempotent).
-    let _ = joy_core::init::ensure_lazy_activation(&root);
+    // Always reassert lazy activation (cheap and idempotent). Outside a
+    // git repository there is nothing to activate.
+    if let Some(state) = &state {
+        let _ = joy_core::init::ensure_lazy_activation_for(&root, state);
+    }
 
     // Honour the auto-sync toggle from .joy/config.yaml.
     let config = joy_core::store::load_config();
@@ -349,7 +361,7 @@ fn auto_sync_repo() {
         return;
     }
 
-    match joy_core::init::last_sync_version(&root) {
+    match recorded {
         Some(v) if v == current => {} // already in sync
         recorded => {
             // Run the full sync (lazy-activation + auth update + ai
