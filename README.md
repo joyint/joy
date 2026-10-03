@@ -151,9 +151,7 @@ More on [joyint.com/joy/docs](https://joyint.com/joy/docs/):
 - [Workflow](https://joyint.com/joy/docs/workflow/) - the six statuses, the verb shortcuts, gates and jobs
 - [Features](https://joyint.com/joy/docs/features/) - the feature list with CLI examples
 - [Use cases](https://joyint.com/joy/docs/use-cases/) - how developers and teams use Joy in practice
-- [Forges](https://joyint.com/joy/docs/forges/) - signing in with `joy forge`, where a token is stored, self-hosted instances
-- [Forge setups](https://joyint.com/joy/docs/forge-setups/) - what to expect on Windows, behind an internal CA, with SAML, on a headless machine
-- [What joy reads from your machine](https://joyint.com/joy/docs/machine-access/) - ssh config, proxies, certificate stores, credential helpers
+- [Plugin development](https://joyint.com/joy/docs/plugin-development/) - writing `joy-<name>` plugins (joy-bi is the reference)
 - [Applications](https://joyint.com/joy/docs/applications/) - the CLI, the Joyint app and VS Code
 
 Architecture decisions are tracked as Joy decision items in this repository; run `joy ls -D` to list them.
