@@ -133,7 +133,7 @@ AI members can do what you allow them to (plan, implement, review, ...), but nev
 | **Boards and views** | `joy` for the board, `joy ls --tree`, `joy roadmap`, `joy find`, `joy -D` for decisions |
 | **Milestones and releases** | `joy milestone`, and `joy release` to bump versions, write the release record and publish to your forge |
 | **Audit log** | `joy log` - an append-only event log, versioned with the project |
-| **Members and gates** | `joy project member` - capabilities per member, status rules that require a human sign-off |
+| **Members and gates** | `joy project` - capabilities per member, status rules that require a human sign-off |
 | **Encryption** | `joy crypt` - selective end-to-end encryption of items and paths |
 | **Team chats** | `joy chat` - sealed chats that live in the repository |
 | **Forges** | `joy forge login` for GitHub, GitLab and Gitea |
