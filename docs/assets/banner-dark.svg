@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 320" width="1280" height="320" role="img" aria-label="Joy: terminal-native product management that lives in your Git repo">
+  <defs>
+    <linearGradient id="holo" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1280" y2="320"><stop offset="0%" stop-color="#5fe3d2"/><stop offset="20%" stop-color="#7db4ff"/><stop offset="40%" stop-color="#c39bff"/><stop offset="58%" stop-color="#ff8fd2"/><stop offset="78%" stop-color="#8fe9f7"/><stop offset="100%" stop-color="#b9beff"/></linearGradient>
+    <linearGradient id="mark" gradientUnits="userSpaceOnUse" x1="96" y1="70" x2="312" y2="240"><stop offset="0%" stop-color="#5fe3d2"/><stop offset="50%" stop-color="#7db4ff"/><stop offset="100%" stop-color="#c39bff"/></linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0C0C0E" stop-opacity="1"/>
+      <stop offset="0.5" stop-color="#0C0C0E" stop-opacity="0.86"/>
+      <stop offset="1" stop-color="#0C0C0E" stop-opacity="0.1"/>
+    </linearGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="70"/></filter>
+    <pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="4" height="1" fill="#FFFFFF" opacity="0.025"/></pattern>
+    <clipPath id="clip"><rect width="1280" height="320" rx="20"/></clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1280" height="320" fill="#0C0C0E"/>
+    <g filter="url(#blur)" opacity="0.55"><circle cx="820" cy="60" r="230" fill="#5fe3d2"/><circle cx="1010" cy="250" r="250" fill="#c39bff"/><circle cx="1190" cy="90" r="210" fill="#ff8fd2"/><circle cx="640" cy="300" r="170" fill="#7db4ff"/><circle cx="1260" cy="300" r="160" fill="#8fe9f7"/></g>
+    <rect width="1280" height="320" fill="url(#fade)"/>
+    <rect width="1280" height="320" fill="url(#scan)"/>
+    <rect y="316" width="1280" height="4" fill="url(#holo)"/>
+    <g fill="url(#mark)"><path d="M75 750H225V600H75ZM0 0H75V525H225V-75H150V-150H0Z" transform="translate(96.0,213) scale(0.16,-0.16)"/><path d="M0 525H75V600H450V525H525V75H450V0H75V75H0ZM375 450H150V150H375Z" transform="translate(144.0,213) scale(0.16,-0.16)"/><path d="M0 900H150V750H0ZM300 900H450V750H300ZM0 0H75V75H150V150H75V225H0V600H150V300H225V225H300V600H450V150H375V75H300V0H225V-75H150V-150H0Z" transform="translate(240.0,213) scale(0.16,-0.16)"/></g>
+    <g font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace">
+      <text x="372" y="132" font-size="30" font-weight="600" fill="#EDECEA">Product management</text>
+      <text x="372" y="172" font-size="30" font-weight="600" fill="#EDECEA">that lives in your Git repo.</text>
+      <text x="372" y="222" font-size="19" fill="#7C7B78"><tspan fill="#5FE3D2">$</tspan> joy add story "User login" --priority high</text>
+    </g>
+  </g>
+  <rect x="0.5" y="0.5" width="1279" height="319" rx="19.5" fill="none" stroke="#252524"/>
+</svg>
