@@ -29,7 +29,7 @@ Joy is a single Rust binary that keeps your backlog next to your code: epics, st
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demo-dark.svg">
-    <img src="docs/assets/demo-light.svg" alt="Terminal session: adding an item, starting it, listing the tree and showing the board" width="736">
+    <img src="docs/assets/demo-light.svg" alt="Terminal: joy roadmap in the Scientific Calculator demo project" width="646">
   </picture>
 </p>
 
