@@ -137,7 +137,7 @@ AI members can do what you allow them to (plan, implement, review, ...), but nev
 | **Encryption** | `joy crypt` - selective end-to-end encryption of items and paths |
 | **Team chats** | `joy chat` - sealed chats that live in the repository |
 | **Forges** | `joy forge login` for GitHub, GitLab and Gitea |
-| **Plugins** | any `joy-<name>` executable on your PATH |
+| **Plugins** | `joy-<name>` executables on your PATH that implement Joy's plugin interface |
 
 ## Documentation
 
