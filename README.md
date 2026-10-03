@@ -151,7 +151,7 @@ More on [joyint.com/joy/docs](https://joyint.com/joy/docs/):
 - [Workflow](https://joyint.com/joy/docs/workflow/) - the six statuses, the verb shortcuts, gates and jobs
 - [Features](https://joyint.com/joy/docs/features/) - the feature list with CLI examples
 - [Use cases](https://joyint.com/joy/docs/use-cases/) - how developers and teams use Joy in practice
-- [Plugin development](https://joyint.com/joy/docs/plugin-development/) - writing `joy-<name>` plugins (joy-bi is the reference)
+- [Plugins](https://joyint.com/joy/docs/plugins/) - writing `joy-<name>` plugins (joy-bi is the reference)
 - [Applications](https://joyint.com/joy/docs/applications/) - the CLI, the Joyint app and VS Code
 
 Architecture decisions are tracked as Joy decision items in this repository; run `joy ls -D` to list them.
