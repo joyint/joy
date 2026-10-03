@@ -508,11 +508,14 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
     // Right after the fork the process list still holds the parent's
     // argv, and a moment later a half written one, so "not empty" is not
     // the signal: the last argument joy passes is, and it is read last.
+    // The FIRST word has to be the connector's too: in the middle of the
+    // exec the list can already end in the new arguments while it still
+    // begins with the test binary's own path (seen in CI on 2026-10-02).
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut seen = String::new();
     while Instant::now() < deadline {
         if let Some(text) = argv_of(child.id()) {
-            if text.contains("--host-kind background") {
+            if text.contains(CONNECTOR) && text.contains("--host-kind background") {
                 seen = text;
                 break;
             }

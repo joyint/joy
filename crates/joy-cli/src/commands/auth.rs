@@ -177,9 +177,29 @@ pub fn run(args: AuthArgs) -> Result<()> {
 /// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
     let project = store::load_project(root)?;
-    Ok(joy_core::identity::acting_member(
-        root, &project, user_flag,
-    )?)
+    name_the_member(root, &project, user_flag)
+}
+
+/// The member this auth command is for, and the question a person is
+/// asked when nothing names one. `joy auth` is the command that signs
+/// in, so it may not answer "run `joy auth`": at a terminal it asks for
+/// the address, and where nobody can be asked it names the one way left.
+fn name_the_member(
+    root: &Path,
+    project: &joy_core::model::project::Project,
+    user_flag: Option<&str>,
+) -> Result<String> {
+    match joy_core::identity::acting_member(root, project, user_flag) {
+        Ok(member) => Ok(member),
+        Err(joy_core::error::JoyError::UnknownActingMember) => {
+            if crate::prompt::is_interactive() {
+                Ok(crate::prompt::ask_text("Your member address:", None)?)
+            } else {
+                anyhow::bail!("not signed in: pass `--user <address>`")
+            }
+        }
+        Err(other) => Err(other.into()),
+    }
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -285,7 +305,7 @@ pub(crate) fn run_init(
     // else the forge account. The project is never guessed from, not
     // even when it has exactly one member: the project file travels
     // with every clone.
-    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
+    let email = name_the_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(

@@ -81,12 +81,14 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *"Member:"*"ai:test@joy"* ]]
 
-    # A garbage value must not yield the AI session. The fallback is the
-    # git-email identity (test@example.com from setup); auth status either
-    # shows that human session or the "no active session" message, but
-    # never names the AI in the Member: line.
+    # A garbage value must not yield the AI session, and it must not
+    # yield the session of the person who signed in here either: a
+    # process that carries a session value never falls back to a human
+    # session. It is told that the value is dead, and it stands as
+    # unproven as git config.
     run joy --session "joy_s_bogus" auth status
-    [ "$status" -eq 0 ]
+    [[ "$output" == *"JOY_SESSION is no longer valid"* ]]
+    [[ "$output" == *"No active session"* ]]
     member_line=$(echo "$output" | grep -E "^\s*Member:" | head -n 1)
     [[ "$member_line" != *"ai:test@joy"* ]]
 }

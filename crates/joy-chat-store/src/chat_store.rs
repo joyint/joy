@@ -450,6 +450,27 @@ pub fn load(root: &std::path::Path, id: &str, seed: &[u8; 32]) -> Result<Option<
 }
 
 /// Every new-format chat the reader can open, folded (unsorted).
+/// Whether the store holds any sealed chat at all, asked WITHOUT a key:
+/// a listing uses it to decide whether there is anything a passphrase
+/// could open before it asks a person for one.
+pub fn any_sealed(root: &std::path::Path) -> bool {
+    let Ok(repo) = chat_ref::open_repo(root) else {
+        return false;
+    };
+    let Ok(Some(commit)) = chat_ref::ref_commit(&repo) else {
+        return false;
+    };
+    let Ok(root_tree) = commit.tree() else {
+        return false;
+    };
+    let found = root_tree.iter().any(|e| {
+        e.to_object(&repo)
+            .and_then(|o| o.peel_to_tree())
+            .is_ok_and(|chat_tree| is_new_format(&repo, &chat_tree))
+    });
+    found
+}
+
 pub fn load_all(root: &std::path::Path, seed: &[u8; 32]) -> Result<Vec<Chat>, JoyError> {
     let repo = chat_ref::open_repo(root)?;
     let Some(commit) = chat_ref::ref_commit(&repo)? else {

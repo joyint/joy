@@ -1,0 +1,22 @@
+id: JOY-02B9-3C
+title: 'The CLI asks for what it needs when it needs it: joy auth asks who you are, joy chat ls asks nothing it cannot use, an ended session is said once'
+type: rework
+status: review
+priority: high
+tags:
+- auth
+- ux
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-02T20:08:05.189995138Z
+updated: 2026-10-02T20:08:14.978179248Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Review of 2026-09-30, UX first.
+
+  1. joy auth and joy auth init on a machine that names nobody answered 'not signed in: run joy auth', the command that had just refused. At a terminal they now ask for the member address; where nobody can be asked they name --user only.
+  2. joy chat ls asked for the passphrase at the door, before the fetch and before knowing whether a chat exists. The listing now fetches first and goes through the gate only when a sealed chat is there. Every other chat verb opens or writes a chat and keeps the gate at the door.
+  3. A session that ran out was dropped without a word, and the next command acted unproven or asked again with no reason given. It is now said once (Your joy session here has ended: sign in again with joy auth) and the file is removed.
