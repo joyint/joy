@@ -23,7 +23,7 @@ Two MIT-licensed crates (`crates/`):
 - **joy-core** - the shared foundation. Data model (`model/`), YAML storage and project-root detection (`store.rs`), item and milestone logic with collision-safe IDs and dependency-cycle detection (`items.rs`, `milestones.rs`), status workflow and capability gates (`guard.rs`), identity and delegation auth (`identity.rs`, `member_id.rs`, `members_file.rs`, `auth/`), client-side encryption usage (`crypt.rs`; the implementation is the separate [crypt](https://github.com/joyint/crypt) project), VCS and forge integration (`vcs.rs`, `git_ops.rs`), the append-only audit log (`event_log.rs`), embedded-file sync (`embedded.rs`), templating (`templates.rs`, `ai_templates.rs`), and schema migrations (`migrations/`). Jyn's `jyn-core` depends on this crate and extends `Item` with recurrence.
 - **joy-cli** - the `joy` binary: CLI commands (`commands/`, clap), the TUI (ratatui), semantic colour output, shell completion, and forge and release helpers.
 
-AI members use Joy the way humans do: an AI agent (for example Claude Code) invokes the `joy` CLI for its work on the item store - `joy show`, `joy ls`, `joy add`, `joy comment` - and `joy-core` governs those calls exactly as it governs a human caller (capabilities, status gates and `allow_ai`, signed delegation, and the audit log). The agent's execution sandbox and orchestration, and the platform's server side, live in the separate, commercially licensed [platform](https://github.com/joyint/platform) and [app](https://github.com/joyint/app) projects.
+AI members use Joy the way humans do: an AI agent (for example Claude Code) invokes the `joy` CLI for its work on the item store - `joy show`, `joy ls`, `joy add`, `joy comment` - and `joy-core` governs those calls exactly as it governs a human caller (capabilities, status gates and `allow_ai`, signed delegation, and the audit log). The agent's execution sandbox and orchestration, and the platform's server side, live in the separate, commercially licensed platform and app projects.
 
 For Antigravity, `joy ai init` detects the `agy` launcher and generates a project skill in `.agents/skills/joy/` plus namespaced capability agents in `.agents/agents/joy-*/`. Antigravity and Vibe share a tool-neutral root `AGENTS.md`; authentication, not this shared file, determines each agent's Joy identity.
 
@@ -108,5 +108,5 @@ Ecosystem-wide decisions (naming, open-core licensing, terminology, AI governanc
 ## References
 
 - [VISION.md](./VISION.md), [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md)
-- [Joyint umbrella project](https://github.com/joyint/project) - cross-cutting decisions and ecosystem docs
-- [Jyn](https://github.com/joyint/jyn) - consumer of `joy-core`; [crypt](https://github.com/joyint/crypt), [platform](https://github.com/joyint/platform), [app](https://github.com/joyint/app)
+- Joyint umbrella project (not public) - cross-cutting decisions and ecosystem docs
+- [Jyn](https://github.com/joyint/jyn) - consumer of `joy-core`; [crypt](https://github.com/joyint/crypt); platform and app (not public)
