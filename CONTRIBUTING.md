@@ -36,7 +36,9 @@ The repository documents are README.md, VISION.md, ARCHITECTURE.md, and this fil
 - **README is user-facing only.** No technical detail; link to ARCHITECTURE.md where needed.
 - **No code duplication in docs.** Do not copy code, signatures, or config schemas; reference the concrete files instead.
 - **Describe what exists.** Document the actual code and the real relationships (for example, that AI agents invoke the `joy` CLI); do not document absent or unimplemented features. Ground every concrete claim (crates, commands, models) in the code and the concept docs, not in older docs or crate names.
+- **Items first.** What can live in a Joy item belongs there: designs, decisions and above all ADRs. A further document under `docs/` is the exception: write one only where it really earns its place, and link it from one of the main documents.
 - **Cite Joy items** in text by id and title (for example `JOY-01CC-94 - ADR: Git as sync backend`).
+- **Code cites items.** Comments, test messages and commit messages refer to Joy items by id, not to sections of a document.
 - **External documents** are not scattered inline; collect them in a closing `## References` section.
 - **No emoji** in technical docs or commit messages (README and user-facing materials may use them sparingly). The CLI's emoji are a runtime feature, configurable and deactivatable.
 - **No ASCII diagrams or box-drawing.** Use Mermaid. File-tree listings with standard tree characters are fine, since they show real filesystem structure.
