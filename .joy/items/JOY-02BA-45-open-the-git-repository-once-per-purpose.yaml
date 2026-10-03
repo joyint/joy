@@ -1,0 +1,35 @@
+id: JOY-02BA-45
+title: Open the git repository once per purpose
+type: task
+status: review
+priority: medium
+parent: JOY-02B6-1B
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-02T19:20:50.077391427Z
+updated: 2026-10-02T19:48:59.012891466Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Each open of the git repository costs about 36 file accesses (discovery plus the config files). A read command opens it 9 times, a write command 14 times.
+
+  Where the opens come from:
+  - 8 at startup, on every command: auto_sync_repo (joy-cli/src/lib.rs) asks three times whether this is a repository and reads five config values; is_repo and config_get (joy-core/src/vcs/mod.rs) each open the repository again.
+  - 1 or 2 for the identity (resolve_identity reads user.email).
+  - 4 while staging: one for the ignore check and one for stage_paths, per staged file.
+
+  Change:
+  - One function in forge.rs reads the three local config values the startup path needs (joy.last-sync-version and the two merge driver keys) with a single open. The is_repo checks in front of them go away, because no repository already answers as not set.
+  - auto_sync_repo reads the sync version once and uses it for both the downgrade guard and the sync decision.
+  - The ignore check and the staging share one opened repository.
+
+  Not in scope: the opens for the identity. Caching them would reach into identity resolution for a gain of 36 to 72 accesses.
+
+  Unchanged: the downgrade guard, lazy activation and the auto-sync behave as before, including outside a git repository.
+
+  Done when:
+  - A read command opens the repository 2 times, a write command 5 times, shown by the count on the parent.
+  - Existing tests for init, update and auto-sync are green.
