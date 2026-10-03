@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn the_busy_answer_has_the_shape_d2_4_names() {
+    fn the_busy_answer_has_its_named_shape() {
         let answer = busy_answer();
         assert_eq!(answer["known"], false);
         assert_eq!(answer["reason"], "busy");
