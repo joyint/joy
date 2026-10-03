@@ -1,8 +1,8 @@
 <p align="center">
-  <picture>
+  <a href="https://joyint.com/joy/"><picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
     <img src="docs/assets/banner-light.svg" alt="Joy. Your product backlog, versioned like your code." width="100%">
-  </picture>
+  </picture></a>
 </p>
 
 <p align="center">
@@ -13,11 +13,12 @@
 </p>
 
 <p align="center">
+  <a href="https://joyint.com/joy/">Website</a> ·
+  <a href="https://joyint.com/joy/docs/">Docs</a> ·
   <a href="#install">Install</a> ·
   <a href="#quick-start">Quick start</a> ·
   <a href="#working-with-ai-tools">AI tools</a> ·
-  <a href="docs/user/Tutorial.md">Tutorial</a> ·
-  <a href="#documentation">Docs</a>
+  <a href="docs/user/Tutorial.md">Tutorial</a>
 </p>
 
 # Joy
@@ -147,13 +148,23 @@ AI members can do what you allow them to (plan, implement, review, ...), but nev
 - [Plugins](docs/plugins.md) - writing `joy-<name>` plugins (joy-bi is the reference), and the forge connector contract
 - [Upgrading](docs/migration/forge-connection-ng.md) - what an upgrade across the forge connection rebuild does with what is already on your machine
 
+More on [joyint.com/joy/docs](https://joyint.com/joy/docs/):
+
+- [Workflow](https://joyint.com/joy/docs/workflow/) - the six statuses, the verb shortcuts, gates and jobs
+- [Features](https://joyint.com/joy/docs/features/) - the feature list with CLI examples
+- [Use cases](https://joyint.com/joy/docs/use-cases/) - how developers and teams use Joy in practice
+- [Forges](https://joyint.com/joy/docs/forges/) - signing in with `joy forge`, where a token is stored, self-hosted instances
+- [Forge setups](https://joyint.com/joy/docs/forge-setups/) - what to expect on Windows, behind an internal CA, with SAML, on a headless machine
+- [What joy reads from your machine](https://joyint.com/joy/docs/machine-access/) - ssh config, proxies, certificate stores, credential helpers
+- [Applications](https://joyint.com/joy/docs/applications/) - the CLI, the Joyint app and VS Code
+
 Architecture decisions are tracked as Joy decision items in this repository; run `joy ls -D` to list them.
 
 ## Status
 
 Joy is pre-1.0 and under active development. It is built and managed with itself: the backlog of this repository is in [`.joy/`](./.joy), so `joy` in a clone shows you what we are working on.
 
-Joy is part of the [Joyint](https://github.com/joyint) ecosystem.
+Joy is part of the [Joyint](https://github.com/joyint) ecosystem. Website: [joyint.com/joy](https://joyint.com/joy/).
 
 ## License
 
