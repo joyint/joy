@@ -12,7 +12,7 @@
 //! `SSL_CERT_FILE` write. A corporate CA installed the normal way is
 //! therefore trusted with no joy setting anywhere.
 //!
-//! The one escape hatch is joy's own and Linux only (decision 25):
+//! The one escape hatch is joy's own and Linux only:
 //! `ca_bundle` / `ca_dir` in `forges.yaml`, and `http.sslCAInfo` /
 //! `http.sslCAPath` from git config, because that is the setting a
 //! corporate workstation image already carries. On macOS and Windows

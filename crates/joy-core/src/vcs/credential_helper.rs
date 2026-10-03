@@ -736,8 +736,8 @@ pub fn run(
         }
     };
     // Per spawn, never through the process environment: a desktop app
-    // sets these for ONE child, not for every thread it runs
-    //. An interactive host sets none of them, because
+    // sets these for ONE child, not for every thread it runs.
+    // An interactive host sets none of them, because
     // there the helper's own window is the way in.
     if !kind.may_prompt() {
         command.env("GCM_INTERACTIVE", "never");

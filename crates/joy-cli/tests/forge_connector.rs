@@ -37,7 +37,7 @@ fn setup() -> PathBuf {
     SETUP.call_once(|| {
         let dir = std::env::temp_dir().join(format!("joy-forge-connector-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("config/joy")).expect("the config directory");
-        // A machine without curl and without gh: the acceptance of J2.
+        // A machine without curl and without gh.
         std::env::set_var("PATH", "");
         std::env::set_var("HOME", &dir);
         std::env::set_var("XDG_CONFIG_HOME", dir.join("config"));
@@ -98,7 +98,7 @@ fn the_connector_answers_the_handshake_with_protocol_2() {
     );
 }
 
-/// J2's acceptance: `joy-forge github identity --remote <url>` answers
+/// `joy-forge github identity --remote <url>` answers
 /// on a machine without curl. The PATH is empty here, so there is none.
 #[test]
 fn identity_answers_on_a_machine_without_curl() {
@@ -128,7 +128,7 @@ fn identity_answers_on_a_machine_without_curl() {
     assert!(fake.saw("GET", "/user/emails"));
 }
 
-/// J2's acceptance: an internal host listed in `forges.yaml` is claimed
+/// An internal host listed in `forges.yaml` is claimed
 /// with no forge CLI installed. The PATH is empty, so gh, glab
 /// and tea do not exist at all.
 #[test]
@@ -190,7 +190,7 @@ fn store_answers_over_rest_and_carries_the_size_in_bytes() {
     );
 }
 
-/// J2's acceptance, end to end: the release verb publishes over REST
+/// The release verb publishes over REST
 /// through the real binary, on a machine without curl, with the token
 /// handed in the way `joy release publish` hands it in.
 #[test]
@@ -236,7 +236,7 @@ fn a_release_is_published_end_to_end_over_rest() {
     assert!(body["body"].as_str().unwrap().contains("Fixed the thing"));
 }
 
-/// J2's acceptance in full: `joy release publish` succeeds on a machine
+/// `joy release publish` succeeds on a machine
 /// without curl **with `GH_TOKEN` set**. The caller names no variable
 /// (joy-core has no forge knowledge and therefore no variable name to
 /// pass), the PATH is empty so there is no gh to spawn either, and the
@@ -288,9 +288,8 @@ fn a_release_is_published_with_only_the_forges_own_variable_set() {
     std::env::remove_var("GH_TOKEN");
 }
 
-/// J3's acceptance: `joy release publish` succeeds on a machine with
-/// **neither gh nor curl**, which is the one J2 could not carry because
-/// the connector had no credential of its own in wave 1.
+/// `joy release publish` succeeds on a machine with
+/// **neither gh nor curl**, which needs the connector's own credential.
 ///
 /// Nothing is in the environment either: the host is an Enterprise
 /// Server, whose variables (`GH_ENTERPRISE_TOKEN`,
@@ -468,7 +467,7 @@ fn a_forge_without_a_release_backend_says_so() {
     assert!(outcome.unsupported);
 }
 
-/// J2's acceptance: `ps` during any call shows no token. The token is
+/// `ps` during any call shows no token. The token is
 /// handed to the connector in an environment variable it is told the
 /// NAME of, and it reaches the forge in a header.
 #[cfg(unix)]

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! Two different questions that both live in `identity.rs`, and how the
-//! operator's 2026-09-19 correction (JOY-02AE-1A of the
-//! forge connection NG design, JOY-0297-1A) settled them the same way in
+//! operator's 2026-09-19 correction (JOY-02AE-1A,
+//! JOY-0297-1A) settled them the same way in
 //! the end:
 //!
 //! - [`resolve_identity`] answers "who is acting right now": the

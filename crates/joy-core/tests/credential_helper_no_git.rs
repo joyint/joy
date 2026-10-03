@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The acceptance sentence of J4a, run: on a machine with
+//! On a machine with
 //! `credential.helper=manager` and NO git on PATH, joy obtains a
 //! credential, and nothing in the run is a git process (forge
 //! connection NG).

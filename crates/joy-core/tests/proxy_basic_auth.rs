@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The acceptance sentence of J4p, run: with a proxy variable set and a
+//! With a proxy variable set and a
 //! proxy that requires Basic, a fetch succeeds, and no proxy password
 //! appears in any log line or error text.
 //!

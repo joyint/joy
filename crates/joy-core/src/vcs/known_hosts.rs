@@ -360,8 +360,7 @@ pub fn line_for(
 /// missing, which is what ssh requires of them. An existing line is
 /// never rewritten and the file is never truncated: joy only ever adds.
 ///
-/// The lock is [`crate::util::file_lock`] (landed by
-/// J4a), held on a lock file of joy's own under the state directory
+/// The lock is [`crate::util::file_lock`], held on a lock file of joy's own under the state directory
 /// rather than on `known_hosts` itself: on Windows the lock is
 /// MANDATORY for the locked range, so locking the file a concurrent
 /// contact is reading would turn a second joy thread's contact into

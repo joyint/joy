@@ -1,12 +1,11 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! `forges.yaml`: the instances a connector knows without a forge CLI
-//!.
+//! `forges.yaml`: the instances a connector knows without a forge CLI.
 //!
 //! Until now a connector claimed a self hosted host only when gh, glab
-//! or tea was already signed in to it, which makes the sign in door of
-//! D2 circular for an enterprise: the person cannot sign in through joy
+//! or tea was already signed in to it, which makes the sign in door
+//! circular for an enterprise: the person cannot sign in through joy
 //! because joy does not claim the host, and joy does not claim the host
 //! because nobody signed in. An operator ships this file with the
 //! workstation image and the circle is cut.
@@ -44,7 +43,7 @@ pub struct Instance {
     /// Where a person reads the repository in a browser.
     #[serde(default)]
     pub web_base: Option<String>,
-    /// The OAuth client registered on this instance (J3 uses it).
+    /// The OAuth client registered on this instance.
     #[serde(default)]
     pub client_id: Option<String>,
     #[serde(default)]
@@ -53,7 +52,7 @@ pub struct Instance {
     pub auth_endpoint: Option<String>,
     #[serde(default)]
     pub token_endpoint: Option<String>,
-    /// joy's one CA escape hatch, Linux only (decision 25).
+    /// joy's one CA escape hatch, Linux only.
     #[serde(default)]
     pub ca_bundle: Option<PathBuf>,
     #[serde(default)]

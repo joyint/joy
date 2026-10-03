@@ -12,7 +12,7 @@
 //! Two rules hold for every call and are why this is one door:
 //!
 //! - a token travels in a header, never in an argument, so it cannot
-//!   appear in a process list (D5, "the token stays out of argv");
+//!   appear in a process list (the token stays out of argv);
 //! - no header value is ever printed, so an error text cannot carry a
 //!   token or a proxy password.
 

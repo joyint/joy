@@ -97,8 +97,8 @@ fn a_known_host_is_accepted_and_nothing_is_written() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), before);
 }
 
-/// The J4h acceptance: a `Background` host refuses with the state J5
-/// defines and prints the line to paste.
+/// A `Background` host refuses with the named
+/// state and prints the line to paste.
 #[test]
 fn a_background_host_refuses_an_unknown_host_and_prints_the_line_to_paste() {
     let dir = tempfile::tempdir().unwrap();
@@ -135,7 +135,7 @@ fn a_background_host_refuses_an_unknown_host_and_prints_the_line_to_paste() {
 }
 
 /// The same refusal as the contact boundary reads it: the state is the
-/// one J5 defined, and the sentence a person sees is joy's, not
+/// named one, and the sentence a person sees is joy's, not
 /// libgit2's "invalid or unknown remote ssh hostkey".
 #[test]
 fn the_refusal_reaches_the_person_as_needs_host_trust_with_joys_own_sentence() {
@@ -179,7 +179,7 @@ fn the_refusal_reaches_the_person_as_needs_host_trust_with_joys_own_sentence() {
         .contains("invalid or unknown remote ssh hostkey"));
 }
 
-/// The J4h acceptance: a changed key is refused in all three host
+/// A changed key is refused in all three host
 /// kinds, with both fingerprints and the file and the line number.
 #[test]
 fn a_changed_key_is_refused_in_every_host_kind() {
@@ -225,7 +225,7 @@ fn a_changed_key_is_refused_in_every_host_kind() {
     clear_trust_prompt();
 }
 
-/// The J4h acceptance: a fresh machine is offered the fingerprint,
+/// A fresh machine is offered the fingerprint,
 /// accepting writes ONE hashed line, and the next run is silent.
 #[test]
 fn an_interactive_host_is_offered_the_fingerprint_and_the_yes_is_written_once() {
@@ -396,7 +396,7 @@ fn a_no_that_the_person_gave_is_a_refusal_and_not_a_write() {
 }
 
 /// The path a person really hits today: nothing in this tree installs a
-/// question yet, because joy-cli's call sites are package J6's and its
+/// question yet, because joy-cli's call sites come later and their
 /// acceptance is that no ssh contact fails without a way to accept. So
 /// an `Interactive` host refuses here, and the rule holds on that
 /// path too: the sentence says why nobody was asked and names the one
@@ -612,8 +612,8 @@ fn a_pin_answers_only_where_no_file_knows_the_host() {
     clear_trust_prompt();
 }
 
-/// The other half of the pin, and the cost the operator took on with
-/// decision 23: a key that is not the pinned one is refused in every
+/// The other half of the pin, and the cost the operator took on
+/// with the pins: a key that is not the pinned one is refused in every
 /// host kind, and the sentence says which joy pinned what, so a real
 /// rotation is told apart from an interception by reading it.
 #[test]
@@ -656,7 +656,7 @@ fn a_pinned_host_that_presents_another_key_names_the_joy_version_and_the_page() 
 /// contact uses and not through a fixture: a `Background` host on a
 /// fresh machine, with an empty known_hosts and no way to ask anybody,
 /// accepts the github.com key GitHub publishes and refuses a different
-/// one. This is the row of section 3 that decision 23 turned from
+/// one. This is the case the pins turned from
 /// partly into yes.
 #[test]
 fn a_background_host_on_a_fresh_machine_accepts_the_pinned_github_key() {
@@ -781,7 +781,7 @@ fn the_x509_branch_decides_nothing_and_names_the_issuer() {
     assert_eq!(x509_note(), Some(X509Note::default()));
 }
 
-/// What package J4p writes into this branch: the state and the
+/// What this branch carries: the state and the
 /// sentence. The branch decides nothing, so the state comes
 /// from the classifier reading the error the operation returned, and
 /// the issuer this branch stashed is what the detail line puts in
@@ -873,7 +873,7 @@ fn the_issuer_this_branch_stashed_reaches_the_tls_untrusted_detail_line() {
     forget_refusal();
 }
 
-/// The J4h acceptance: an https contact goes through the SAME closure.
+/// An https contact goes through the SAME closure.
 /// It needs the network and a real forge, which is why it is ignored by
 /// default; `cargo test -p joy-core --features forge-net -- --ignored`
 /// runs it.
@@ -899,7 +899,7 @@ fn an_https_contact_goes_through_the_same_closure() {
     assert_eq!(take_refusal(), None);
 }
 
-/// The J4h acceptance, against the real github.com: an empty
+/// An empty
 /// known_hosts offers the fingerprint GitHub publishes, accepting
 /// writes ONE hashed line, and the next contact is silent. It needs the
 /// network, so it is ignored by default;

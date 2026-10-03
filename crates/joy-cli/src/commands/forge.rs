@@ -147,8 +147,8 @@ pub fn sign_in_line(host: &str) -> String {
 }
 
 /// What to do about a failed contact, in the CLI's own words: the state
-/// decides, and the three states this door answers name this door
-///. Every other state keeps the classifier's own next
+/// decides, and the three states this door answers name this door.
+/// Every other state keeps the classifier's own next
 /// step, so the vocabulary stays the classifier's and not a second one.
 pub fn action_line(failure: Failure, host: &str) -> Option<String> {
     match failure {
@@ -346,8 +346,8 @@ fn door(host: Option<&str>, login: Option<&str>) -> Result<Door, Refusal> {
                      = help: pass --host <host>",
                 ));
             }
-            // The plugin's `claims` decides whose remote this is
-            //: joy never parses a forge URL itself.
+            // The plugin's `claims` decides whose remote this is:
+            // joy never parses a forge URL itself.
             let claimed = remotes.iter().find(|url| {
                 forge_plugins::FORGE_PLUGINS
                     .iter()
@@ -665,8 +665,8 @@ fn signed_in(host: &str, payload: LoginPayload) -> Result<()> {
     Ok(())
 }
 
-/// Every state other than `signed-in` ends the command with exit 1
-///. In `--json` mode the envelope is printed first and the
+/// Every state other than `signed-in` ends the command with exit 1.
+/// In `--json` mode the envelope is printed first and the
 /// process then exits with the code, exactly as `joy auth status` does.
 fn refused(refusal: Refusal) -> Result<()> {
     let Refusal {

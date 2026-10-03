@@ -9,7 +9,7 @@
 #
 # Since JOY-0298-E4 the release verb speaks REST through the connector's
 # own HTTP client, so the forge boundary is the fake API
-# and gh is only a source of a TOKEN (decision 19). The fake is
+# and gh is only a source of a TOKEN. The fake is
 # STATEFUL: what a PATCH writes, the next GET reports, so idempotence is
 # observed the way the forge would show it.
 
@@ -96,7 +96,7 @@ run the installer"
     start_fake_forge
     point_forge_at_fake github.com github
     : > "$FAKE_FORGE_DIR/release_body"
-    # The machine of J2's acceptance: no gh and no curl exist at all.
+    # The machine of the acceptance: no gh and no curl exist at all.
     # The PATH is built from nothing but joy (with the connector beside
     # it) and the handful of tools this case itself needs, so a gh or a
     # curl on the developer's machine cannot answer for the connector.

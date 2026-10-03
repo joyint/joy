@@ -80,14 +80,14 @@ pub mod clients {
     /// The public client "Joyint Desktop" the operator registered on
     /// github.com on 2026-09-18 (owner: the joyint organisation): device
     /// flow enabled, redirect `http://127.0.0.1`, token expiry off, so no
-    /// refresh token exists (decision 3). A client id is public by
+    /// refresh token exists. A client id is public by
     /// design; the client secret GitHub generates is never used.
     pub const GITHUB_COM: &str = "Ov23liNJt50pUmo28YPy";
 
     /// The public application the operator registered on gitlab.com on
     /// 2026-09-18: Confidential off, redirect `http://127.0.0.1`, scopes
     /// registered as the union `api write_repository` so a device request
-    /// may narrow (decision 28). A GitLab application id is public
+    /// may narrow. A GitLab application id is public
     /// by design.
     pub const GITLAB_COM: &str = "299407d616bd7e050092e60b512a5e8e6c2d35bde91ae612f8e68e9b0dcef1dc";
 
@@ -120,8 +120,7 @@ pub struct Grant {
     pub refresh_token: Option<String>,
     pub expires_in: Option<i64>,
     /// The granted set as the forge wrote it. Gitea's answer has no
-    /// scope field at all, so there the caller stores what it asked for
-    ///.
+    /// scope field at all, so there the caller stores what it asked for.
     pub scope: Option<String>,
 }
 

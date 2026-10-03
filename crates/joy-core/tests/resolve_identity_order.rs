@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! `resolve_identity`'s order after the operator's 2026-09-19 correction
-//! (JOY-02AE-1A of the forge connection NG design) and
+//! (JOY-02AE-1A) and
 //! the operator's addition of 2026-09-27: a delegation session first,
 //! then the person who signed in at this terminal, then git config
 //! (repository before global), then the forge account, and nothing

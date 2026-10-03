@@ -14,9 +14,9 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
-// No `Vcs` and no `contact::Failure` import is left here: J6 retired this
-// file's own stderr classifier in favour of `contact::as_joy_error`, and
-// J11 took the last `user_email()` call off the `Vcs` trait. The
+// No `Vcs` and no `contact::Failure` import is left here: this
+// file's own stderr classifier went in favour of `contact::as_joy_error`, and
+// the last `user_email()` call is off the `Vcs` trait. The
 // test module below imports the `Failure` words it names itself.
 
 #[derive(Args)]
@@ -91,8 +91,8 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// fast-forward / message-union merge), push when the local ref is
 /// ahead.
 ///
-/// The transfer runs through the git2 engine, like every other host's
-///: the CLI used to spawn `git fetch` and `git push` here, which
+/// The transfer runs through the git2 engine, like every other host's:
+/// the CLI used to spawn `git fetch` and `git push` here, which
 /// was the last git process on the chat write path and the one thing a
 /// machine without a git binary could not do. The chat SEMANTICS were
 /// never this file's - they live in `joy_chat_store::chat_ref` and every
@@ -174,8 +174,8 @@ fn sync_ref(root: &std::path::Path) {
 }
 
 /// Which way the refused transfer went. It no longer decides what the
-/// failure MEANS - the engine's classifier reads the direction itself
-///, so the same HTTP status can mean two things there - it
+/// failure MEANS - the engine's classifier reads the direction itself,
+/// so the same HTTP status can mean two things there - it
 /// decides only what this command says did not happen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Way {

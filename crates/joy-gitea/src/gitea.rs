@@ -8,8 +8,8 @@
 //! Gitea (and its fork Forgejo) is SELF-HOSTED software with no
 //! canonical host: any domain can run it, and no instance belongs in
 //! this code. So the connector claims a host only when the person's own
-//! tea configuration names it, when an operator's `forges.yaml` does
-//!, or when the project's own `forge:` override says so.
+//! tea configuration names it, when an operator's `forges.yaml` does,
+//! or when the project's own `forge:` override says so.
 //!
 //! Since JOY-0298-E4 every API call is made in process
 //! over the connector's own HTTP client.
@@ -184,7 +184,7 @@ pub fn required_scopes(body: &str) -> Option<Vec<String>> {
 /// The `token scope=...` list out of the same refusal: what the token
 /// actually holds, which is what `have` carries. Gitea is the
 /// only forge of the three that names it in the refusal itself; until
-/// the connector keeps the granted set beside its own token (J3), this
+/// the connector keeps the granted set beside its own token, this
 /// is the only place the set can be read at all.
 pub fn token_scopes(body: &str) -> Option<Vec<String>> {
     scope_list(body, "token scope=")
@@ -211,7 +211,7 @@ fn scope_list(body: &str, key: &str) -> Option<Vec<String>> {
 
 /// The account's addresses, best effort, from the instance's own API.
 /// Without a credential nothing is asked: an anonymous request cannot
-/// name an account (decision 20).
+/// name an account.
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
     if ctx.token("gitea", host).is_none() {
         return Vec::new();
@@ -491,7 +491,7 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
     }))
 }
 
-// -- creating a repository (decision 17) ---------------------------------
+// -- creating a repository ---------------------------------
 
 /// The CREATE-REPOSITORY answer. `POST /user/repos` is checked twice by
 /// Gitea, by the /user group and by the route, which is why the scope
@@ -502,7 +502,7 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
 /// beside the token in the same entry", and Gitea has no endpoint that
 /// names the set of the token in use (`GET /user` does not, and
 /// `/users/{u}/tokens` wants basic auth, not a token). Until the
-/// connector keeps its own entry (J3), the set is unknown here, and an
+/// connector keeps its own entry, the set is unknown here, and an
 /// unknown set is never reported as a missing one. What the instance
 /// refuses is classified instead, from the two lists it writes into the
 /// refusal itself, so a scope problem is still never `denied`.
@@ -514,7 +514,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
         return json!({ "state": "needs_sign_in", "host": host });
     };
     // The local pre check. The family's API does not
-    // introspect a token, so before J3 the only way to learn the set
+    // introspect a token, so earlier the only way to learn the set
     // was to be refused by it; now the set joy REQUESTED is stored
     // beside the token and answers the question for free.
     if let Some(refused) =

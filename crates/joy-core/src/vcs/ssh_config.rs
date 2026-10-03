@@ -26,8 +26,8 @@ use std::sync::{Arc, Mutex};
 
 use ssh2_config::{ParseRule, SshConfig};
 
-/// What `StrictHostKeyChecking` says about a host joy has never seen
-///. `ask` is ssh's own default.
+/// What `StrictHostKeyChecking` says about a host joy has never seen.
+/// `ask` is ssh's own default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StrictHostKeys {
     /// Refuse an unknown host without asking.

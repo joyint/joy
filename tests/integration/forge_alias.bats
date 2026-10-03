@@ -5,7 +5,7 @@
 # under their PRIMARY address keeps working when the clone's git config
 # carries GitHub's noreply alias.
 #
-# Since package J11 that git config is a PREFILL and nothing more:
+# That git config is a PREFILL and nothing more:
 # it is the address joy OFFERS on a machine that has not been told who
 # acts. So every case here is a CLONE, and `forget_this_device` is what
 # makes it one: the project travels, the device's pin and sessions do
@@ -14,7 +14,7 @@
 # ever be looked at. joy-core resolves via the GitHub
 # connector; the connector asks the forge itself over HTTP since
 # JOY-0298-E4. The forge boundary (the one thing tests cannot have for
-# real) is two MARKED STUBS: gh as a source of a TOKEN (decision 19),
+# real) is two MARKED STUBS: gh as a source of a TOKEN,
 # and the fake forge API on the loopback interface. Everything
 # else is the real product path: real joy, real connector, real
 # project.
@@ -96,7 +96,7 @@ setup_project_with_alice() {
 
     # so nobody acts here, and the write is refused as well. The refused
     # login left no session and no pin behind, and git config names
-    # nobody since J11, so there is exactly ONE sentence a write can
+    # nobody, so there is exactly ONE sentence a write can
     # answer with here: name yourself. Asserting it by name is what
     # keeps a regression in that sentence from passing as a refusal.
     run joy add idea "should be refused"
@@ -346,7 +346,7 @@ STUB
 # caller was holding (JOY-0253-8A): --user must carry through to the
 # lookup, or status reports unauthenticated right after a good login.
 # The alias in the clone's git config is the prefill `--user` overrides,
-# which is the one job git config has left since J11.
+# which is the one job git config has left.
 @test "joy auth --user carries through to the session lookup" {
     setup_project_with_alice
     install_gh_stub

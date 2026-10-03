@@ -105,7 +105,7 @@ fn a_background_or_delegated_host_refuses_by_name() {
     }
 }
 
-/// The acceptance of J9: `joy init --user a@b.c` in a repository with no
+/// `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols that member
 /// without reading git config. The enrolment here is the OTP redemption,
 /// the one joy-core owns; the CLI's `joy auth init` path is driven in

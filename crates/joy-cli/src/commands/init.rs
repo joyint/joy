@@ -193,8 +193,8 @@ pub fn run(args: InitArgs) -> Result<()> {
             // bootstrap one (`joy project member add` attests with the caller's
             // key). Register the founder now that an identity is available
             // (JOY-01CA-AF).
-            // The repair path asks the same question the fresh one does
-            //: a person at a terminal is asked for the address
+            // The repair path asks the same question the fresh one does:
+            // a person at a terminal is asked for the address
             // instead of being sent to `git config`.
             let mut ask = host
                 .may_ask()

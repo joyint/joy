@@ -234,7 +234,7 @@ pub fn cached_members_zone_key(
 ///
 /// An attestation never signs the opaque id (the id is this project's own
 /// invention and says nothing about the person), so the id cannot answer
-/// the binding check. Before package J11 the address arrived with the
+/// the binding check. Earlier the address arrived with the
 /// caller, because `joy auth` resolved its member from `git config
 /// user.email`. Now it arrives as the member this device pinned, which IS
 /// the opaque id, and every returning member of an anonymous project was
@@ -340,7 +340,7 @@ pub fn relock_unlocked_files(
     seed: &[u8; 32],
 ) -> usize {
     // By the at-rest KEY. The lookup was by address, and the caller has
-    // handed it the member this device pinned since package J11,
+    // handed it the member this device pinned,
     // which in an anonymous project is an opaque id that no address
     // matcher resolves: the member was not found, and a login that says
     // it re-locks quietly re-locked nothing.

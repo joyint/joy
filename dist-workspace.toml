@@ -51,7 +51,7 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 #
 # This key fills the archive and nothing else. An install has a prefix,
 # and writing the file to `<prefix>/share/joy/host-keys.json` belongs to
-# the hand written installers of package W1, whose acceptance now names
+# the hand written installers, whose acceptance now names
 # it. The installers dist generates from this file copy binaries only
 # and have no setting for a data file, so an install through them, and
 # every `joy update`, which runs them, carries no pin file; the rule names

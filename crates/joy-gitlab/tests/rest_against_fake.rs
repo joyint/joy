@@ -3,7 +3,7 @@
 
 //! The GitLab connector against an in process fake API (JOY-0298-E4).
 //!
-//! The case that carries J2's acceptance is the last one: a token with
+//! The case that carries the acceptance is the last one: a token with
 //! the read write set (`read_api write_repository`) answers `store`,
 //! `files` and `repositories`, and answers `create-repository` with
 //! `scope_missing` naming `api`. That is the resolution of the v2
@@ -66,7 +66,7 @@ fn identity_asks_the_instance_and_not_gitlab_com() {
     );
 }
 
-/// J2's acceptance, in one case: the read write set reads everything
+/// The read write set reads everything
 /// and is told, locally, that creating needs `api`.
 #[test]
 fn the_read_write_set_reads_everything_and_cannot_create() {

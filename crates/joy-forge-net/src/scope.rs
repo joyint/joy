@@ -105,8 +105,8 @@ pub fn missing(forge: &str, group: Group, granted: &[String]) -> Vec<String> {
 
 /// What `create-repository` needs, which on GitHub depends on the
 /// repository's visibility: "public_repo or repo scope to create a
-/// public repository, and repo scope to create a private repository"
-///. Everywhere else the visibility makes no difference.
+/// public repository, and repo scope to create a private repository".
+/// Everywhere else the visibility makes no difference.
 pub fn missing_for_create(forge: &str, private: bool, granted: &[String]) -> Vec<String> {
     if forge == "github" && private {
         let has_repo = granted.iter().any(|scope| scope == "repo");

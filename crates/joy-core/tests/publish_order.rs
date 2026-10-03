@@ -32,7 +32,7 @@
 //! <dependent>` then asks crates.io for a version that was never
 //! uploaded. That was true of joy-process, joy-forge-net and
 //! joy-telemetry, and none of them may be added to that list from
-//! here, because no package of the forge connection NG plan may edit
+//! here, because that work may not edit
 //! .joy. They inherit instead: `version.workspace = true` against the
 //! `[workspace.package]` version of the root manifest, which is in the
 //! list, and the two joy-core pins they carry inherit from

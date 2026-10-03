@@ -191,8 +191,8 @@ fn say_contact_aside(root: &Path, headline: &str, tail: &str, error: &JoyError) 
     }
     let failure = error.failure();
     let contact = error.contact();
-    // The host joy really contacted, so the sentence names no other
-    //. Empty when there is none, and then it names none.
+    // The host joy really contacted, so the sentence names no other.
+    // Empty when there is none, and then it names none.
     let host = crate::vcs::forge::remote_url(root)
         .map(|url| crate::vcs::contact::host_of(&url))
         .unwrap_or_default();
@@ -235,7 +235,7 @@ fn acting_signature(
 ///
 /// `identity` is usually already at rest, because
 /// [`crate::identity::Identity::log_user`] writes the member's id. The
-/// auth and crypt paths hand over a raw address instead (J11 moves them),
+/// auth and crypt paths hand over a raw address instead,
 /// and in an anonymous project that address may not be committed, in the
 /// signature nor in the message. A member the project cannot resolve is
 /// left as it is: the signature gate refuses such a member before any

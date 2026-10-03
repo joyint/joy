@@ -176,7 +176,7 @@ fn now_rfc3339() -> String {
 /// spends at most one refresh per lock holder, exactly as an ordinary
 /// expiry does.
 ///
-/// The order matters and is the design's: gh, glab and tea are read
+/// The order matters: gh, glab and tea are read
 /// BEFORE the lock is taken and never while it is held, because flock
 /// belongs to the open file description and a child that unlocks takes
 /// the parent's lock with it. Nothing here spawns anything.
@@ -319,8 +319,8 @@ fn fresh(
         // failure, or an answer that was not OAuth at all (a 5xx error
         // page) - is not a reason to try again in a loop, and NEVER a
         // reason to mark the record: ten thousand attempts against one
-        // dead refresh token got a whole OAuth app throttled once
-        //, and R3 says our own failure must never read as the
+        // dead refresh token got a whole OAuth app throttled once,
+        // and R3 says our own failure must never read as the
         // person's turn to sign in.
         //
         // Under `renew` specifically, that failure is answered rather
@@ -1421,7 +1421,7 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
                 "source": source.as_str(),
                 "login": record.login,
             }),
-            // The entry is still there. J3's acceptance is "`logout`
+            // The entry is still there. The acceptance is "`logout`
             // removes the entry", so a state directory that could not
             // be written is a refusal and never a reported success.
             Err(message) => {

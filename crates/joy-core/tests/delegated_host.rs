@@ -51,7 +51,7 @@ fn a_live_session_makes_the_host_delegated_even_on_a_terminal() {
     assert_eq!(HostKind::detect(false), HostKind::Background);
 
     // A live delegation session: the agent owns a terminal and is still
-    // an agent. This is the case J9's refusal rule is written for, and it
+    // an agent. This is the case the refusal rule is written for, and it
     // is the one the value alone cannot prove.
     std::env::set_var(
         "JOY_SESSION",

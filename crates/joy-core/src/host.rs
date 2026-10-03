@@ -60,8 +60,8 @@ impl HostKind {
         matches!(self, HostKind::Interactive)
     }
 
-    /// Whether joy may raise a question a person has to answer
-    ///. The prompt rule of the engine is this one line,
+    /// Whether joy may raise a question a person has to answer.
+    /// The prompt rule of the engine is this one line,
     /// and it is [`HostKind::may_ask`] under the name the rule uses: joy's
     /// own passphrase question, its host key question and the helper
     /// runner's interactive bound all hang off it.

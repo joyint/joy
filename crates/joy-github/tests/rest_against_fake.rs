@@ -7,7 +7,7 @@
 //! connector is pointed at it through `forges.yaml`'s `api_base`, which
 //! is the same road an operator's GitHub Enterprise Server takes.
 //!
-//! What every case here proves is one of J2's acceptance criteria: the
+//! What every case here proves is one acceptance criterion: the
 //! API path has no curl and no gh in it, a GHES host asks its OWN
 //! `/api/v3`, the token travels in a header, and the release verb runs
 //! over REST end to end.
@@ -43,7 +43,7 @@ fn remote(host: &str) -> Target {
     Target::Remote(format!("https://{host}/acme/demo.git"))
 }
 
-/// The acceptance of J2: `identity` answers on a machine without curl,
+/// `identity` answers on a machine without curl,
 /// and a GHES host asks its own `/api/v3/user/emails`, never
 /// api.github.com.
 #[test]
@@ -65,7 +65,7 @@ fn identity_reads_the_instances_own_addresses() {
     let calls = fake.calls();
     assert_eq!(calls.len(), 1, "one request and no more: {calls:?}");
     assert_eq!(calls[0].path, "/user/emails");
-    // the token is a header, never an argument (D5)
+    // the token is a header, never an argument
     assert_eq!(
         calls[0].authorization(),
         Some(format!("Bearer {TOKEN}").as_str())
@@ -348,7 +348,7 @@ fn create_repository_answers_scope_missing_before_it_spends_a_request() {
     );
 }
 
-/// The J2 acceptance in its own right: a release is published over REST,
+/// A release is published over REST,
 /// with no gh and no curl anywhere in the path.
 #[test]
 fn release_creates_the_release_over_rest() {
@@ -471,7 +471,7 @@ fn release_reports_a_refusal_instead_of_degrading() {
 }
 
 /// The cheap half: the set the forge granted is stored beside
-/// the token (J3), so a verb that set cannot carry is refused locally,
+/// the token, so a verb that set cannot carry is refused locally,
 /// without a single request, and never reported as `denied`.
 #[test]
 fn a_stored_public_only_set_refuses_a_private_repository_without_a_request() {

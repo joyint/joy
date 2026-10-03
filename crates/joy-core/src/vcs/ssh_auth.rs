@@ -330,8 +330,7 @@ pub fn chain_for(
     // reaches both through its own win32 backend, which takes no
     // socket path at all. Leaving the agent out there would empty the
     // whole chain on the very machines where the key file step is
-    // empty too, because WinCNG reads no openssh-key-v1 file
-    //.
+    // empty too, because WinCNG reads no openssh-key-v1 file.
     let mut agent_blind = false;
     if agent.usable() {
         candidates.push(SshCandidate::Agent);

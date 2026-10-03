@@ -179,7 +179,7 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
 /// whatever its capability list says, and a human without `manage` is
 /// refused too.
 ///
-/// Identity and rights are two questions. J11 answered the first
+/// Identity and rights are two questions. Identity resolution answered the first
 /// one from the session and the device pin, which is why this one has to
 /// be asked out loud here: before it, a machine with no git config
 /// refused these verbs by accident, with git2's "user.email is empty",

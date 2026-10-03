@@ -3,7 +3,7 @@
 
 //! The contact budget (JOY-0295-36), measured in HTTP REQUESTS.
 //!
-//! The acceptance criterion of package J5 is written in requests per
+//! The acceptance criterion is written in requests per
 //! host, not in contacts, because a contact is not a unit: the first
 //! request of every new connection to a private repository carries no
 //! `Authorization` header and is answered 401, and the credential
@@ -321,8 +321,8 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
 
     // The other half of the credential memory the test above reads:
     // a token that really went over the wire IS remembered. The
-    // resolver hands every candidate over inside its own chain
-    //, so the note has to sit on each of the chain's
+    // resolver hands every candidate over inside its own chain,
+    // so the note has to sit on each of the chain's
     // hand-over points; the sibling test proves the negative case, and
     // without this one an engine that noted nothing at all would pass
     // both.
@@ -381,7 +381,7 @@ fn one_poll_tick_makes_one_contact_for_two_refs() {
     resolver::set_state_file(None);
 }
 
-/// J5's acceptance, measured from OUTSIDE the crate with the public
+/// The acceptance, measured from OUTSIDE the crate with the public
 /// API: "after a 429 the next contact to that host waits at least twice
 /// the gap". The next one, not the one after it: the slot for the next
 /// contact is reserved while the failing contact is still running, so

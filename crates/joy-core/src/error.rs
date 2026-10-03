@@ -8,8 +8,8 @@ pub enum JoyError {
     #[error("project already initialized at {0}")]
     AlreadyInitialized(PathBuf),
 
-    /// No founding address and nobody to ask for one: the named refusal of
-    /// the forge connection NG design. A host that CAN ask a person
+    /// No founding address and nobody to ask for one: the named refusal.
+    /// A host that CAN ask a person
     /// asks instead of raising this.
     #[error("this project does not know who you are; run joy init --user <address>")]
     NoFounderIdentity,

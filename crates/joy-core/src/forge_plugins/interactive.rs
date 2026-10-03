@@ -7,7 +7,7 @@
 //! They live in a module of their own because the rule compiles them out
 //! of every build that must not perform them. The platform sets
 //! `Background` everywhere and its binary is not supposed to carry
-//! these at all: package J10 puts `interactive = []` into joy-core's
+//! these at all: `interactive = []` goes into joy-core's
 //! manifest, marks this module `#[cfg(feature = "interactive")]` and
 //! adds the CI guard that keeps the platform's manifest from drifting
 //! back. Nothing outside this file has to move when it does, which is

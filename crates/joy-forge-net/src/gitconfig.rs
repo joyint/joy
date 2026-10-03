@@ -11,8 +11,7 @@
 //! value wins), for these keys only:
 //!
 //! - `http.proxy` and `http.<url>.proxy`;
-//! - `http.sslCAInfo` and `http.sslCAPath`, honoured on Linux only
-//!   (decision 25).
+//! - `http.sslCAInfo` and `http.sslCAPath`, honoured on Linux only.
 //!
 //! Everything else git offers is deliberately not read, and the rule lists
 //! it so nobody expects it.

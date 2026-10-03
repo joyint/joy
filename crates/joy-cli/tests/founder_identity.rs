@@ -57,7 +57,7 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// The acceptance of J9: `joy init --user a@b.c` in a repository with no
+/// `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols `a@b.c`
 /// without reading git config, given the same `--user` explicitly. A
 /// later addition to the operator's 2026-09-19 correction (JOY-02AE-1A)
@@ -200,7 +200,7 @@ fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     assert!(!root.join(".joy").exists());
 }
 
-/// The acceptance of J9 in the product: a commit joy writes in an
+/// A commit joy writes in an
 /// anonymous mode project carries the opaque `m-<hex>` id in BOTH
 /// signature fields. The git config of this checkout names a person by
 /// name and address, and none of it may reach the commit (ADR-042).

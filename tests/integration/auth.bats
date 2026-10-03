@@ -28,8 +28,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 
 @test "joy auth init rejects unregistered member" {
     joy init --name "Auth Test"
-    # Naming yourself is how a person says who they are since package
-    # J11; git config is only what joy OFFERS them. A stranger who
+    # Naming yourself is how a person says who they are;
+    # git config is only what joy OFFERS them. A stranger who
     # names themselves is told the project does not know them.
     run joy auth init --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]

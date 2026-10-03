@@ -780,8 +780,8 @@ mod tests {
         clear_trust_prompt();
     }
 
-    /// What a person reads before joy appends a line to known_hosts
-    ///: the host with its port, the fingerprint in the spelling
+    /// What a person reads before joy appends a line to known_hosts:
+    /// the host with its port, the fingerprint in the spelling
     /// the forges publish, the published key when a pin knows one, the
     /// fact that this host is known under other key types, and the file
     /// that would change.

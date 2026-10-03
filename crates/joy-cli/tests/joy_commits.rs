@@ -204,7 +204,7 @@ fn a_joy_commit_leaves_the_persons_staged_work_where_it_was() {
     assert!(index.get_path(Path::new("src.rs"), 0).is_some());
 }
 
-/// J11's acceptance was that removing ONLY `user.email` and keeping
+/// The earlier acceptance was that removing ONLY `user.email` and keeping
 /// `user.name` changed nothing, because the member this device pinned
 /// backstopped the address once it was known. The operator's 2026-09-19
 /// correction (JOY-02AE-1A) retires that backstop: `resolve_identity`

@@ -212,7 +212,7 @@ fn string_list(answer: &Answer, key: &str) -> Option<Vec<String>> {
 
 /// The account's addresses, best effort, from the INSTANCE's own API.
 /// Without a credential nothing is asked: an anonymous request cannot
-/// name an account (decision 20).
+/// name an account.
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
     if ctx.token("gitlab", host).is_none() {
         return Vec::new();
@@ -563,7 +563,7 @@ fn repository_row(entry: &Value) -> Value {
     })
 }
 
-// -- creating a repository (decision 17) ---------------------------------
+// -- creating a repository ---------------------------------
 
 /// The CREATE-REPOSITORY answer.
 ///
@@ -578,7 +578,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("gitlab", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
-    // The local pre check, cheapest first: since J3 the set
+    // The local pre check, cheapest first: the set
     // the forge granted is stored beside the token, so the two requests
     // `granted_scopes` costs are spent only for a credential joy did
     // not write itself.

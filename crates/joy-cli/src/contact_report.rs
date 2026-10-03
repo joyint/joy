@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! ONE failure vocabulary for every CLI command that contacts a forge
-//!.
+//! ONE failure vocabulary for every CLI command that contacts a forge.
 //!
 //! Before this, each command classified its own failure from the text a
 //! git process had printed: `joy chat` had `classify_sync_error` with

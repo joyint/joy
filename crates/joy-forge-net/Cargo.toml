@@ -19,9 +19,9 @@ dist = false
 
 [dependencies]
 joy-process = { workspace = true }
-# The cross process advisory file lock. It landed ONCE, with
-# J4a, as `joy_core::util::file_lock`, and the design says so: "no
-# package after J4a carries a lock dependency of its own for locking".
+# The cross process advisory file lock. It exists ONCE,
+# as `joy_core::util::file_lock`, and nothing else carries a lock
+# dependency of its own for locking.
 # The refresh lock of `auth::lock` takes that primitive, and
 # `joy_core::auth::session` says where a person's app state lives, which
 # is where the lock files and the login pin belong.

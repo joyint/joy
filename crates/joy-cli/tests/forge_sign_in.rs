@@ -3,14 +3,14 @@
 
 //! The sign in verbs, driven as PROCESSES (JOY-029B-B0).
 //!
-//! The rest of J3's proof runs inside the connector crate; two things
+//! The rest of the proof runs inside the connector crate; two things
 //! cannot be proved there and are proved here, with the shipped
 //! `joy-forge` binary:
 //!
 //! - **two processes refreshing one entry at once**. Two
 //!   threads contend on the same flock, but "two joy processes" is what
 //!   the acceptance says, so two joy processes is what runs.
-//! - **`ps` during a `token-store` shows no token** (D5). The
+//! - **`ps` during a `token-store` shows no token**. The
 //!   token goes in on stdin; here the child's own `/proc/<pid>/cmdline`
 //!   is read while it runs, which is exactly what `ps` reads.
 //!
@@ -124,7 +124,7 @@ impl Sandbox {
     /// Put a fake `gh` on this sandbox's PATH, with a `hosts.yml` that
     /// names these logins, the active one first.
     ///
-    /// Spawning a forge CLI by name is what decision 19 asks for, so a
+    /// Spawning a forge CLI by name is the rule, so a
     /// test of that path has to have one to spawn. This one prints a
     /// token per `--user` and nothing else, exactly as
     /// `gh auth token` does.
@@ -633,7 +633,7 @@ fn a_delegated_login_is_refused_by_the_connector_itself() {
     assert!(fake.calls().is_empty(), "nothing was contacted");
 }
 
-/// J3's acceptance, through the shipped binary: `login` prints the
+/// `login` prints the
 /// verification line within fifteen seconds and the CALLER SEES IT
 /// BEFORE THE PROCESS EXITS. The line is read off the child's stdout
 /// while it is still polling the forge.
@@ -704,10 +704,10 @@ fn a_login_prints_its_verification_line_while_it_is_still_running() {
     let _ = child.wait();
 }
 
-/// J3's acceptance: on a machine with a signed in gh, `token` answers
+/// On a machine with a signed in gh, `token` answers
 /// `"source":"gh"` with zero clicks and zero dialogs. There is no
 /// credential of joy's own here, and no credential store is reachable
-/// either, so the only way to the token is spawning gh (decision 19).
+/// either, so the only way to the token is spawning gh.
 #[test]
 fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
     let fake = FakeForge::start(|_| Reply::not_found());
@@ -900,8 +900,8 @@ fn a_delegated_session_never_refreshes_the_credential_it_inherited() {
     );
 
     // the platform's own hand over is untouched by all of this: the
-    // variable the CALLER named is the whole answer where it is given
-    //, expired entry or not, and it costs no request
+    // variable the CALLER named is the whole answer where it is given,
+    // expired entry or not, and it costs no request
     let handed = sandbox
         .connector()
         .env("JOY_TEST_DELEGATED_TOKEN", "gho_handed_to_the_agent")
@@ -1001,7 +1001,7 @@ fn the_for_flag_decides_which_login_the_probe_accepts() {
     assert!(String::from_utf8_lossy(&wrong.stderr).contains("read, write, create or release"));
 }
 
-/// J3's acceptance: a host with TWO gh accounts answers `token` for a
+/// A host with TWO gh accounts answers `token` for a
 /// repository only the second account can reach, and reports
 /// `"chose_by":"probe"`.
 ///

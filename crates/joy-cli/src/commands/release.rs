@@ -323,7 +323,7 @@ fn record(args: RecordArgs) -> Result<()> {
     let message = format!("bump to {version} [no-item]");
     // A person ran this command, so the item rule REFUSES here rather
     // than warning. Two things about that are worth saying
-    // plainly, because the acceptance of this package leans on them.
+    // plainly, because the acceptance leans on them.
     // This is the ONLY refusing call site in the product, and the
     // message it validates is joy's own and carries the `[no-item]`
     // bypass the rule names, so it cannot fire as the message stands:
@@ -386,8 +386,8 @@ fn joy_owned_paths(root: &std::path::Path) -> Vec<String> {
 /// A line `joy release publish` says on its way: the forge it resolved,
 /// the push it is about to make, the release it created.
 ///
-/// In `--json` mode stdout carries exactly ONE object and nothing else
-///, and this command's one object is the refusal envelope of
+/// In `--json` mode stdout carries exactly ONE object and nothing else,
+/// and this command's one object is the refusal envelope of
 /// [`crate::contact_report::Refusal::fail`]. A progress line on stdout
 /// beside it is not slightly wrong, it is unparsable: the agent reads
 /// `Pushing to origin...{"version":1,...}`. So in that mode the

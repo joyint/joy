@@ -1,10 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The connector runner against real child processes (JOY-0293-12,
-//! package J1 of the forge connection NG design).
+//! The connector runner against real child processes (JOY-0293-12).
 //!
-//! Every case here is one of J1's acceptance sentences, and each needs a
+//! Every case here is one acceptance sentence, and each needs a
 //! process: a 1 MB answer, a connector that refuses with text on stderr,
 //! a connector that never answers and leaves a grandchild behind, a
 //! protocol 1 binary beside a protocol 2 one, and an event stream a
@@ -187,7 +186,7 @@ fn argv_lines(path: &Path) -> Vec<String> {
 // Resolution and the handshake
 // ---------------------------------------------------------------------
 
-/// J1 acceptance: a protocol 1 `joy-github` in `~/.cargo/bin` is
+/// A protocol 1 `joy-github` in `~/.cargo/bin` is
 /// reported as protocol 1, and a protocol 2 binary named `joy-forge` in
 /// the same directory wins the name order.
 #[test]
@@ -228,7 +227,7 @@ fn joy_forge_wins_the_name_order_over_a_stale_legacy_binary() {
     assert_eq!(candidates[1].0, cargo_bin.path().join("joy-github"));
 }
 
-/// J1 acceptance: a binary placed next to the CALLING executable is
+/// A binary placed next to the CALLING executable is
 /// found on macOS and Linux without PATH. This test binary is the
 /// caller, so the directory is the one its own executable sits in, and
 /// no directory is registered and no test hook is set.
@@ -397,7 +396,7 @@ fn a_protocol_one_connector_answers_the_old_verbs_and_refuses_the_new_ones() {
 // The runner
 // ---------------------------------------------------------------------
 
-/// J1 acceptance: a connector answer of 1 MB is returned intact instead
+/// A connector answer of 1 MB is returned intact instead
 /// of timing out. Reading stdout only after the child exits deadlocks at
 /// the pipe buffer (64 KiB on Linux), which is well under what a
 /// repository listing produces.
@@ -429,7 +428,7 @@ fn a_one_megabyte_answer_comes_back_whole() {
     }
 }
 
-/// J1 acceptance: a connector that exits 3 with text on stderr produces
+/// A connector that exits 3 with text on stderr produces
 /// an error naming the connector and the text, not `None`. Stderr is
 /// piped and captured now, so the message survives a host with no
 /// terminal.
@@ -754,7 +753,7 @@ fn known_false_is_not_a_failure_and_the_failures_differ() {
     assert!(forge_plugins::identity(github(), None, &ctx).is_some());
 }
 
-/// The old promise, kept (D5 and package P1a): best effort is not the
+/// The old promise, kept: best effort is not the
 /// same as silent. Every failed call leaves one warn line naming the
 /// connector and the verb, because that pair is what a reader needs to
 /// act on.
@@ -812,7 +811,7 @@ fn every_failed_call_is_warned_with_the_connector_and_the_verb() {
     assert!(unstartable.contains("claims"), "{unstartable}");
 }
 
-/// P1a's acceptance sentence: "a deliberately removed plugin produces a
+/// "a deliberately removed plugin produces a
 /// warn log line and a failing startup probe instead of a silent
 /// unknown". The two states that reach no process, `plugin_missing` and
 /// `plugin_outdated`, are the ones a caller turns into `false` and

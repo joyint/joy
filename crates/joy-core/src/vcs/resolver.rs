@@ -157,7 +157,7 @@ impl HostMemory {
     }
 
     /// The sentence a surface may show for "which credential did joy
-    /// use here" (acceptance of J4b: the twin contact "says which
+    /// use here" (the twin contact "says which
     /// credential it used"). It names no secret, only its source.
     pub fn sentence(&self, host: &str) -> String {
         let credential = match self.credential.as_deref() {
@@ -221,8 +221,8 @@ impl TokenProof {
 /// One host's answer to "has a credential ever authenticated here".
 ///
 /// It is the difference between a 404 that means "no such repository"
-/// and a 404 that means "your organisation has not approved Joy"
-///, and it has to survive the process: a one shot CLI command
+/// and a 404 that means "your organisation has not approved Joy",
+/// and it has to survive the process: a one shot CLI command
 /// makes exactly ONE contact, so a fact that only a second contact of
 /// the same process can establish is never established at all
 /// (JOY-02A9-48).
@@ -255,8 +255,8 @@ pub fn set_state_file(path: Option<PathBuf>) {
     *STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()) = path;
 }
 
-/// Where the transport memory lives: `<app_state_dir>/forge-state.json`
-///, or wherever [`set_state_file`] pointed it.
+/// Where the transport memory lives: `<app_state_dir>/forge-state.json`,
+/// or wherever [`set_state_file`] pointed it.
 pub fn state_file() -> Option<PathBuf> {
     if let Some(override_path) = STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         return Some(override_path);
@@ -314,8 +314,8 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// The lock beside the state file: two joy processes on one machine
 /// read, change and write the same rows, and the loser of that race
-/// would drop the winner's row. The primitive is J4a's
-/// ([`crate::util::file_lock`]); a lock that cannot be had costs the
+/// would drop the winner's row. The primitive is
+/// [`crate::util::file_lock`]; a lock that cannot be had costs the
 /// row, never the operation.
 fn with_state<T>(work: impl FnOnce(&Path, &mut StateFile) -> T) -> Option<T> {
     let path = state_file()?;
@@ -1116,8 +1116,8 @@ fn ask_connector(
     let token = match answer {
         Ok(answer) if answer.known => {
             ttl = token_ttl(answer.expires_at.as_deref());
-            // The connector validated this token where it says so
-            //: a token out of its own vault was checked with
+            // The connector validated this token where it says so:
+            // a token out of its own vault was checked with
             // `identity` before it went in, and a login the probe of
             // The rule chose was chosen by asking the forge with it. That
             // is "this token authenticated", and the 403 and 404 rows

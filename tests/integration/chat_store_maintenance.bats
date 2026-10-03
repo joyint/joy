@@ -79,9 +79,9 @@ packs() {
     # the spawn that used to stand here, in every shape it could take
     run -1 grep -q -- "gc" "$GIT_CALLS"
     # NOTHING on the chat write path spawns git any more: not the store,
-    # not the maintenance, not the delivery push. J7 had to leave the
+    # not the maintenance, not the delivery push. The store work had to leave the
     # push behind because a transport needs joy-core's `forge-net`
-    # feature and joy-cli did not enable it; J6 enables it and
+    # feature and joy-cli did not enable it; the CLI now enables it and
     # moves the transfer onto the engine, so the count this case
     # pins is ZERO. The `remote get-url` probe that stood beside it is
     # git2 too.

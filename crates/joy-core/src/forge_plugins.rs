@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! THE forge-connector registry, its resolution contract and its runner
-//! (JOY-0293-12, package J1 of the forge connection NG design; the
+//! (JOY-0293-12; the
 //! original registry was JOY-0252-1A, epic JOY-0251-AA).
 //!
 //! All forge knowledge (host names, alias address formats, API access)
@@ -792,8 +792,8 @@ pub struct PluginOutcome {
     pub wait_error: Option<String>,
 }
 
-/// A stop signal shared between a caller and a running connector
-///. Cancelling kills the child's whole process group.
+/// A stop signal shared between a caller and a running connector.
+/// Cancelling kills the child's whole process group.
 #[derive(Debug, Clone, Default)]
 pub struct CancelToken(Arc<AtomicBool>);
 
@@ -1594,7 +1594,7 @@ fn refuse_outdated(
 }
 
 /// The warn line for the two failures that happen BEFORE any process
-/// exists (D5, package P1a: "silent failure is fixed at the source").
+/// exists: silent failure is fixed at the source.
 ///
 /// [`run_path`] logs everything a running connector can do to a call:
 /// it could not be started, it refused, it did not answer in time. The
@@ -1672,9 +1672,8 @@ fn note_of(stderr: &str) -> Option<String> {
     Some(format!("{}...", &text[..cut]))
 }
 
-/// Ask one verb and read its one JSON answer, with every failure named
-///. This is the door every verb of the catalogue goes through,
-/// the ones J3 adds included.
+/// Ask one verb and read its one JSON answer, with every failure named.
+/// This is the door every verb of the catalogue goes through.
 pub fn query<T: serde::de::DeserializeOwned>(
     spec: &ForgePluginSpec,
     verb: &str,
@@ -2217,8 +2216,8 @@ pub struct ForgeToken {
 /// words are the connector's; this is the list joy may send.
 ///
 /// It lives here and not in [`interactive`] because two verbs take it:
-/// `login`, which is compiled out of the builds that must not sign in
-///, and `token`, which is a read verb and stays everywhere.
+/// `login`, which is compiled out of the builds that must not sign in,
+/// and `token`, which is a read verb and stays everywhere.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Access {
     Read,
@@ -2434,7 +2433,7 @@ mod tests {
         assert_eq!(parse(r#"{"state":"unknown"}"#), StoreAnswer::Unknown);
     }
 
-    /// The handshake object, exactly as the design writes it.
+    /// The handshake object, field by field.
     #[test]
     fn the_version_answer_parses() {
         let answer: VersionAnswer = serde_json::from_str(
@@ -2502,8 +2501,8 @@ mod tests {
         assert!(silent.to_string().ends_with("was stopped"), "{silent}");
     }
 
-    /// Every call carries the host kind and the login pin
-    ///, and the combined binary carries its forge id first.
+    /// Every call carries the host kind and the login pin,
+    /// and the combined binary carries its forge id first.
     #[test]
     fn a_protocol_two_call_carries_the_host_kind_and_the_pin() {
         let resolved = resolved_stub("/opt/joy/joy-forge", 2);

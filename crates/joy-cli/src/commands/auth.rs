@@ -1026,7 +1026,7 @@ fn run_token_add(args: TokenAddArgs, user_flag: Option<&str>) -> Result<()> {
 /// `operator` names the issuing human in EITHER of the two forms a
 /// caller can hold: an address a person typed (`joy auth token add
 /// --user`), or their at-rest member key, which is what identity
-/// resolution answers with since package J11 and what `joy
+/// resolution answers with and what `joy
 /// project member add --with-token` has always passed. It is not an
 /// e-mail: in an anonymous project the key is the opaque `m-<hex>` id
 /// (ADR-042). The first thing this function does is resolve it to the

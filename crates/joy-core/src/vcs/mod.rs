@@ -183,8 +183,8 @@ impl GitVcs {
     /// will NOT do is write a path an external content filter governs:
     /// libgit2 runs no filter program, so a changed `filter=lfs` asset
     /// would be staged as its own bytes where the pointer belongs, and
-    /// [`forge::stage_all`] refuses such a path by name instead
-    ///. The desktop's release record is the caller that made
+    /// [`forge::stage_all`] refuses such a path by name instead.
+    /// The desktop's release record is the caller that made
     /// this necessary here and not only in the sweeping commit verbs.
     pub fn add_all(&self, root: &Path) -> Result<(), JoyError> {
         forge::stage_all(root).map_err(|e| JoyError::Git(format!("git add -A failed: {e}")))

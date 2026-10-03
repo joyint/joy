@@ -46,7 +46,7 @@ fn env_with(https: Option<&str>, no: Option<&str>) -> Environment {
 
 // ---- NO_PROXY ----------------------------------------------------------
 
-/// The acceptance criterion of J4p, as a matcher test: libgit2 compares
+/// Libgit2 compares
 /// the bytes between two commas as they stand, so the space in
 /// `"a.com, b.com"` becomes part of the name and `b.com` silently goes
 /// through the proxy. joy trims.

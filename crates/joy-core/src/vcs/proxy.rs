@@ -190,8 +190,8 @@ struct Noted {
 }
 
 thread_local! {
-    /// The proxy THIS thread's contact went through, for the evidence
-    ///: a 407 names the proxy and never the forge. libgit2
+    /// The proxy THIS thread's contact went through, for the evidence:
+    /// a 407 names the proxy and never the forge. libgit2
     /// calls back on the contact's own thread, which is the same scope
     /// the certificate cell of [`super::certificates`] uses.
     static CURRENT: RefCell<Option<Noted>> = const { RefCell::new(None) };
@@ -490,9 +490,8 @@ fn env_proxy(target: &RemoteUrl, env: &Environment) -> Option<String> {
 ///
 /// The implementation lives HERE and not in the shared network layer,
 /// because that layer depends on this crate already: the refresh lock
-/// takes `joy_core::util::file_lock`, which the design says
-/// lands once (J4a, "no package after J4a carries a lock dependency of
-/// its own for locking"). Two edges would be a cycle, and cargo says so
+/// takes `joy_core::util::file_lock`, the one lock primitive.
+/// Two edges would be a cycle, and cargo says so
 /// before rustc does. Nothing about the matcher needs libgit2, so this
 /// direction costs a connector nothing it is forbidden to link:
 /// joy-core's default build carries no network transport at all, the
@@ -667,7 +666,7 @@ impl ProxyUrl {
     /// scheme is.
     ///
     /// The protocol is `http` for an `https://` proxy too, and that is
-    /// the design's word: it is one login, to one machine in the middle,
+    /// deliberate: it is one login, to one machine in the middle,
     /// and a person who stored it once should not have to store it
     /// again because the proxy URL gained a `s`. libgit2 presents the
     /// userinfo the same way either way (http.c:141-152).

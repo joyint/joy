@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The host keys the three public forges publish, shipped as data
-//! (decision 23).
+//! The host keys the three public forges publish, shipped as data.
 //!
 //! **Data in the release, not code in the binary.** The pins live in
 //! `host-keys.json` inside the release and joy reads that file at run
@@ -27,7 +26,7 @@
 //! it removes the one moment where a man in the middle could be caught
 //! on a fresh machine, and it makes joy refuse a legitimate key
 //! rotation at these hosts until a new pin file arrives. The operator
-//! took that trade (decision 23), because the alternative left a
+//! took that trade, because the alternative left a
 //! container and a fresh CI machine with no way to use an ssh remote at
 //! all. The bound on the cost is this file: a rotation is a file that
 //! is replaced, and the refusal sentence names the joy version and the

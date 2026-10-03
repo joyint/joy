@@ -12,8 +12,8 @@
 //! `token`, `login`, `token-store` and `logout` call that may write.
 //!
 //! The primitive is joy's one cross process advisory whole file lock,
-//! `joy_core::util::file_lock`, which landed with J4a in wave 0. No
-//! package after it carries a lock dependency of its own.
+//! `joy_core::util::file_lock`. Nothing else carries a lock
+//! dependency of its own.
 //!
 //! The protocol, in the order the rule writes it:
 //!

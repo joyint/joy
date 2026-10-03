@@ -174,7 +174,7 @@ tempfile = "3"
 serde_json = { workspace = true }
 tracing = "0.1"
 # The credential helper runner takes a `git2::Config`, so the test that
-# proves the J4a acceptance "a credential on a machine with no git on
+# proves "a credential on a machine with no git on
 # PATH" has to build one. Same version and features as above, so cargo
 # unifies it and nothing extra is compiled.
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }

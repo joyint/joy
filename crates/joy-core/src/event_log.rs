@@ -582,7 +582,7 @@ pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorSta
 /// Read `git config user.email`.
 ///
 /// No joy command uses this any more: the CLI's actors come from
-/// [`crate::identity::resolve_identity`] since package J11, and the
+/// [`crate::identity::resolve_identity`], and the
 /// convenience twin `log_event`, which read this for the log's actor,
 /// is gone with it. It stays public for the desktop, whose four
 /// remaining callers move onto the acting member, and it is

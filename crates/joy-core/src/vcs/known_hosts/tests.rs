@@ -499,7 +499,7 @@ fn pins_match_the_published_fingerprints() {
     }
 }
 
-/// The operator answered decision 23, so the pin file a release ships
+/// The operator approved the pins, so the pin file a release ships
 /// carries the three public forges and a contact may consult them.
 /// `shipped` reads the release the running binary belongs to and
 /// `recorded` reads the file in this source tree; in a test binary,

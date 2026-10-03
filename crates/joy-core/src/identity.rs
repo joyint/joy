@@ -453,8 +453,8 @@ pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
     Ok(member)
 }
 
-/// The at-rest member key of the HUMAN the current command acts for
-///: the same answer as [`acting_member_key`] for a
+/// The at-rest member key of the HUMAN the current command acts for:
+/// the same answer as [`acting_member_key`] for a
 /// person at a terminal, and the delegating operator under a delegation
 /// session, never the AI.
 ///
@@ -651,8 +651,8 @@ fn config_name_belongs_to(
     }
 }
 
-/// The two signature fields the member acting in `root` commits with
-///, for a caller that holds no identity of its own.
+/// The two signature fields the member acting in `root` commits with,
+/// for a caller that holds no identity of its own.
 ///
 /// This is what the git binary used to take from `user.name` and
 /// `user.email` when joy shelled `git commit`. libgit2 asks for the

@@ -80,7 +80,7 @@ impl Forge for GitHub {
     }
 
     /// One set covers every verb group on GitHub, so `--for`
-    /// changes nothing here and the design says why: there is no read
+    /// changes nothing here: there is no read
     /// only private scope on GitHub.
     fn scopes(&self, _purpose: Purpose) -> &'static str {
         github::SCOPES

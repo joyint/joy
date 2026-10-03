@@ -186,9 +186,8 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// because a person's own git may be writing objects joy cannot see.
 ///
 /// The window is the one for a checkout joy does not own, on every host,
-/// and that is a DEVIATION, reported at the package level
-/// because the design document is the shared contract of J0..J11 and no
-/// package edits it. The rule asks for 24 hours where joy is the sole writer
+/// and that is a DEVIATION, reported as one.
+/// The rule asks for 24 hours where joy is the sole writer
 /// (the platform's project clone, a desktop only store), and the chat
 /// store cannot tell the two apart from here: the same function serves a
 /// person's own checkout, where another git may be writing objects joy
@@ -196,7 +195,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// store 13 days of garbage it could have freed (the 38.89 MiB of
 /// JOY-023C-1E held longer); the other mistake would cost somebody
 /// else's objects. When the write path learns which kind of store it is
-/// writing (P8 for the platform's clone, the desktop's own packaging for
+/// writing (the platform's clone, the desktop's own packaging for
 /// the other), it selects `Options::owned_store()` and nothing else
 /// about this changes.
 ///
@@ -210,7 +209,7 @@ fn maintain_occasionally(repo: &Repository) {
     // than left for a caller to notice. The counters that go nowhere
     // here (`skipped_unfreshenable` above all, which is every object an
     // agent's container wrote as another uid) belong to the maintenance
-    // owner D5 names, the platform's sync worker lane, and that lane
+    // owner, the platform's sync worker lane, and that lane
     // does not exist yet.
     let _ = joy_core::vcs::maintenance::maintain_if_due(
         repo,
@@ -240,7 +239,7 @@ pub(crate) fn commit_root(
     // after it, but it can be left unwritten when the ref has ALREADY
     // moved, and taken back out when the swap loses anyway. The rule asks
     // for the ordering; the two protections on the discard below are
-    // this package's reading of what makes that safe. Both halves
+    // what makes that safe. Both halves
     // matter: the losing attempt used to leave its commit and its trees
     // in the store for ever, and up to eight attempts per write is how
     // the sandbox got 505 orphans out of 761 commits.

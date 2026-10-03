@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! A host that is only reachable through a jump is refused BY NAME
-//! (forge connection NG).
+//! A host that is only reachable through a jump is refused BY NAME.
 //!
 //! libssh2 never opens a socket - the string "proxy" does not occur
 //! anywhere in its sources - and libgit2 opens a plain TCP connection

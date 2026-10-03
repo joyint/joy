@@ -3,7 +3,7 @@
 
 //! The https twin, pushed over for real.
 //!
-//! The counting server of J5 only ever answered `git-upload-pack`; the
+//! The counting server of the budget suite only ever answered `git-upload-pack`; the
 //! rules this file proves are all on the push side, so it grows a
 //! `git-receive-pack` half: it advertises `report-status`, reads the
 //! command list and the packfile, indexes the pack into the bare
@@ -139,7 +139,7 @@ fn respond(stream: &mut TcpStream, status: u16, reason: &str, headers: &str, bod
 
 /// Read a request body that may arrive with a length or in chunks.
 /// libgit2 streams `git-receive-pack` chunked (http.c:89-95), which the
-/// fetch-side server of J5 never had to read.
+/// fetch-side server never had to read.
 fn read_body(reader: &mut impl BufRead, length: Option<usize>, chunked: bool) -> Option<Vec<u8>> {
     if let Some(length) = length {
         let mut body = vec![0u8; length];
@@ -714,7 +714,7 @@ fn a_push_over_the_twin_updates_the_tracking_ref_and_leaves_git_config_alone() {
         tip,
         "the objects arrived, not only the report"
     );
-    // "says which credential it used" (J4b acceptance)
+    // "says which credential it used"
     let sentence = resolver::used("127.0.0.1").expect("the transport memory names it");
     assert!(
         sentence.contains("over https with the access token"),
@@ -910,10 +910,10 @@ impl contact::RateLimitOracle for FixedOracle {
     }
 }
 
-/// The last two acceptance sentences of J4b, read through a contact
+/// Two acceptance sentences, read through a contact
 /// that really went over the twin: "a 403 on a private organisation
 /// repository produces `needs_org_approval`" and "a 404 over https is
-/// never reported as offline", each in the state names J5 defined.
+/// never reported as offline", each in the named states.
 ///
 /// Both need a token that has worked on this host before, which is the
 /// fact that tells a 404 that means "no such repository" from a 404
@@ -990,7 +990,7 @@ fn the_states_j5_defined_read_through_a_contact_over_the_twin() {
 /// reads it off the forge's answer; these cases hand it in.
 const APPROVAL_PAGE: &str = "https://github.com/orgs/acme/policies/applications";
 
-/// must_fix of the J4b review, and the acceptance sentence with it: on a
+/// A review finding, and the acceptance sentence with it: on a
 /// TWO leg plan the twin's verdict is what the person is told.
 ///
 /// The plan here is the one the rule makes on a machine that still

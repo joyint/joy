@@ -114,7 +114,7 @@ fn the_status_number_comes_only_from_the_two_libgit2_formats() {
         "the winhttp.c format of every Windows build"
     );
     // digits that are NOT a status: today's substring scan called all
-    // three of these "denied" (contact.rs:88-96 before this package)
+    // three of these "denied" (contact.rs:88-96 before)
     assert_eq!(http_status("cannot push refs/heads/fix-403"), None);
     assert_eq!(http_status("object 401f0a2 is missing"), None);
     assert_eq!(http_status("could not find /srv/401/repo.git"), None);
@@ -760,8 +760,7 @@ impl RateLimitOracle for CountingOracle {
 
 /// The oracle hook: asked on a GitHub host after a 403, asked
 /// once per host per strike window, and its answer is the state - with
-/// the approval page it named, which is the action of that state
-/// (and the acceptance of package J4b).
+/// the approval page it named, which is the action of that state.
 #[test]
 fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1324,7 +1323,7 @@ fn the_poll_period_is_the_verbs_requests_over_the_hosts_budget() {
     assert_eq!(poll("gitlab.com"), Duration::from_secs(1));
     assert_eq!(poll("git.acme.example"), Duration::from_secs(2));
 
-    // the acceptance criterion of J5, in requests per minute per host
+    // the acceptance criterion, in requests per minute per host
     let per_minute = |host, budget: f64| {
         let period = poll(host).as_secs();
         let ticks = 60 / period;
@@ -1435,8 +1434,8 @@ fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
         "ls-remote",
         true,
         || -> anyhow::Result<()> {
-            // what the classifier makes of `Class::Ssh` + `Code::Auth`
-            //, which is what the leg loop hands `run` back
+            // what the classifier makes of `Class::Ssh` + `Code::Auth`,
+            // which is what the leg loop hands `run` back
             Err(anyhow::Error::new(ContactError {
                 failure: Failure::NeedsSignIn,
                 message: "Not signed in to twinned.test.".into(),
@@ -1589,7 +1588,7 @@ fn a_poll_that_found_nobody_home_keeps_its_slot() {
 
 /// The rule is not a constant, it is charged: the engine's poll door
 /// holds the second anonymous poll inside the window and says why, while
-/// a person's own command goes out (J5's acceptance).
+/// a person's own command goes out.
 #[test]
 fn the_poll_door_holds_an_anonymous_https_poll_and_says_why() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1706,7 +1705,7 @@ fn a_429_doubles_the_gap_and_the_strike_survives_the_next_success() {
     // was reserved on the way out, BEFORE the forge said 429, so a
     // strike that only widened the gap from here on reached the contact
     // after next and let the very contact that runs back into the wall
-    // leave on the old gap (J5's acceptance: "after a 429 the next
+    // leave on the old gap ("after a 429 the next
     // contact to that host waits at least twice the gap").
     let mut called = false;
     let t0 = Instant::now();
@@ -1731,7 +1730,7 @@ fn a_429_doubles_the_gap_and_the_strike_survives_the_next_success() {
         t0.elapsed()
     );
 
-    // THE change of this package: the success above did not clear the
+    // THE change: the success above did not clear the
     // strike (joy used to remove the entry and run straight back into
     // the limit)
     assert!(
@@ -1791,7 +1790,7 @@ fn a_documented_ban_sets_its_own_next_try() {
         waits > Duration::from_secs(14 * 60) && waits <= Duration::from_secs(15 * 60),
         "gitlab.com bans for 15 minutes, got {waits:?}"
     );
-    // but the STRIKE window is the design's 600 s and never the forge's
+    // but the STRIKE window is joy's own 600 s and never the forge's
     // number: the doubling runs for ten minutes after the last
     // strike, whether the forge asked for three seconds or an hour
     let window = limited_until("gitlab.com")

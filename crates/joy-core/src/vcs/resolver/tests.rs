@@ -4,7 +4,7 @@
 //! The rule, read without a forge, an agent or a connector.
 //!
 //! Every fact the resolver decides on is an argument of [`plan_with`],
-//! so the candidate order, the twin trigger of decision 11 and the four
+//! so the candidate order, the twin trigger and the four
 //! refusals are all decidable here. What needs a real contact
 //! (the tracking ref after a twin push, a rejected ref) lives in the
 //! engine tests beside it.

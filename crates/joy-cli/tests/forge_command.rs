@@ -122,8 +122,8 @@ esac
 "#;
 
 /// A connector from before the handshake existed: its parser rejects
-/// `version` and exits 2 with nothing on stdout, which is the detector
-///. It still answers the six legacy verbs, `release` among
+/// `version` and exits 2 with nothing on stdout, which is the detector.
+/// It still answers the six legacy verbs, `release` among
 /// them.
 const LEGACY_CONNECTOR: &str = r#"#!/bin/sh
 case "$1" in
@@ -373,7 +373,7 @@ fn wait_with_a_bound(child: &mut std::process::Child) -> bool {
 // login
 // ---------------------------------------------------------------------
 
-/// The acceptance of J10, first sentence: `joy forge login --host
+/// `joy forge login --host
 /// github.com` on a machine with no gh prints a URL and a code and ends
 /// with a stored credential.
 ///
@@ -400,7 +400,7 @@ fn login_on_a_terminal_prints_the_url_and_the_code_and_signs_in() {
     );
 }
 
-/// The acceptance of J10, last sentence: `JOY_SESSION=... joy forge
+/// `JOY_SESSION=... joy forge
 /// login --host github.com` refuses IMMEDIATELY with the delegation
 /// sentence. "Immediately" is proved by the connector's own argv log:
 /// no `login` ever reached it.
@@ -437,7 +437,7 @@ fn login_under_a_delegation_session_refuses_by_name_and_spawns_no_login() {
     );
 }
 
-/// The acceptance of J10, second sentence: `joy forge login
+/// `joy forge login
 /// --token-stdin --host codeberg.org < token` stores a validated token,
 /// and `ps` during the run shows no token.
 ///
@@ -699,7 +699,7 @@ fn a_token_the_forge_refuses_exits_one_with_a_state() {
 // status
 // ---------------------------------------------------------------------
 
-/// The acceptance of J10, third sentence: `joy forge status --json`
+/// `joy forge status --json`
 /// lists the host with source, scopes and expiry, and exits 1 when
 /// nothing is signed in.
 #[test]
@@ -1040,7 +1040,7 @@ fn plugins_names_the_file_that_answers_and_the_stale_one_beside_it() {
     );
 }
 
-/// The acceptance of J10, fourth sentence: a protocol 1 `joy-github`
+/// A protocol 1 `joy-github`
 /// alone on the machine makes `joy forge login` print the binary's path
 /// and the `rm` line, while the legacy `release` verb that binary DOES
 /// answer keeps working.
@@ -1189,8 +1189,8 @@ fn a_live_session(machine: &Machine) -> String {
     let passphrase = "correct horse battery staple";
     let (ok, seen) = joy(&["init", "--name", "Delegator", "--user", "human@example.com"]);
     assert!(ok, "{seen}");
-    // The commands that mint a delegation still read a git identity
-    // (their call sites are package J11); this checkout gets one of its
+    // The commands that mint a delegation still read a git identity;
+    // this checkout gets one of its
     // own, repository local, so the machine under test keeps none.
     let repo = git2::Repository::open(&root).unwrap();
     let mut config = repo.config().unwrap();
@@ -1239,8 +1239,8 @@ fn a_live_session(machine: &Machine) -> String {
 // ---------------------------------------------------------------------
 
 /// A connector whose sign in waits twice and then fails: the shape of
-/// the run that produced this item. The second wait carries the reason
-///, which is what a poll that is riding out a transport fault
+/// the run that produced this item. The second wait carries the reason,
+/// which is what a poll that is riding out a transport fault
 /// reports.
 const FAILING_LOGIN: &str = r#"#!/bin/sh
 if [ "$1" = "version" ]; then

@@ -109,8 +109,8 @@ impl Failure {
         }
     }
 
-    /// The same state in the FOUR words joy spoke before this design
-    ///, for a reader that has not learnt the new ones: every
+    /// The same state in the FOUR words joy spoke before this design,
+    /// for a reader that has not learnt the new ones: every
     /// refusal of a login reads as `denied`, every fault of the machine
     /// reads as `error`, and `rate_limited` and `offline` are unchanged.
     /// A reader that knows the new words never calls this.
@@ -161,8 +161,8 @@ impl Failure {
             Failure::TlsUntrusted => format!(
                 "The certificate for {host} is not trusted by this machine's certificate store."
             ),
-            // the proxy's OWN name when the evidence carries it
-            //; `host` here is the forge, never the proxy, so
+            // the proxy's OWN name when the evidence carries it;
+            // `host` here is the forge, never the proxy, so
             // this fallback says "in front of" and names no wrong
             // machine
             Failure::ProxyAuth => {
@@ -201,8 +201,8 @@ impl Failure {
     }
 
     /// What is behind the button of [`Failure::next_step`]: the
-    /// instruction a person follows, which is prose and never a label
-    ///. Only the states whose next step needs one have it; for
+    /// instruction a person follows, which is prose and never a label.
+    /// Only the states whose next step needs one have it; for
     /// every other state the button says it all.
     pub fn guidance(self) -> Option<&'static str> {
         match self {
@@ -212,8 +212,8 @@ impl Failure {
     }
 }
 
-/// What to do about an untrusted certificate, per operating system
-///: the machine's own certificate store is what has to change,
+/// What to do about an untrusted certificate, per operating system:
+/// the machine's own certificate store is what has to change,
 /// and joy never offers to skip the check.
 #[cfg(target_os = "linux")]
 const CA_GUIDANCE: &str = "add your organisation's CA with update-ca-certificates";
@@ -301,8 +301,8 @@ pub struct ContactEvidence {
     pub host: String,
     /// The proxy this contact went through (`proxy.acme.example:8080`),
     /// when joy configured one. It is NOT the forge host, and a
-    /// 407 names this machine and never [`ContactEvidence::host`]
-    ///. `None` when no proxy was configured, which is when joy
+    /// 407 names this machine and never [`ContactEvidence::host`].
+    /// `None` when no proxy was configured, which is when joy
     /// cannot name one.
     pub proxy: Option<String>,
     /// What the CONNECTOR said about this repository before the contact
@@ -532,7 +532,7 @@ pub enum OracleAnswer {
     ///
     /// The `url` is the page the person opens to ask for that approval,
     /// when the forge named one. The rule carries the URL for `needs_sso`
-    /// the same way, and the acceptance of package J4b asks for it here
+    /// the same way, and it is asked for here
     /// as well: a person told "your organisation must approve Joy" and
     /// not told where cannot act on the sentence.
     NeedsOrgApproval { url: Option<String> },
@@ -540,7 +540,7 @@ pub enum OracleAnswer {
     Denied,
 }
 
-/// The hook J3 fills with the connector call `GET /rate_limit`. It is
+/// The hook the connector fills with the call `GET /rate_limit`. It is
 /// asked ONLY under the conditions, which this module enforces:
 /// status exactly 403 or 429, transport https, a GitHub host, and not
 /// more than once per host per strike window.
@@ -565,8 +565,8 @@ struct OracleMemory {
     answer: Option<OracleAnswer>,
 }
 
-/// Install the oracle (J3). Until one is installed every 403 answers
-/// from the table alone, which is what wave 0 ships.
+/// Install the oracle. Until one is installed every 403 answers
+/// from the table alone.
 pub fn set_oracle(oracle: Arc<dyn RateLimitOracle>) {
     *ORACLE.lock().unwrap_or_else(|e| e.into_inner()) = Some(oracle);
 }
@@ -604,8 +604,8 @@ fn ask_oracle(host: &str, status: u16) -> Option<OracleAnswer> {
         .unwrap_or_else(|e| e.into_inner())
         .as_ref()
         .cloned();
-    // without an installed oracle nothing is remembered: J3 may install
-    // one between two contacts, and wave 0 ships without it
+    // without an installed oracle nothing is remembered: one may be
+    // installed between two contacts
     let oracle = oracle?;
     let answer = oracle.ask(host, status);
     ORACLE_ASKED
@@ -653,8 +653,8 @@ pub struct Verdict {
     pub detail: String,
 }
 
-/// The state this failure is. The evidence is read in the order
-///: the error code, the error class, the HTTP status number,
+/// The state this failure is. The evidence is read in the order:
+/// the error code, the error class, the HTTP status number,
 /// and only then libgit2's own English literals.
 pub fn classify(evidence: &ContactEvidence) -> Failure {
     verdict(evidence).failure
@@ -772,7 +772,7 @@ fn decide(ev: &ContactEvidence) -> Decision {
     // certificate problem, and it does not always carry class `Ssh`.
     // libgit2 refuses an unknown host key itself with
     // `GIT_ERROR_SSH`/`GIT_ECERTIFICATE` (ssh_libssh2.c:759-767), but
-    // when joy's own `certificate_check` closure refuses (J4h)
+    // when joy's own `certificate_check` closure refuses
     // the class is whatever the closure set, or `GIT_ERROR_NET` when it
     // set nothing at all, while the code stays `GIT_ECERTIFICATE`.
     // Reading the class alone classified joy's own host key refusal as
@@ -1067,8 +1067,8 @@ pub fn wants_token_refresh(evidence: &ContactEvidence) -> bool {
 
 // ---- the connector's own answers (first four rows) ------------
 
-/// What the forge connector said, in the words D2 gives it. The runner
-/// (J1) produces this; the mapping to a state lives here with the rest
+/// What the forge connector said, in its own words. The runner
+/// produces this; the mapping to a state lives here with the rest
 /// of the table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PluginEvidence {
@@ -1378,7 +1378,7 @@ pub fn action_of(error: &anyhow::Error) -> Option<String> {
 /// budget` computed from this table, and no millisecond figure is
 /// written down anywhere else. Codeberg's 0.9 is a measured ceiling of
 /// about 1.1 requests per second minus the buffer (JP-00EF-CC); GitHub's
-/// 1.0 and the unknown host's 1.0 are the design's decided values;
+/// 1.0 and the unknown host's 1.0 are decided values;
 /// gitlab.com's 5.0 is its documented headroom.
 const BUDGETS: [(&str, f64); 4] = [
     ("codeberg.org", 0.9),
@@ -1401,8 +1401,8 @@ fn derived_gaps() -> HashMap<String, Duration> {
         .collect()
 }
 
-/// What one verb costs in HTTP requests. The numbers are the
-/// design's table for the engine AFTER this package: `download_ref`
+/// What one verb costs in HTTP requests. The numbers hold
+/// for the engine as it is now: `download_ref`
 /// holds its connection, so a fetch is one connection, not two.
 ///
 /// The first request of a new connection to a private repository carries
@@ -1437,7 +1437,7 @@ pub fn requests(verb: &str, transport: Transport, credentialed: bool) -> u32 {
 /// projects on one host divide the budget, so the period is multiplied
 /// by their number.
 ///
-/// A5 and P2 use the number computed here and never a number of their
+/// The app and the platform use the number computed here and never a number of their
 /// own.
 pub fn poll_period(host: &str, verb: &str, transport: Transport, credentialed: bool) -> Duration {
     poll_period_for(host, verb, transport, credentialed, 1)
@@ -1463,7 +1463,7 @@ pub fn poll_period_for(
     let seconds = (cost.as_millis() as u64).div_ceil(1000);
     // never zero: a remote on this machine costs no budget, and the
     // platform may set a host's gap to 0 through JOYINT_FORGE_MIN_GAP_MS.
-    // A5 and P2 use this number and no number of their own, so a zero
+    // The app and the platform use this number and no number of their own, so a zero
     // here would be their busy loop.
     Duration::from_secs(seconds.max(1))
 }
@@ -1653,7 +1653,7 @@ fn strike_factor(strikes: u32) -> u32 {
 /// Push the reservation this contact made forward, because the contact
 /// came back with a 429.
 ///
-/// The rule and J5's acceptance criterion say "after a 429 the NEXT contact
+/// The rule says "after a 429 the NEXT contact
 /// to that host waits at least twice the gap". The slot for that next
 /// contact was already reserved by [`take_turn`] on the way out, with
 /// the gap that was in force before the forge said 429, so recording
@@ -1680,8 +1680,8 @@ pub(crate) fn reset_throttle() {
 
 // ---- the per-host gate -----------------------------------------------
 
-/// How long a strike stands. It is NOT cleared by the next success
-///: a forge that limited us a second ago has not changed its mind
+/// How long a strike stands. It is NOT cleared by the next success:
+/// a forge that limited us a second ago has not changed its mind
 /// because one request got through, and clearing on success is what let
 /// joy run straight back into the limit.
 const STRIKE_LASTS: Duration = Duration::from_secs(600);
@@ -1807,7 +1807,7 @@ pub fn limited_for(repo_dir: &Path) -> Option<SystemTime> {
 /// `gap * 2^strikes` capped, until `STRIKE_LASTS` (600 s) has
 /// elapsed"). The forge's own retry-after is a different number and
 /// belongs to the caller's next try, never to the doubling: a
-/// retry-after of a few seconds, which is what J3's oracle hands back,
+/// retry-after of a few seconds, which is what the oracle hands back,
 /// would otherwise end the doubling before it did anything.
 fn strike(host: &str) -> SystemTime {
     let now = Instant::now();
@@ -1876,7 +1876,7 @@ thread_local! {
 }
 
 /// The credential callback says it handed something over (the engine
-/// calls this; J4b's resolver keeps calling it). Without it a contact
+/// calls this; the resolver keeps calling it). Without it a contact
 /// that ended in `Cred::default()`, which is "I have nothing", would be
 /// remembered as a credential that worked, and the next 404 on
 /// github.com would read as "Your organisation must approve Joy" for a
@@ -1886,7 +1886,7 @@ pub fn note_credential_presented() {
 }
 
 /// [`note_credential_presented`] with the source that really answered,
-/// which is what the evidence carries (J4b).
+/// which is what the evidence carries.
 pub fn note_credential(source: CredentialSource) {
     note_credential_presented();
     PRESENTED_SOURCE.with(|p| p.set(Some(source)));

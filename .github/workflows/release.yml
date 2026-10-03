@@ -285,7 +285,7 @@ jobs:
       # signed in place and dist build is run again, which re-archives the
       # signed files and refreshes the manifest hashes.
       #
-      # Why this has to happen at all (T4 of the design, decision 6):
+      # Why this has to happen at all:
       # without it the CLI binaries in the apple archives are ad hoc
       # signed, with a designated requirement that is a bare cdhash. A
       # keychain item is bound to the designated requirement of the
@@ -322,7 +322,7 @@ jobs:
           set -euo pipefail
           if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
             echo "::error::APPLE_SIGNING_IDENTITY is empty, so the macOS binaries would ship ad hoc signed."
-            echo "::error::Decision 6 of the forge connection NG design makes one identity mandatory:"
+            echo "::error::One signing identity is mandatory:"
             echo "::error::set the repository secret, and on a self-hosted Mac keep the Developer ID"
             echo "::error::Application certificate in the runner user's login keychain."
             exit 1
@@ -639,7 +639,7 @@ jobs:
           # one binary, and the joyint.joy manifest is a zip package whose
           # NestedInstallerFiles list names joy.exe alone. Whether komac
           # keeps that list or re-detects the nested files, and what it makes
-          # of a second executable, was not verified in this package. Do a
+          # of a second executable, was not verified. Do a
           # winget manifest dry run before the submission is merged.
           installers-regex: ${{ env.WINGET_INSTALLERS_REGEX }}
           # The fork of microsoft/winget-pkgs lives under the joyint org, not

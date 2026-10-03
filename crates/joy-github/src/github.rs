@@ -7,7 +7,7 @@
 //!
 //! Since JOY-0298-E4 every API call is made in process
 //! over the connector's own HTTP client. curl and gh are gone from the
-//! API path: gh is still asked for a TOKEN (decision 19), which is a
+//! API path: gh is still asked for a TOKEN, which is a
 //! different thing and the only device side credential source this wave
 //! has.
 
@@ -39,8 +39,8 @@ pub fn claims_host(host: &str, configured: &[String]) -> bool {
 
 /// Every host gh is signed in to, lowercased. That is how a GitHub
 /// Enterprise Server on any domain becomes reachable without putting
-/// somebody's instance into this code; `forges.yaml` is the other way
-///, and the dispatcher consults it.
+/// somebody's instance into this code; `forges.yaml` is the other way,
+/// and the dispatcher consults it.
 pub fn configured_hosts() -> Vec<String> {
     gh_hosts().into_iter().map(|(host, _)| host).collect()
 }
@@ -135,8 +135,8 @@ pub fn parse_hosts(text: &str) -> Vec<(String, String)> {
     hosts
 }
 
-/// The API root of the GitHub a host runs: what an operator configured
-///, else github.com's own API host, else a GitHub Enterprise
+/// The API root of the GitHub a host runs: what an operator configured,
+/// else github.com's own API host, else a GitHub Enterprise
 /// Server's `/api/v3` ON ITS OWN DOMAIN.
 ///
 /// The second bug the rule names lived here: every API call went to
@@ -207,7 +207,7 @@ pub fn classify(answer: &Answer) -> &'static str {
 /// The account's verified addresses, best effort. With a token the
 /// instance's OWN API is asked; without one there is nothing to ask,
 /// and nothing is asked: an anonymous request cannot name an account,
-/// and joy never spends a contact it knows the answer to (decision 20).
+/// and joy never spends a contact it knows the answer to.
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
     if ctx.token("github", host).is_none() {
         return Vec::new();
@@ -252,7 +252,7 @@ fn current_user(ctx: &Ctx, host: &str) -> Option<Value> {
 /// budget counts requests, so the two are never asked apart.
 fn current_account(ctx: &Ctx, host: &str) -> Option<(Option<Value>, Option<Vec<String>>)> {
     // Nothing is asked without a credential: the endpoint is about the
-    // account the token names (decision 20).
+    // account the token names.
     ctx.token("github", host)?;
     let answer = api_get(
         ctx,
@@ -559,7 +559,7 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
     }))
 }
 
-// -- creating a repository (decision 17) ---------------------------------
+// -- creating a repository ---------------------------------
 
 /// The CREATE-REPOSITORY answer. A project can only be brought to
 /// joyint.com when it has a remote repository, so this is what makes
@@ -571,7 +571,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("github", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
-    // The local pre check, cheapest first: since J3 the set
+    // The local pre check, cheapest first: the set
     // the forge granted is stored beside the token, so a token that
     // cannot create is refused before a single request is sent.
     if let Some(refused) =
@@ -786,7 +786,7 @@ pub fn release_answer(
 /// `repo user:email`. There is no read only private scope on GitHub, so
 /// the minimal scope demand cannot be met with an OAuth App; it is met
 /// later by a GitHub App or a fine grained token with Contents read,
-/// and the design says so instead of promising it now.
+/// which is not promised now.
 pub const SCOPES: &str = "repo user:email";
 
 /// The sentence a read only member on GitHub hears. It is put
@@ -1012,7 +1012,7 @@ pub fn org_approval_page(host: &str, owner: &str) -> Option<String> {
 /// Revoke a token at GitHub: `DELETE /applications/{client_id}/token`,
 /// and never `.../grant`. Deleting the GRANT deletes every token of
 /// that app for the person, including the one another joy on another
-/// machine is using (contradiction 13 of the design).
+/// machine is using.
 ///
 /// The endpoint authenticates with the application's own credentials.
 /// joy registers a PUBLIC client, which has no secret, so a real

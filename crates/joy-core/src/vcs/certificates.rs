@@ -24,7 +24,7 @@
 //!   libgit2's `valid` flag before the closure runs
 //!   (remote_callbacks.rs:413-418); it only stashes the certificate's
 //!   issuer and subject for the detail line of `tls_untrusted`, whose
-//!   sentence and state are package J4p's work.
+//!   sentence and state live with the proxy code.
 //!
 //! **Why this module carries its own state.** git2 hands the closure
 //! the host name and nothing else: no port, and no verdict. So joy
@@ -354,8 +354,8 @@ impl Trust {
     }
 
     /// What the pinned keys of the three public forges say about this
-    /// key. Consulted only where no file holds a line for the host
-    ///, and only for the hosts the pin file names.
+    /// key. Consulted only where no file holds a line for the host,
+    /// and only for the hosts the pin file names.
     fn pin_says(&self, host: &str, key_type: &str, key: &[u8]) -> Pin {
         let Some(pin) = pins::consulted_for(host) else {
             return Pin::Published(None);

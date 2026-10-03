@@ -782,8 +782,8 @@ fn default_file() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(FALLBACK_FILE))
 }
 
-/// Write a file only this person can read: 0600 in a 0700 directory
-///. On Windows the directory's inherited ACL is what protects
+/// Write a file only this person can read: 0600 in a 0700 directory.
+/// On Windows the directory's inherited ACL is what protects
 /// it, which is the same protection `%APPDATA%` gives every other
 /// credential file on that system.
 ///

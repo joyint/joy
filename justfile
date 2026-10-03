@@ -420,7 +420,7 @@ setup:
 # directory, so joy resolves the connector by the name order,
 # and the host key pin file under the prefix's share
 # directory, which is the second candidate of pins::candidates and the
-# path the installers of W1 write. Not into ~/.local/bin: a pin file
+# path the installers write. Not into ~/.local/bin: a pin file
 # there is the first candidate and would shadow the share copy for
 # good. The `rm` line clears exactly that, because an earlier revision
 # of this recipe wrote one. The three legacy names stay in the recipe
@@ -559,7 +559,7 @@ publish-crates: sync-tutorial
     # old version while every dependent was bumped past them, and
     # `cargo publish -p joy-cli` then asked crates.io for a
     # joy-telemetry that was never uploaded (JOY-02A4-89, the shape of
-    # JOY-0246-B7). No package of the forge connection NG plan may edit
+    # JOY-0246-B7). That work may not edit
     # .joy, so the three inherit instead: `version.workspace = true`
     # against the `[workspace.package]` version of the root manifest,
     # which is in the list, and their joy-core requirement inherits
@@ -696,7 +696,7 @@ publish-crates: sync-tutorial
 # The macOS lane has no recipe here: the apple archives are built,
 # Developer ID signed and verified by the `build-local-artifacts` job of
 # .github/workflows/release.yml, which the tag this step pushes starts
-# (JOY-02A8-F4, design decision 6). What that lane REQUIRES, wherever it
+# (JOY-02A8-F4). What that lane REQUIRES, wherever it
 # runs, is one identity for both copies of the connector: the Developer
 # ID Application certificate of Joydev GmbH, the same one the desktop
 # app signs its sidecars with. On a GitHub hosted runner it arrives as

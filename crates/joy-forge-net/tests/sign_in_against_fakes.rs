@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The sign in verbs against in process fakes (JOY-029B-B0, package
-//! J3).
+//! The sign in verbs against in process fakes (JOY-029B-B0).
 //!
 //! Every OAuth and REST behaviour is proved here, and nothing
 //! in this file contacts a real forge: the device endpoints, the token
@@ -52,7 +51,7 @@ fn user_reply() -> Reply {
     .with_header("X-OAuth-Scopes", "repo, user:email")
 }
 
-/// J3's acceptance, on the store the rule calls the normal case: after a
+/// After a
 /// successful login `token` answers `"source":"keychain"` with the
 /// granted scopes, and the 0600 file is not written at all.
 ///
@@ -580,8 +579,7 @@ fn token_store_validates_the_token_with_the_forge_before_it_stores_it() {
     assert_eq!(stored["token"], "the-right-token");
     assert_eq!(stored["source"], "file");
     // The granted set the forge reported, beside the token in the same
-    // entry and SPACE separated, whatever the forge's own spelling was
-    //.
+    // entry and SPACE separated, whatever the forge's own spelling was.
     assert_eq!(stored["scopes"], "repo user:email");
     assert_eq!(stored["chose_by"], "only");
 
@@ -810,7 +808,7 @@ fn logout_on_a_host_with_two_logins_asks_which_one() {
     assert_eq!(ctx.vault().logins("forge.test"), vec!["scotty".to_string()]);
 }
 
-/// J3's acceptance is "`logout` removes the entry". A state directory
+/// The acceptance is "`logout` removes the entry". A state directory
 /// that could not be written is a refusal and never a reported success:
 /// answering `"removed": true` while the token is still in the file is
 /// the one thing this verb must not do.

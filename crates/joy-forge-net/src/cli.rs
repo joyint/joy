@@ -201,8 +201,8 @@ pub fn run(forges: &[&'static dyn Forge], manifest: &Manifest) -> i32 {
 /// [`run`] with an explicit argument list, for the tests.
 ///
 /// The forges are `'static` because the context carries the one that
-/// answers: every verb reaches its credential through the login order
-///, whose fourth step needs the forge itself.
+/// answers: every verb reaches its credential through the login order,
+/// whose fourth step needs the forge itself.
 pub fn run_from<I, T>(forges: &[&'static dyn Forge], manifest: &Manifest, args: I) -> i32
 where
     I: IntoIterator<Item = T>,

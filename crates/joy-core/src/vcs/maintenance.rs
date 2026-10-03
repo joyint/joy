@@ -125,16 +125,15 @@ impl Options {
     /// only store): 24 hours, which still covers a job container writing
     /// into the same object store.
     ///
-    /// DEVIATION, reported at the package level rather than written
-    /// into the design, which this package does not own: no caller
+    /// DEVIATION, reported as one: no caller
     /// selects this today, so a desktop only store and the platform's
     /// project clone both run on the 14 day window the rule gives a foreign
     /// checkout. The chat store's write path is the only caller there
     /// is and it cannot tell the two cases apart from where it stands:
     /// the same function serves a person's own checkout, where another
     /// git may be writing objects joy cannot see, and a store joy alone
-    /// writes. Carrying the kind of store into that path is P8's change
-    /// (the platform's project clone) and the desktop's own packaging;
+    /// writes. Carrying the kind of store into that path is the platform's change
+    /// (its project clone) and the desktop's own packaging;
     /// until then the only mistake this makes is the expensive one (a
     /// store swept 13 days later than it could be, which is the 38.89
     /// MiB of JOY-023C-1E held longer), never the unsafe one.
@@ -235,9 +234,7 @@ pub struct Outcome {
 /// class A only unlinks objects the running process has just written
 /// into its own pack, class B only unlinks objects outside a keep set
 /// both agree on, and no pack is ever removed. An advisory lock file
-/// would make the statement absolute; it is not what this package
-/// ships, and the design sentence that reads as if the gate gave that
-/// is reported as a deviation.
+/// would make the statement absolute; it is not what ships here.
 ///
 /// Best effort: a store somebody else is maintaining right now is left
 /// to them, and the next write tries again.
@@ -425,9 +422,7 @@ fn store_key(repo: &Repository) -> PathBuf {
 /// where it cannot be written (a read only or foreign owned `.git`) the
 /// in-process map still holds. It is the one piece of state joy leaves
 /// in a checkout it does not own. The rule asks for a wall clock floor per
-/// checkout and does not say where it lives; the file is this package's
-/// addition and is reported as a deviation, because the design document
-/// is the shared contract of J0..J11 and no package edits it.
+/// checkout and does not say where it lives; the file is an addition made here.
 fn stamp_path(store: &Path) -> PathBuf {
     store.join("joy").join("maintenance-stamp")
 }
@@ -851,12 +846,12 @@ fn loose_path(store_dir: &Path, oid: Oid) -> PathBuf {
 /// directory, so at most 256 per run.
 ///
 /// The price of the ownership half is worth naming, because it is paid
-/// on the store D5 is about. In the platform's job container the project
+/// on the shared store. In the platform's job container the project
 /// clone is bind mounted read write and an agent's own `git commit`
 /// writes into the same object store, typically as another uid. Every
 /// object it leaves there is `skipped_unfreshenable` for ever: class B
-/// never collects it, so that store grows until the maintenance owner
-/// D5 gives it (the platform's sync worker lane, which does not exist
+/// never collects it, so that store grows until its maintenance owner
+/// (the platform's sync worker lane, which does not exist
 /// yet) sweeps it as the uid that owns the objects. The counter says so,
 /// and today nobody reads the counter: the chat store drops the whole
 /// `Outcome`. This is faithful to the rule (without a working `utimes`
@@ -1420,9 +1415,8 @@ mod tests {
         assert!(!report_log_all_ref_updates_once(store.path()));
     }
 
-    /// Both windows the rule names, pinned. `owned_store` has no caller yet
-    /// (a deviation reported at the package level, not written into the
-    /// design, which this package does not own), so the constant would
+    /// Both windows the rule names, pinned. `owned_store` has no caller yet,
+    /// so the constant would
     /// otherwise be free to rot unnoticed.
     #[test]
     fn the_two_grace_windows_are_the_ones_the_design_names() {

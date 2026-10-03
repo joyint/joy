@@ -30,10 +30,10 @@
 //! One source is deliberately NOT here yet: the proxy password
 //! that lives in the machine's credential helper. The rule resolves it
 //! "through the helper runner" and builds
-//! `http://user:pass@proxy:port` in memory, and that runner is J4p's
-//! work in the engine. Until it exists, the connector uses the userinfo
+//! `http://user:pass@proxy:port` in memory, and that runner is the
+//! engine's work. Until it exists, the connector uses the userinfo
 //! the proxy URL already carries, which is the same amount a person has
-//! today; when J4p lands, the helper answer is fed in here in one place
+//! today; when it exists, the helper answer is fed in here in one place
 //! ([`choose`]'s result) and nothing else changes.
 
 use crate::gitconfig::GitConfig;
@@ -210,11 +210,10 @@ pub fn redact(proxy: &str) -> String {
 ///
 /// The implementation lives on the engine's side of the two, because
 /// this crate depends on the engine already (the refresh lock
-/// takes `joy_core::util::file_lock`, which landed once with J4a) and
+/// takes `joy_core::util::file_lock`) and
 /// the other direction would close a cycle. It costs a connector
 /// nothing it must not link: joy-core's default build carries no
-/// network transport, so no libgit2 transport comes with the matcher
-///.
+/// network transport, so no libgit2 transport comes with the matcher.
 ///
 /// The grammar is libgit2's (net.c:1070-1117): a comma separated list
 /// of `*`, `*.domain`, `.domain`, `host` and `host:port`, with no CIDR

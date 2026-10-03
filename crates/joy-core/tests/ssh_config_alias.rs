@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! An ssh config alias is honoured, all the way to the address joy
-//! dials (forge connection NG).
+//! dials.
 //!
 //! libgit2 reads no ssh config at all and opens the socket itself from
 //! the URL, so `git@work:owner/repo.git` with `Host work / HostName

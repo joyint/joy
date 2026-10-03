@@ -264,8 +264,8 @@ pub trait Forge: Sync {
     /// forge did not answer at all.
     fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach>;
 
-    /// Where an owner approves this application for an organisation
-    ///, for the forges that have such a page. It is forge
+    /// Where an owner approves this application for an organisation,
+    /// for the forges that have such a page. It is forge
     /// knowledge: only the forge knows its own web base, which on a
     /// self hosted instance is not the API base.
     ///
@@ -309,7 +309,7 @@ pub trait Forge: Sync {
 
     /// The forge CLI a credential may also come from: `gh`, `glab` or
     /// `tea`. joy reads it by spawning that CLI and never writes,
-    /// refreshes or revokes it (decision 19).
+    /// refreshes or revokes it.
     fn foreign_cli(&self) -> &'static str;
 
     /// The command a person runs to remove the FOREIGN credential,
@@ -571,7 +571,7 @@ impl Ctx {
 
     /// The source order: the connector's own entry, then the
     /// forge CLI, spawned. Two sources sit outside that list and before
-    /// it, for reasons the design names:
+    /// it, for these reasons:
     ///
     /// - the variable the CALLER named (`--token-env`) is the
     ///   platform's per call hand over and the whole answer when it is
@@ -644,7 +644,7 @@ impl Ctx {
     }
 
     /// The granted scope set of the credential this call will use,
-    /// where the source knows it. Since J3 the connector's own entry
+    /// where the source knows it. The connector's own entry
     /// carries it beside the token, so the local pre check
     /// costs nothing: no request is spent to learn a set joy already
     /// wrote down. `None` means "not known", and an unknown set is
@@ -734,7 +734,7 @@ mod tests {
     }
 
     /// Two rules in one case: the forge's own variable answers a call
-    /// that named none (J2's `GH_TOKEN` acceptance), and a call that
+    /// that named none (the `GH_TOKEN` case), and a call that
     /// DID name one gets that variable and nothing else, even when it
     /// holds nothing.
     #[test]

@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 //! `joy-forge-auth`: the connector's own credential, and the doors that
-//! fill it (JOY-029B-B0, the forge connection design,
-//! package J3).
+//! fill it (JOY-029B-B0).
 //!
-//! Until J3 the connector had no credential of its own: every verb took
+//! Earlier the connector had no credential of its own: every verb took
 //! a token from the environment or from a forge CLI it spawned, so a
 //! machine with neither gh nor curl could not publish a release, and a
 //! person with no forge CLI could not sign in at all. This module is

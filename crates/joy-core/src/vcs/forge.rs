@@ -26,8 +26,8 @@ use std::path::{Path, PathBuf};
 
 use crate::host::HostKind;
 
-/// The forge family a host belongs to, as far as authentication goes
-///. It comes from the plugin that claims the host
+/// The forge family a host belongs to, as far as authentication goes.
+/// It comes from the plugin that claims the host
 /// (`claims`), and from the engine's own table for the three hosts
 /// every joy knows when no plugin claimed it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,8 +80,8 @@ impl ForgeKind {
 /// host no table knows, never offer it `oauth2` either: a valid token
 /// would look refused. That is exactly what the deleted
 /// `basic_auth_user` did with `lower.contains("gitlab")`. A
-/// self-hosted host is identified by the plugin that claims it (D2
-/// `claims`), never by its name.
+/// self-hosted host is identified by the plugin that claims it
+/// (`claims`), never by its name.
 ///
 /// The sub-domain form is part of the table because the two public
 /// forges answer ssh under one: ssh.github.com is github.com and
@@ -141,8 +141,8 @@ pub fn transports_available() -> bool {
 /// caller gets the same retry discipline and the same honest errors.
 ///
 /// Two of the four variants carry a host fact the other two default:
-/// the forge kind a plugin claimed and the host kind
-///. They are separate variants and not fields so that
+/// the forge kind a plugin claimed and the host kind.
+/// They are separate variants and not fields so that
 /// every caller written before the resolver keeps compiling and keeps
 /// working, under the quiet defaults.
 #[derive(Clone)]
@@ -160,8 +160,8 @@ pub enum Auth {
     /// quiet one: a host that never named its kind must not be handed
     /// a prompt nobody will answer.
     Local,
-    /// The machine's own credentials for a host that named its kind
-    ///: the whole prompt rule hangs off
+    /// The machine's own credentials for a host that named its kind:
+    /// the whole prompt rule hangs off
     /// this word.
     LocalAs(HostKind),
 }
@@ -865,8 +865,8 @@ impl ChainState {
     }
 }
 
-/// Refuse a remote joy cannot speak to BEFORE libgit2 opens a socket
-///. A host behind `ProxyCommand` or `ProxyJump` would
+/// Refuse a remote joy cannot speak to BEFORE libgit2 opens a socket.
+/// A host behind `ProxyCommand` or `ProxyJump` would
 /// otherwise be contacted directly and fail with a DNS or connect
 /// error that names the wrong cause.
 fn guard_transport(url: Option<&str>) -> anyhow::Result<()> {
@@ -967,7 +967,7 @@ fn contact_remote(
 /// reads its config. joy's own `HostName` rewrite runs before libgit2
 /// builds the remote, so it would hide such a rule and dial the alias's
 /// `HostName` where the person meant the rule's target. Which rule wins
-/// (the longest prefix) is J4b's prediction; the question
+/// (the longest prefix) is the resolver's prediction; the question
 /// here is only whether there is one at all.
 fn rewritten_by_insteadof(repo: &git2::Repository, url: &str) -> bool {
     let Ok(config) = repo.config() else {
@@ -1078,8 +1078,7 @@ fn refuse_filtered_staged_paths(
 }
 
 /// The paths this checkout has staged or changed OUTSIDE `pathspecs`:
-/// what a person had going that a scoped joy commit did not take
-///.
+/// what a person had going that a scoped joy commit did not take.
 ///
 /// Tracked paths only, index against HEAD and worktree against index.
 /// Untracked files are no answer to "was something of yours skipped":
@@ -1199,8 +1198,7 @@ pub(crate) struct CredSource {
     /// joy's own `HostName` rewrite ([`contact_remote`]) names the real
     /// host. The `Host work` block that produced that rewrite, and with
     /// it the `IdentityFile`, the `IdentityAgent` and the `User` the
-    /// person wrote under it, would then be invisible to the chain
-    ///.
+    /// person wrote under it, would then be invisible to the chain.
     configured: Option<String>,
 }
 
@@ -1375,7 +1373,7 @@ fn leg_remote<'r>(
 /// At most two contacts, each with its own turn of the host's
 /// budget (the throttle is charged per contact, with the verb it
 /// already receives), and the second only when the first's failure is
-/// one the design lets it follow.
+/// one it may follow.
 fn over_plan<T, W>(
     repo_dir: &Path,
     auth: &Auth,
@@ -1614,8 +1612,7 @@ fn attempt_leg<T>(
     // there clears it, and because a leg the throttle holds back never
     // enters the closure at all. A refusal that is not this leg's would
     // send the next operation to the twin and write a 24 hour
-    // `ssh-failed` row for a host whose ssh credential was never refused
-    //.
+    // `ssh-failed` row for a host whose ssh credential was never refused.
     super::resolver::took_ssh_auth_failure();
     let used: std::cell::Cell<Option<&'static str>> = std::cell::Cell::new(None);
     let outcome = {
@@ -1901,7 +1898,7 @@ fn err(e: git2::Error) -> anyhow::Error {
     super::contact::engine_fault("git", &e)
 }
 
-/// How much history a clone downloads (design R6). `0` is
+/// How much history a clone downloads. `0` is
 /// libgit2's `GIT_FETCH_DEPTH_FULL`, the whole history, which is what
 /// the CLI and the platform ask for; the desktop asks for `1`, the lean
 /// shape: one snapshot of the default branch, with the full working tree
@@ -2440,8 +2437,8 @@ pub fn ls_remote_ref(
     Ok(ls_remote_refs(repo_dir, auth, &[refname])?.remove(refname))
 }
 
-/// The oids the forge holds for SEVERAL refs, from one advertisement
-///. `connection.list()` downloads the forge's whole ref list, so
+/// The oids the forge holds for SEVERAL refs, from one advertisement.
+/// `connection.list()` downloads the forge's whole ref list, so
 /// asking for a second ref costs nothing on top; asking twice costs a
 /// second connection and, on a private https remote, a second 401
 /// challenge. One poll tick that watches two refs therefore makes one
@@ -2724,8 +2721,7 @@ pub fn user_email() -> Option<String> {
 /// Unlike [`repo_identity`] this asks for neither of the two: libgit2's
 /// `Repository::signature` refuses to answer at all when `user.email` is
 /// missing, which would take the display NAME with it. The rule uses the name
-/// on its own, as a prefill, so the two values are read separately
-///.
+/// on its own, as a prefill, so the two values are read separately.
 pub fn user_identity(dir: &Path) -> (Option<String>, Option<String>) {
     git_environment();
     let config = match open(dir)
@@ -2952,8 +2948,8 @@ fn stage_in<'p>(
 /// inside the checkout `dir` sits.
 ///
 /// Callers in a PERSON's checkout should prefer [`stage_paths`]: this
-/// one sweeps whatever else the person had lying around into the index
-///. It stays for the checkouts joy owns.
+/// one sweeps whatever else the person had lying around into the index.
+/// It stays for the checkouts joy owns.
 ///
 /// A path an external content filter governs is refused by name and
 /// nothing is written: this is the verb that turns a file into a blob,
@@ -3568,7 +3564,7 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
 ///
 /// `project` is the project the commit lands in, and it is what decides
 /// the rule, never the shape of `member`: the caller may hand this an
-/// address (every auth and crypt path still holds one until J11 lands),
+/// address (every auth and crypt path may still hold one),
 /// and in an anonymous project that address is resolved to its opaque id
 /// before anything is signed. Deciding by shape would have signed the
 /// address that was handed in, which is exactly what ADR-042 forbids.
@@ -3652,8 +3648,8 @@ fn signature_now(
 /// No joy command calls this any more. `commit_signature` used to take
 /// the display name from it and lost the name whenever `user.email` went
 /// missing, because `Repository::signature` answers only when both are
-/// set; it asks [`user_identity`] for the two values separately now
-///. This stays public for the desktop, whose two callers
+/// set; it asks [`user_identity`] for the two values separately now.
+/// This stays public for the desktop, whose two callers
 /// The rule moves onto the acting member.
 pub fn repo_identity(repo_dir: &Path) -> anyhow::Result<(String, String)> {
     let repo = open(repo_dir).map_err(err)?;
@@ -5165,7 +5161,7 @@ mod clean_filter_tests {
     }
 
     /// The two verbs a PERSON's checkout still reaches, which the first
-    /// audit missed because this package created them: the desktop's
+    /// audit missed because they were new: the desktop's
     /// release record is `add_all` plus `commit` (release_ops.rs:343),
     /// and before the git2 only move those were `git add -A` and
     /// `git commit`, which DID run the person's clean filter. Now they
@@ -6769,7 +6765,7 @@ mod credential_shape_tests {
     }
 
     /// The claim decides the shape, and the FIRST attempt carries it.
-    /// This is the acceptance sentence of J4a for a GitHub Enterprise
+    /// This is the acceptance sentence for a GitHub Enterprise
     /// Server host whose name says nothing about GitHub: without the
     /// claim there is no first attempt that can be right, because the
     /// engine's table knows three hosts and guesses at none.
@@ -7318,8 +7314,8 @@ mod credential_shape_tests {
 
 #[cfg(test)]
 mod resolver_assembly_tests {
-    //! The rules the engine applies BETWEEN two legs of a plan
-    //!. The twin push itself has a
+    //! The rules the engine applies BETWEEN two legs of a plan.
+    //! The twin push itself has a
     //! real forge behind it in `tests/forge_twin_push.rs`; what is
     //! decided here is which failure is followed and which row it
     //! writes, and neither needs a socket.
@@ -7572,7 +7568,7 @@ mod resolver_assembly_tests {
         });
     }
 
-    /// must_fix of the J4b review: the thread local rule 3b is
+    /// A review finding: the thread local rule 3b is
     /// read and cleared, and a refusal one operation left behind is
     /// never read as the next one's. `clone` fails outside any plan and
     /// clears nothing, so the clearing has to happen where the next leg

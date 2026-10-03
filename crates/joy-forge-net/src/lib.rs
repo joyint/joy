@@ -12,8 +12,8 @@
 //! foreign CLI discovery and the scope sets.
 //!
 //! Since JOY-029B-B0 the sign in half lives here too:
-//! [`auth`] is the connector's own credential entry, the refresh lock
-//!, the two OAuth doors and the login order.
+//! [`auth`] is the connector's own credential entry, the refresh lock,
+//! the two OAuth doors and the login order.
 //!
 //! Nothing here knows a forge. A forge is a [`forge::Forge`]
 //! implementation the binary hands to [`cli::run`].
