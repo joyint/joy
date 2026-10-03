@@ -1,15 +1,15 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.svg">
-    <img src="docs/assets/banner-light.svg" alt="Joy - product management that lives in your Git repo" width="100%">
+    <img src="docs/assets/banner-light.svg" alt="Joy. Your product backlog, versioned like your code." width="100%">
   </picture>
 </p>
 
 <p align="center">
-  <a href="https://github.com/joyint/joy/releases/latest"><img src="https://img.shields.io/github/v/release/joyint/joy?color=3CDBC0&label=release" alt="Latest release"></a>
-  <a href="https://crates.io/crates/joy-cli"><img src="https://img.shields.io/crates/v/joy-cli?color=3CDBC0" alt="crates.io"></a>
+  <a href="https://github.com/joyint/joy/releases/latest"><img src="https://img.shields.io/github/v/release/joyint/joy?color=12b9a8&label=release" alt="Latest release"></a>
+  <a href="https://crates.io/crates/joy-cli"><img src="https://img.shields.io/crates/v/joy-cli?color=12b9a8" alt="crates.io"></a>
   <a href="https://github.com/joyint/joy/actions/workflows/ci.yaml"><img src="https://github.com/joyint/joy/actions/workflows/ci.yaml/badge.svg" alt="CI"></a>
-  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-3CDBC0" alt="MIT license"></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-MIT-12b9a8" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -27,7 +27,10 @@
 Joy is a single Rust binary that keeps your backlog next to your code: epics, stories, tasks, bugs, milestones and decisions are YAML files in `.joy/`, versioned with Git. No server, no account, no browser tab. Your AI coding tools work the same backlog, under an identity of their own and with a log of who did what.
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="Terminal session: adding an item, starting it, listing the tree and showing the board" width="736">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/demo-dark.svg">
+    <img src="docs/assets/demo-light.svg" alt="Terminal session: adding an item, starting it, listing the tree and showing the board" width="736">
+  </picture>
 </p>
 
 ## Why Joy
