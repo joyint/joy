@@ -4,8 +4,7 @@
 //! Identity resolution for Joy CLI operations.
 //!
 //! Resolves the acting user's identity from, in this order (operator
-//! decision 2026-09-19, item JOY-02AE-1A, correcting D3.9 of
-//! the forge connection design, and the operator's decisions of
+//! decision 2026-09-19, item JOY-02AE-1A, and the operator's decisions of
 //! 2026-09-27, which added the name on the call and put the person's
 //! own session in front of git config):
 //! 0. The name given to this very call: the global `--user <address>`,
@@ -93,8 +92,8 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority (operator decision 2026-09-19, item JOY-02AE-1A, correcting
-/// D3.9 of the forge connection NG design; the name on the call and the
+/// Priority (operator decision 2026-09-19, item JOY-02AE-1A;
+/// the name on the call and the
 /// session step added by the operator on 2026-09-27): the name given to
 /// this call first, then the delegation session, then the person who
 /// signed in at this terminal, then git config, then the forge account,
@@ -424,7 +423,7 @@ fn hint_once(hint: &str) {
 }
 
 /// The at-rest member key the current command acts as (operator decision
-/// 2026-09-19, JOY-02AE-1A, correcting D3.9 of package J11). Every
+/// 2026-09-19, JOY-02AE-1A). Every
 /// joy-cli command that needs to know who is acting asks this and
 /// nothing else, so the order lives in one place: [`resolve_identity`]
 /// reads the delegation session first, then the session of this
@@ -454,8 +453,8 @@ pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
     Ok(member)
 }
 
-/// The at-rest member key of the HUMAN the current command acts for
-/// (D3.9, package J11): the same answer as [`acting_member_key`] for a
+/// The at-rest member key of the HUMAN the current command acts for:
+/// the same answer as [`acting_member_key`] for a
 /// person at a terminal, and the delegating operator under a delegation
 /// session, never the AI.
 ///
@@ -531,7 +530,7 @@ pub fn git_config_prefill() -> Option<String> {
 /// repository's own git config (local before global), then the account
 /// the forge tool for the remote's host reports, and the typed error
 /// when none of the three answers (operator decision 2026-09-19,
-/// JOY-02AE-1A, correcting D3.9, completed in a later addition to the
+/// JOY-02AE-1A, completed in a later addition to the
 /// same item).
 ///
 /// Unlike [`resolve_identity`] this never reads the session: `joy auth`
@@ -592,7 +591,7 @@ fn forge_account_candidate(root: &Path, project: &Project) -> Option<String> {
     acting.emails.first().cloned()
 }
 
-/// The signature a commit of `member` carries in THIS checkout (D4.5).
+/// The signature a commit of `member` carries in THIS checkout.
 /// git config is consulted for the display name only, and only when that
 /// name maps to this very member; everything else comes from the member
 /// id.
@@ -624,7 +623,7 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
 }
 
 /// Whether this checkout's `user.name` may stand in as the display name
-/// of `member` (D4.5: "name is git config `user.name` when it maps to the
+/// of `member` ("name is git config `user.name` when it maps to the
 /// acting member, else the member id").
 ///
 /// The one way a name maps to a member: a `user.email` in the SAME git
@@ -652,8 +651,8 @@ fn config_name_belongs_to(
     }
 }
 
-/// The two signature fields the member acting in `root` commits with
-/// (D4.5), for a caller that holds no identity of its own.
+/// The two signature fields the member acting in `root` commits with,
+/// for a caller that holds no identity of its own.
 ///
 /// This is what the git binary used to take from `user.name` and
 /// `user.email` when joy shelled `git commit`. libgit2 asks for the

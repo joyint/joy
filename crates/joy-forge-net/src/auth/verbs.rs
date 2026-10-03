@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 //! `token`, `token-store`, `login`, `logout` and `web-url`, with the
-//! shapes of D2.4 as amended by D4.1c.
+//! shapes as amended.
 //!
 //! Every answer that names a token carries `login` and `chose_by`,
-//! because D4.1's promise of "one row per host, each naming the login
+//! because the promise of "one row per host, each naming the login
 //! it holds" cannot be kept otherwise, and because `logout`,
 //! `joy forge status` and the Device host row all read them.
 //!
@@ -28,11 +28,11 @@ pub enum Own {
     /// without a probe.
     Nothing,
     /// Another process holds the refresh lock and the entry is past its
-    /// lifetime: D2.6a says report busy, never refresh anyway.
+    /// lifetime: The rule says report busy, never refresh anyway.
     Busy,
     /// The entry is past its lifetime and this call may not renew it,
     /// because a delegated session reads the person's credential and
-    /// changes nothing of it (D1.10, D3.8). The sentence names who has
+    /// changes nothing of it. The sentence names who has
     /// to sign in.
     Expired(String),
     /// A refresh was tried and the forge itself named a refusal (R3,
@@ -42,7 +42,7 @@ pub enum Own {
     /// a new sign-in replaces it; the sentence names who has to sign in.
     Refused(String),
     /// `renew` asked for a REAL refresh attempt and joy's own side or
-    /// the wire's failed it: a transport failure, D2.6a's lock still
+    /// the wire's failed it: a transport failure, the lock still
     /// busy after the one extra wait, or the connector could not be
     /// asked at all. R3: never the person's turn to sign in for a
     /// failure that was never theirs.
@@ -50,7 +50,7 @@ pub enum Own {
 }
 
 /// The connector's own credential for this host, chosen by the steps of
-/// D4.1c that spend no request (pin, memory, only login).
+/// The rule that spend no request (pin, memory, only login).
 pub fn own_token(ctx: &Ctx, host: &str) -> Option<Resolved> {
     match own_token_full(ctx, host, false) {
         Own::Found(resolved) => Some(*resolved),
@@ -81,7 +81,7 @@ pub fn own_token_full(ctx: &Ctx, host: &str, renew: bool) -> Own {
     let (login, chose_by) = match chosen {
         Some((login, chose_by)) => (Some(login), Some(chose_by)),
         // A host with no named login at all still has the `<host>` form
-        // of D2.6's entry addressing; a host with several needs the
+        // of the entry addressing; a host with several needs the
         // probe, which is the `token` verb's business and not this one's.
         None if known.is_empty() => (None, Some(ChoseBy::Only)),
         None => return Own::Nothing,
@@ -100,7 +100,7 @@ pub fn own_token_full(ctx: &Ctx, host: &str, renew: bool) -> Own {
 
 /// Why [`fresh`] gave no usable record back.
 enum Stale {
-    /// Another process holds the refresh lock (D2.6a).
+    /// Another process holds the refresh lock.
     Busy,
     /// A refresh was needed and this call may not run one.
     Expired(String),
@@ -122,7 +122,7 @@ fn delegated_expired(host: &str) -> String {
     )
 }
 
-/// The answer of D2.4 for a credential a delegated session found,
+/// The answer for a credential a delegated session found,
 /// cannot use and may not renew.
 fn expired_answer(message: String) -> Value {
     json!({ "known": false, "reason": "expired", "message": message })
@@ -164,11 +164,11 @@ fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339()
 }
 
-/// The record, refreshed under the lock of D2.6a where it is past its
+/// The record, refreshed under the lock where it is past its
 /// lifetime (or `renew` says to try anyway, R2) and the forge gave joy a
 /// refresh token.
 ///
-/// `renew` is D2.4's `--renew` flag, honoured HERE regardless of the
+/// `renew` is the `--renew` flag, honoured HERE regardless of the
 /// local expiry check: the engine's one retry after a 401 for a token
 /// that worked before (operator rule 2026-09-30, R2) has evidence the
 /// forge already refused this access token, which the record's own
@@ -176,7 +176,7 @@ fn now_rfc3339() -> String {
 /// spends at most one refresh per lock holder, exactly as an ordinary
 /// expiry does.
 ///
-/// The order matters and is the design's: gh, glab and tea are read
+/// The order matters: gh, glab and tea are read
 /// BEFORE the lock is taken and never while it is held, because flock
 /// belongs to the open file description and a child that unlocks takes
 /// the parent's lock with it. Nothing here spawns anything.
@@ -191,17 +191,17 @@ fn fresh(
         return Ok((record, source));
     }
     // A delegated session may READ what the person stored and may
-    // never change it (G2, D3.8). A refresh is a change, and at a forge
+    // never change it (G2). A refresh is a change, and at a forge
     // that rotates refresh tokens it is the change that signs the
     // person out of their own machine, so this call stops here and says
-    // who has to sign in (D1.10: it never asks anybody itself).
+    // who has to sign in (it never asks anybody itself).
     if ctx.vault().is_read_only() {
         return Err(Stale::Expired(delegated_expired(host)));
     }
     if !record.can_refresh() {
         // An expired token with no way to renew it is still what this
         // machine has. The forge answers 401 and the classifier of
-        // D1.8 turns that into `needs_sign_in`, which is the honest
+        // The rule turns that into `needs_sign_in`, which is the honest
         // end; refusing here would only lose the one attempt that
         // tells the person why.
         return Ok((record, source));
@@ -237,7 +237,7 @@ fn fresh(
     // Under the lock: re read, and refresh only if the entry is still
     // the one this process saw (a fingerprint that moved means another
     // holder already refreshed it: this call spends no second refresh
-    // on top of that one, D2.6a's "at most one per lock holder") and is
+    // on top of that one, the "at most one per lock holder") and is
     // still expired, or `renew` was asked for.
     let (current, source) = ctx
         .vault()
@@ -319,8 +319,8 @@ fn fresh(
         // failure, or an answer that was not OAuth at all (a 5xx error
         // page) - is not a reason to try again in a loop, and NEVER a
         // reason to mark the record: ten thousand attempts against one
-        // dead refresh token got a whole OAuth app throttled once
-        // (D2.6a), and R3 says our own failure must never read as the
+        // dead refresh token got a whole OAuth app throttled once,
+        // and R3 says our own failure must never read as the
         // person's turn to sign in.
         //
         // Under `renew` specifically, that failure is answered rather
@@ -331,7 +331,7 @@ fn fresh(
         // person's turn to sign in, when the honest story is that this
         // machine could not reach the forge just now. An ordinary
         // expiry-triggered refresh (`renew` false) never asked for that
-        // distinction and keeps the old answer exactly as D2.6a always
+        // distinction and keeps the old answer exactly as the rule always
         // has.
         _ if renew => {
             drop(guard);
@@ -355,18 +355,18 @@ fn resolved_of(record: Record, source: Source, chose_by: Option<ChoseBy>) -> Res
     }
 }
 
-// -- the token verb (D2.4, D4.1c) ---------------------------------------------
+// -- the token verb ---------------------------------------------
 
 /// `token --remote <url> | --host <h> [--for read|write|create|release]
 /// [--login <name>]`.
 ///
-/// The whole login order of D4.1c runs here, over the whole candidate
+/// The whole login order runs here, over the whole candidate
 /// set: the connector's own logins AND the ones the forge CLI holds.
 /// [`own_token_full`] cannot do it, because the candidate list is forge
 /// knowledge and that function has none; what it knows is the entry,
 /// which is what every other verb needs from it.
 ///
-/// `--for` is the direction of D4.1c's step 4, "the first that answers
+/// `--for` is the direction of the step 4, "the first that answers
 /// 200, and for a push direction reports write, wins". Without it the
 /// probe prefers a login that can push and still accepts one that can
 /// only read, because a caller that stated no direction must not be
@@ -375,7 +375,7 @@ pub fn token(forge: &dyn Forge, target: &Target, purpose: Option<Purpose>, ctx: 
     token_with(forge, target, purpose, ctx, false)
 }
 
-/// [`token`] with D2.4's `--renew` flag (R2, operator rule 2026-09-30):
+/// [`token`] with the `--renew` flag (R2, operator rule 2026-09-30):
 /// the engine's one retry after a 401 for a token that worked before,
 /// asking [`fresh`] to attempt a refresh whatever the record's own local
 /// expiry says. An older connector never sees this flag at all and
@@ -424,7 +424,7 @@ pub fn token_with(
             // answered AT ONCE and not held like `expired` or `refused`:
             // the sources below this one (`--token-env`, a foreign CLI)
             // are read through `Ctx::resolved_token`, which tries the
-            // CONNECTOR'S OWN ENTRY again first (D2.4's own order) - the
+            // CONNECTOR'S OWN ENTRY again first (the own order) - the
             // very entry this call just could not renew, this time with
             // no renewal asked for at all, which would answer with the
             // same not-locally-expired-yet token `--renew` exists to
@@ -435,7 +435,7 @@ pub fn token_with(
             Own::Nothing => {}
         },
         // Nobody is named and no login is known by name either: the
-        // `<host>` form of D2.6's entry addressing is what is left.
+        // `<host>` form of the entry addressing is what is left.
         None if candidates.is_empty() => match own_token_full(ctx, &host, renew) {
             Own::Found(resolved) => return answer_or_wall(forge, &host, target, &resolved, ctx),
             Own::Busy => return lock::busy_answer(),
@@ -446,7 +446,7 @@ pub fn token_with(
         },
         None => {}
     }
-    // Several logins and nothing that names one: the probe of D4.1c,
+    // Several logins and nothing that names one: the probe,
     // one request per candidate, per remote and never per contact.
     let need = Need::of(purpose);
     let mut unreachable = false;
@@ -461,13 +461,13 @@ pub fn token_with(
                 return answer(forge, &host, &login);
             }
             // Every login was refused for the ORGANISATION's reason,
-            // which no other login of this machine can mend (D2.7c).
+            // which no other login of this machine can mend.
             Probed::Walled { owner, url } => {
                 return choose::needs_org_approval(&owner, &path, url.as_deref())
             }
             Probed::NoneReach(tried) => {
                 // Whatever the memory said, it is wrong: no login this
-                // machine holds reaches the repository (D4.1c). The
+                // machine holds reaches the repository. The
                 // forge answered every question, so this is knowledge
                 // and the stale memory goes.
                 if let Some(remote) = ctx.remote.as_deref() {
@@ -478,14 +478,14 @@ pub fn token_with(
             // The forge could not be asked at all: this machine is
             // offline, a proxy refused, the instance is down. Nothing
             // was learned, so nothing is concluded and NOTHING is
-            // thrown away: D1.8a's rule is that joy reads the evidence
+            // thrown away: the rule is that joy reads the evidence
             // and does not destroy it, and the login memory of this
             // remote is the answer the next online call gets for free.
             Probed::Unreachable => unreachable = true,
             Probed::NotAsked => {}
         }
     }
-    // The rest of D2.4's source order: the forge's own variables, then
+    // The rest of the source order: the forge's own variables, then
     // the forge CLI, spawned.
     match ctx.resolved_token(forge.id(), &host) {
         Some(resolved) => answer(forge, &host, &resolved),
@@ -501,7 +501,7 @@ pub fn token_with(
             let mut answer = json!({ "known": false, "reason": "no-login" });
             // A host that holds several logins and nothing that names
             // one has an answer a person can act on, and "no-login"
-            // alone is not it (D4.1c).
+            // alone is not it.
             if unreachable {
                 answer["message"] = json!(format!(
                     "joy could not ask {} which of your logins ({}) reaches {}. \
@@ -525,10 +525,10 @@ pub fn token_with(
 }
 
 /// The credential for a remote the way every verb OTHER than `token`
-/// asks for it: the steps of D4.1c that spend no request first, and
+/// asks for it: the steps that spend no request first, and
 /// then the probe, which is the step `Ctx` cannot run on its own
 /// because the candidate list and the reach call are forge knowledge
-/// (D4.1c, and the `store`, `files`, `release`, `repositories` and
+/// (and the `store`, `files`, `release`, `repositories` and
 /// `create-repository` verbs that all reach a credential through
 /// `Ctx::token`).
 ///
@@ -548,7 +548,7 @@ pub fn token_for_remote(forge: &dyn Forge, host: &str, ctx: &Ctx) -> Option<Reso
         }
         Probed::NoneReach(_) => {
             // The forge answered, so this is knowledge: the memory of
-            // this remote is stale and goes (D4.1c).
+            // this remote is stale and goes.
             pin::forget_remote(ctx.state_dir(), remote);
             None
         }
@@ -586,7 +586,7 @@ fn named_login(
     }
 }
 
-/// The one object of D2.4, with the two fields D4.1c adds.
+/// The one object, with the two fields the rule adds.
 fn answer(forge: &dyn Forge, host: &str, resolved: &Resolved) -> Value {
     json!({
         "known": true,
@@ -601,7 +601,7 @@ fn answer(forge: &dyn Forge, host: &str, resolved: &Resolved) -> Value {
     })
 }
 
-/// What the probe of D4.1c must find: "the first that answers 200, and
+/// What the probe must find: "the first that answers 200, and
 /// for a push direction reports write, wins".
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Need {
@@ -637,10 +637,10 @@ impl Need {
 
 enum Probed {
     /// The forge refused every candidate for the OWNER organisation's
-    /// reason (D2.7c): the application is not approved for it. The
+    /// reason: the application is not approved for it. The
     /// owner and the page an owner acts on travel with it.
     Walled { owner: String, url: Option<String> },
-    /// The login that won, and whether it may push. D4.1c's memory is
+    /// The login that won, and whether it may push. the memory is
     /// "the login the transport memory recorded as the LAST ONE THAT
     /// PUSHED SUCCESSFULLY to this remote", so a login that only reads
     /// is never written into it: a later push would take it from the
@@ -671,7 +671,7 @@ fn probe(
         return Probed::NotAsked;
     }
     // One probe per remote for the life of this call, whichever verb
-    // asks for it: D4.1c allows one request per candidate per remote,
+    // asks for it: The rule allows one request per candidate per remote,
     // and never one per contact.
     if !ctx.first_probe(host, repo_path) {
         return Probed::NotAsked;
@@ -683,7 +683,7 @@ fn probe(
     let mut walled = false;
     // The token of the first candidate the forge really answered for.
     // Where no login reaches the repository, it is what the second
-    // question of D2.7c is asked with: whose organisations the token's
+    // question is asked with: whose organisations the token's
     // user belongs to is a fact about the person, not about the login
     // that lost the race.
     let mut answered_with: Option<String> = None;
@@ -695,7 +695,7 @@ fn probe(
         let Some(reach) = forge.reaches(host, repo_path, &candidate.token, ctx) else {
             // The forge did not answer at all. That is evidence about
             // the network and none about this login, so the verdict
-            // stays open (D1.8a).
+            // stays open.
             silent = true;
             continue;
         };
@@ -732,7 +732,7 @@ fn probe(
     // Nothing reached it. Before joy says "sign in with the login that
     // can", it asks the one question that decides whether ANY login
     // could: is the owner organisation walling this application out
-    // (D2.7c)? One request, and only here.
+    //? One request, and only here.
     if let Some((owner, url)) = walled_repo(
         forge,
         host,
@@ -765,18 +765,18 @@ fn walled_repo(
     walled.then(|| (owner.to_string(), Some(url)))
 }
 
-/// The `token` answer of D2.4, unless the forge says the OWNER
-/// organisation walls this repository off (D2.7c).
+/// The `token` answer, unless the forge says the OWNER
+/// organisation walls this repository off.
 ///
 /// This is the step that makes the answer independent of `chose_by`: a
 /// pin and a memory choose the LOGIN without spending a request, which
-/// is what D4.1c asks of them, and neither of them knows anything about
+/// is what the rule asks of them, and neither of them knows anything about
 /// reachability. Without this, whether a person was told about the wall
 /// depended on a memory row, and the same machine answered
 /// `no-login-for-repo` one minute and `needs_org_approval` the next
 /// (JOY-02A9-48).
 ///
-/// It costs the one request D4.1c already allows per remote, and the
+/// It costs the one request the rule already allows per remote, and the
 /// call's own `first_probe` gate keeps it at one.
 fn answer_or_wall(
     forge: &dyn Forge,
@@ -839,7 +839,7 @@ fn foreign_token(
     })
 }
 
-// -- the token-store verb (D2.4) ----------------------------------------------
+// -- the token-store verb ----------------------------------------------
 
 /// `token-store --host <h> [--login <name>]`: one token from STDIN,
 /// validated with `identity`, stored, and then the same answer `token`
@@ -868,7 +868,7 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
         return json!({ "known": false, "reason": "unsupported-host" });
     };
     // A delegated session reads what the person stored and writes
-    // nothing (G2, D3.8). It is refused here and not by the vault, so
+    // nothing (G2). It is refused here and not by the vault, so
     // that the answer names the reason instead of reading as a broken
     // credential store, and refused BEFORE the token is validated, so
     // that a token nobody may keep is never spent on a request.
@@ -880,7 +880,7 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
         eprintln!("joy: no token arrived on stdin");
         return json!({ "known": false, "reason": "no-login" });
     }
-    // The validation D2.4 asks for: the token names an account on THIS
+    // The validation the rule asks for: the token names an account on THIS
     // instance, or it is not stored at all. A forge that could not be
     // reached is a THIRD answer and gets its own reason and its own
     // sentence: telling somebody on a train that their token was
@@ -930,7 +930,7 @@ pub fn store_token(forge: &dyn Forge, target: &Target, ctx: &Ctx, raw: &str) -> 
     answer(forge, &host, &resolved)
 }
 
-/// Which step of D4.1c would choose this login now that it is stored.
+/// Which step would choose this login now that it is stored.
 fn chose_by_now(ctx: &Ctx, host: &str, login: &str) -> Option<ChoseBy> {
     let known = ctx.vault().logins(host);
     match choose::without_probe(
@@ -956,7 +956,7 @@ fn read_stdin() -> Option<String> {
     Some(raw)
 }
 
-// -- the login verb (D2.4, D2.7, D3.11) ---------------------------------------
+// -- the login verb ---------------------------------------
 
 /// The sentence for a forge that did not answer at all.
 ///
@@ -979,7 +979,7 @@ pub(crate) fn unreachable_sentence(forge: &dyn Forge, host: &str, detail: &str) 
 
 /// The sentence a delegated session gets when it tries to STORE a
 /// credential. It may use what the person stored and may never add to
-/// it (G2, D3.8, D1.10).
+/// it (G2).
 pub const NO_STORE_HERE: &str =
     "this process runs under a delegation session, which may use the credential this machine \
      holds and may never store one. Store the token on the machine that owns the session with \
@@ -992,7 +992,7 @@ pub const NO_LOGOUT_HERE: &str =
      holds and may never sign it out. Sign out on the machine that owns the session with \
      joy forge logout";
 
-/// The sentence of D3.11 for a host that has no person at it.
+/// The sentence for a host that has no person at it.
 pub const NO_PERSON_HERE: &str =
     "joy forge login needs a person at this machine; this process runs under a delegation \
      session. Sign in on the machine that owns the session, or store a token there with \
@@ -1013,7 +1013,7 @@ pub fn login(
     events: &mut dyn Events,
     clock: &dyn Clock,
 ) -> i32 {
-    // Layer 3 of D3.11: the agent image builds joy-cli from source, so
+    // Layer 3: the agent image builds joy-cli from source, so
     // a delegated agent has this verb on its PATH. The refusal is
     // instant, not a fifteen minute wait.
     if matches!(ctx.host_kind, HostKind::Background | HostKind::Delegated) {
@@ -1069,7 +1069,7 @@ pub fn login(
     finish(forge, &host, &config, grant, ctx, events)
 }
 
-/// The device grant's poll loop (D2.4, D2.7).
+/// The device grant's poll loop.
 ///
 /// Two rules the first version did not keep, both paid for by a person
 /// who was standing at GitHub's page while joy gave up (JOY-02A9-48):
@@ -1123,7 +1123,7 @@ fn device_login(
                 events.emit(oauth::waiting_event(left, None));
             }
             Poll::SlowDown => {
-                // D2.7: plus five seconds, and the new interval is
+                // Plus five seconds, and the new interval is
                 // announced so the host can say what it is waiting for.
                 answered = true;
                 interval += 5;
@@ -1201,7 +1201,7 @@ fn pkce_login(
         PKCE_WAIT.as_secs() as i64,
         1,
     ));
-    // Each tick is emitted AS IT HAPPENS. D2.4 asks for "one object per
+    // Each tick is emitted AS IT HAPPENS. The rule asks for "one object per
     // line, each flushed" precisely so the host can follow a running
     // sign in; collecting them and replaying the lot afterwards would
     // leave a Gitea, Forgejo or Codeberg login silent for up to fifteen
@@ -1235,7 +1235,7 @@ fn pkce_login(
     }
 }
 
-/// The cap on a loopback sign in: the same fifteen minutes D2.3 gives
+/// The cap on a loopback sign in: the same fifteen minutes the rule gives
 /// the whole `login` call.
 const PKCE_WAIT: std::time::Duration = std::time::Duration::from_secs(900);
 
@@ -1251,7 +1251,7 @@ fn finish(
         AccountAnswer::Known(account) => account,
         // The grant arrived, so the forge was reachable a moment ago.
         // Saying "it refused its own token" for a contact that broke
-        // between the two requests is the same collapse D2.4 forbids
+        // between the two requests is the same collapse the rule forbids
         // (JOY-02A8-F4).
         AccountAnswer::Unreachable(detail) => {
             events.emit(oauth::error_event(
@@ -1269,9 +1269,9 @@ fn finish(
         }
     };
     // Gitea's AccessTokenResponse has no scope field, so for the Gitea
-    // family the set stored is the set requested (D2.7c). Whichever
+    // family the set stored is the set requested. Whichever
     // source names it, it is stored SPACE separated: GitHub writes its
-    // sets with commas and D2.7c asks for one spelling.
+    // sets with commas and the rule asks for one spelling.
     let scopes = grant
         .scope
         .clone()
@@ -1324,11 +1324,11 @@ fn finish(
     0
 }
 
-// -- the logout verb (D2.4) ---------------------------------------------------
+// -- the logout verb ---------------------------------------------------
 
 /// `logout --host <h> [--login <name>]`.
 ///
-/// This call WRITES, so it takes the refresh lock of D2.6a: "the lock
+/// This call WRITES, so it takes the refresh lock: "the lock
 /// lives in the plugin and is taken by every `token`, `login`,
 /// `token-store` and `logout` call that may write". Without it a
 /// refresh running beside this one re reads the entry under its own
@@ -1338,7 +1338,7 @@ fn finish(
 ///
 /// Where the credential came from a foreign CLI the connector removes
 /// nothing and names the foreign command: joy never refreshes, writes
-/// or revokes what gh, glab and tea own (D2.6). That branch SPAWNS, so
+/// or revokes what gh, glab and tea own. That branch SPAWNS, so
 /// it runs with no lock held: flock belongs to the open file
 /// description, and a child that unlocks takes the parent's lock away
 /// with it.
@@ -1349,7 +1349,7 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     // The same rule as `token-store`, and here it is the one that
     // matters most: this verb REVOKES at the forge before it removes
     // anything locally, so a delegated session that reached it would
-    // sign the person out of their own machine (G2, D3.8).
+    // sign the person out of their own machine (G2).
     if ctx.vault().is_read_only() {
         return json!({
             "removed": false,
@@ -1394,7 +1394,7 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
     }
     // The lock first, the entry after it: the re read under the lock is
     // what puts this delete and a refresh beside it into one order
-    // instead of two (D2.6a).
+    // instead of two.
     let guard = match lock::take(ctx.state_dir(), &host, login.as_deref()) {
         Ok(guard) => guard,
         Err(busy) => {
@@ -1421,7 +1421,7 @@ pub fn logout(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> Value {
                 "source": source.as_str(),
                 "login": record.login,
             }),
-            // The entry is still there. J3's acceptance is "`logout`
+            // The entry is still there. The acceptance is "`logout`
             // removes the entry", so a state directory that could not
             // be written is a refusal and never a reported success.
             Err(message) => {
@@ -1467,7 +1467,7 @@ fn foreign_source(forge: &dyn Forge) -> &'static str {
     }
 }
 
-// -- the web-url verb (D1.5, D2.4) --------------------------------------------
+// -- the web-url verb --------------------------------------------
 
 /// `web-url --remote <url>`: the https twin of a remote, which only the
 /// forge can compute for a self hosted instance.
@@ -1489,10 +1489,10 @@ pub fn https_twin(target: &Target, ctx: &Ctx) -> Value {
     json!({ "known": true, "https_url": format!("{}/{path}.git", base.trim_end_matches('/')) })
 }
 
-/// The local `scope_missing` pre check of D2.7c, against the set the
+/// The local `scope_missing` pre check, against the set the
 /// connector stored beside the token.
 ///
-/// This is the cheap half of D2.7c: the set was written down when the
+/// This is the cheap half: the set was written down when the
 /// token was granted, so a verb the set cannot carry is refused without
 /// spending a request, and the forge's own refusal is never reported as
 /// `denied`. An UNKNOWN set (a fine grained token, a variable somebody
@@ -1513,7 +1513,7 @@ pub fn stored_scope_gate(
 /// [`stored_scope_gate`] for `create-repository`, where GitHub's answer
 /// depends on the repository's visibility: "public_repo or repo scope
 /// to create a public repository, and repo scope to create a private
-/// repository" (D2.7a).
+/// repository".
 pub fn stored_create_gate(ctx: &Ctx, forge_id: &str, host: &str, private: bool) -> Option<Value> {
     let granted = ctx.granted_scopes(forge_id, host)?;
     let missing = crate::scope::missing_for_create(forge_id, private, &granted);
@@ -1553,7 +1553,7 @@ mod tests {
         );
     }
 
-    /// D2.7c: the pre check answers locally from the set stored beside
+    /// The pre check answers locally from the set stored beside
     /// the token, and an UNKNOWN set is never reported as a missing one.
     #[test]
     fn the_scope_gate_answers_from_the_stored_set_and_stays_quiet_without_one() {

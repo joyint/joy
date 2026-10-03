@@ -53,8 +53,8 @@ use joy_core::error::JoyError;
 /// appears in `git log`, `git branch`, or a plain `git pull`.
 ///
 /// Declared in the engine and re-exported here, because the engine sets
-/// the tracking ref below itself after a push of this one (design
-/// D1.5): two copies of the name would be two chances to drift, and the
+/// the tracking ref below itself after a push of this one:
+/// two copies of the name would be two chances to drift, and the
 /// one that drifts is the one nobody reads.
 pub const CHATS_REF: &str = joy_core::vcs::forge::CHATS_REF;
 
@@ -166,7 +166,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
     read_chat_tree(repo, &chat_tree)
 }
 
-/// Pack and sweep this store when it is worth it (design D3.7).
+/// Pack and sweep this store when it is worth it.
 ///
 /// Every chat write is a commit, and these go through libgit2, which
 /// never runs the auto-gc the git binary runs after its own commits.
@@ -186,9 +186,8 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// because a person's own git may be writing objects joy cannot see.
 ///
 /// The window is the one for a checkout joy does not own, on every host,
-/// and that is a DEVIATION from D3.7, reported at the package level
-/// because the design document is the shared contract of J0..J11 and no
-/// package edits it. D3.7 asks for 24 hours where joy is the sole writer
+/// and that is a DEVIATION, reported as one.
+/// The rule asks for 24 hours where joy is the sole writer
 /// (the platform's project clone, a desktop only store), and the chat
 /// store cannot tell the two apart from here: the same function serves a
 /// person's own checkout, where another git may be writing objects joy
@@ -196,7 +195,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// store 13 days of garbage it could have freed (the 38.89 MiB of
 /// JOY-023C-1E held longer); the other mistake would cost somebody
 /// else's objects. When the write path learns which kind of store it is
-/// writing (P8 for the platform's clone, the desktop's own packaging for
+/// writing (the platform's clone, the desktop's own packaging for
 /// the other), it selects `Options::owned_store()` and nothing else
 /// about this changes.
 ///
@@ -210,7 +209,7 @@ fn maintain_occasionally(repo: &Repository) {
     // than left for a caller to notice. The counters that go nowhere
     // here (`skipped_unfreshenable` above all, which is every object an
     // agent's container wrote as another uid) belong to the maintenance
-    // owner D5 names, the platform's sync worker lane, and that lane
+    // owner, the platform's sync worker lane, and that lane
     // does not exist yet.
     let _ = joy_core::vcs::maintenance::maintain_if_due(
         repo,
@@ -238,9 +237,9 @@ pub(crate) fn commit_root(
 ) -> Result<Option<Oid>, JoyError> {
     // The swap needs the commit's id, so the object cannot be written
     // after it, but it can be left unwritten when the ref has ALREADY
-    // moved, and taken back out when the swap loses anyway. D3.7 asks
+    // moved, and taken back out when the swap loses anyway. The rule asks
     // for the ordering; the two protections on the discard below are
-    // this package's reading of what makes that safe. Both halves
+    // what makes that safe. Both halves
     // matter: the losing attempt used to leave its commit and its trees
     // in the store for ever, and up to eight attempts per write is how
     // the sandbox got 505 orphans out of 761 commits.
@@ -514,7 +513,7 @@ fn union_chat_subtrees(
 /// never the working branch, so `git log`/`git pull` ignore them.
 ///
 /// A failed contact comes back as [`JoyError::Contact`] and carries the
-/// classifier's verdict with it (D1.8b, JOY-02A3-E4): the state, the
+/// classifier's verdict with it (JOY-02A3-E4): the state, the
 /// sentence, the detail line and the moment the forge serves again. A
 /// surface therefore names the state and offers its one action instead
 /// of reading prose joy flattened on the way up.
@@ -592,11 +591,11 @@ pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool,
 /// The one log line for a chat contact that failed where no caller can
 /// be told: the detached delivery and the healing push of a poll.
 ///
-/// It names the classifier's STATE and never guesses one (D1.8a): the
+/// It names the classifier's STATE and never guesses one: the
 /// old line said "(offline?)" for every failure, so a spent login, a
 /// throttle and a real outage all read as a network fault. The detail
 /// line follows, because that is where the operation ("chats push") and
-/// libgit2's own words live (D1.8b); the sentence itself stays the
+/// libgit2's own words live; the sentence itself stays the
 /// plain one a person reads.
 fn log_failed_contact(error: &JoyError) {
     let state = error.failure().reason();
@@ -1331,7 +1330,7 @@ mod tests {
         assert!(load_chat(root, "old").unwrap().is_none());
     }
 
-    // ---- maintenance of the store (design D3.7) ------------------------
+    // ---- maintenance of the store ------------------------
 
     /// Loose objects in a store, counted the way the sweep enumerates
     /// them: the two-hex fanout directories under `objects/`.
@@ -1416,7 +1415,7 @@ mod tests {
             .unwrap();
     }
 
-    /// The sweep of D3.7 on the shape this store actually has: chats on
+    /// The sweep on the shape this store actually has: chats on
     /// `refs/joy/chats`, which gets no reflog, plus the orphans of lost
     /// races. The orphans go, every chat stays readable, and the store
     /// shrinks.
@@ -1460,7 +1459,7 @@ mod tests {
         );
         let after = loose_count(dir.path());
         assert!(after < before / 4, "the store shrinks: {before} -> {after}");
-        // D3.7's two acceptance numbers, and what this case does NOT
+        // the two acceptance numbers, and what this case does NOT
         // prove about them: after the sweep this store holds on the
         // order of forty objects and a hundred kilobytes, so both
         // assertions pass by a factor of a hundred and neither is a
@@ -1536,7 +1535,7 @@ mod tests {
         assert!(!path_of(orphan).exists());
     }
 
-    /// The other half of D3.7's root-cause fix: a write that sees the ref
+    /// The other half of the root-cause fix: a write that sees the ref
     /// already moved writes no object at all, so there is nothing for the
     /// sweep to reclaim later.
     #[test]
@@ -1571,7 +1570,7 @@ mod forge_sync_tests {
     use super::*;
 
     /// A clone of the whole history with nobody watching it: the depth and
-    /// the progress callback a clone grew for the desktop (D4.3) are of no
+    /// the progress callback a clone grew for the desktop are of no
     /// use here, because the local transport these tests clone over
     /// refuses any depth at all.
     fn clone_full(
@@ -1891,7 +1890,7 @@ mod forge_sync_tests {
     /// The state that arrives is a DISTINGUISHING one and not the
     /// `error` every JoyError carries anyway (JOY-02A3-E4): nobody
     /// answers on this port, so the verdict is `offline`, and a banner
-    /// can say "no connection" and offer the one action D1.8b names
+    /// can say "no connection" and offer the one action the rule names
     /// instead of showing a sentence and guessing at the rest.
     ///
     /// The forge is a port on THIS machine that nothing listens on: a

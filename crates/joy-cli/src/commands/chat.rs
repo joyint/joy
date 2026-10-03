@@ -14,9 +14,9 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
-// No `Vcs` and no `contact::Failure` import is left here: J6 retired this
-// file's own stderr classifier in favour of `contact::as_joy_error`, and
-// J11 took the last `user_email()` call off the `Vcs` trait (D3.9). The
+// No `Vcs` and no `contact::Failure` import is left here: this
+// file's own stderr classifier went in favour of `contact::as_joy_error`, and
+// the last `user_email()` call is off the `Vcs` trait. The
 // test module below imports the `Failure` words it names itself.
 
 #[derive(Args)]
@@ -91,8 +91,8 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// fast-forward / message-union merge), push when the local ref is
 /// ahead.
 ///
-/// The transfer runs through the git2 engine, like every other host's
-/// (D3.2): the CLI used to spawn `git fetch` and `git push` here, which
+/// The transfer runs through the git2 engine, like every other host's:
+/// the CLI used to spawn `git fetch` and `git push` here, which
 /// was the last git process on the chat write path and the one thing a
 /// machine without a git binary could not do. The chat SEMANTICS were
 /// never this file's - they live in `joy_chat_store::chat_ref` and every
@@ -100,13 +100,13 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 ///
 /// NEVER fatal: a chat is committed locally before any network I/O, so a
 /// failed sync only delays visibility. What the failure MEANS comes from
-/// the engine's classifier (D1.8a) and is said in the one vocabulary of
-/// D3.8; the four substring rules that used to read git's stderr here
+/// the engine's classifier and is said in the one vocabulary;
+/// the four substring rules that used to read git's stderr here
 /// are gone with the git process that wrote it.
 fn chat_auth() -> joy_core::vcs::forge::Auth {
     // The machine's own credentials, for the host kind `cli_main`
-    // decided (D1.1). An agent under JOY_SESSION is `Delegated`, so
-    // nothing below can raise a prompt (D1.10).
+    // decided. An agent under JOY_SESSION is `Delegated`, so
+    // nothing below can raise a prompt.
     joy_core::vcs::forge::Auth::LocalAs(joy_core::host::process_host())
 }
 
@@ -116,7 +116,7 @@ fn chat_auth() -> joy_core::vcs::forge::Auth {
 ///
 /// The probe asks the question the transfer that follows really asks.
 /// `chat_ref::sync_with_forge` and `forge::push_ref` contact the remote
-/// `origin_or_first` picks (D1.1), which is what
+/// `origin_or_first` picks, which is what
 /// `forge::default_remote_name` names. This used to read
 /// `sync.remote` (default `origin`) instead, the only reader of that key
 /// in the product, and the two questions disagreed in both directions:
@@ -174,8 +174,8 @@ fn sync_ref(root: &std::path::Path) {
 }
 
 /// Which way the refused transfer went. It no longer decides what the
-/// failure MEANS - the engine's classifier reads the direction itself
-/// (D1.8a), so the same HTTP status can mean two things there - it
+/// failure MEANS - the engine's classifier reads the direction itself,
+/// so the same HTTP status can mean two things there - it
 /// decides only what this command says did not happen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Way {
@@ -201,9 +201,9 @@ impl Way {
     }
 }
 
-/// What a refused chat sync says, in the one vocabulary of D3.8: the
+/// What a refused chat sync says, in the one vocabulary: the
 /// state's sentence, the state WORD an agent reads, the ONE next step
-/// (for `needs_sign_in` the door this CLI now has, D3.10), and the
+/// (for `needs_sign_in` the door this CLI now has), and the
 /// engine's detail line.
 ///
 /// A sync is never this command's answer, so it never writes to stdout
@@ -811,7 +811,7 @@ mod sync_tests {
 
     /// The vocabulary is the classifier's, and this file only decides
     /// what did not happen. The four substring rules that used to read
-    /// git's stderr here are gone with the git process (D3.8).
+    /// git's stderr here are gone with the git process.
     #[test]
     fn the_words_of_the_classifier_are_the_words_of_this_file() {
         let error = refused(Failure::NoPushRights, "You can read this repository.");

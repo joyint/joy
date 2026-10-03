@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The host kind under a REAL delegation session (D1.1 of the forge
-//! connection NG design, JOY-0297-1A).
+//! The host kind under a REAL delegation session
+//! (JOY-0297-1A).
 //!
 //! The case that matters is the agent on a terminal: it has stdin and
 //! stdout on a PTY, so the terminal answer alone would call it
@@ -51,7 +51,7 @@ fn a_live_session_makes_the_host_delegated_even_on_a_terminal() {
     assert_eq!(HostKind::detect(false), HostKind::Background);
 
     // A live delegation session: the agent owns a terminal and is still
-    // an agent. This is the case J9's refusal rule is written for, and it
+    // an agent. This is the case the refusal rule is written for, and it
     // is the one the value alone cannot prove.
     std::env::set_var(
         "JOY_SESSION",

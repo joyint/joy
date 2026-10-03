@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! joy on a machine with no git binary (JOY-01FD-ED, design D3.2).
+//! joy on a machine with no git binary (JOY-01FD-ED).
 //!
 //! The operator's reason is mobile: the app must work where there is no
 //! git to spawn. A layer that is "mostly git2" fails there on the one
@@ -85,7 +85,7 @@ impl Machine {
     }
 
     /// The same, as an agent: under a delegation session, with nothing
-    /// on stdin to read (D3.8).
+    /// on stdin to read.
     ///
     /// The session has to be a live one. A `JOY_SESSION` that merely
     /// exists leaves the host as interactive as it was
@@ -245,7 +245,7 @@ fn joy_works_end_to_end_on_a_machine_without_git() {
     );
 }
 
-/// D3.8: an agent under a delegation session is never asked anything,
+/// An agent under a delegation session is never asked anything,
 /// and what it reads is a stable word. The remote here is a path that
 /// does not exist, so the contact fails for certain; the run must still
 /// end by itself and name the state rather than waiting for somebody to
@@ -314,11 +314,11 @@ fn an_agent_under_a_delegation_is_never_asked_and_reads_a_stable_state_word() {
     );
 }
 
-/// D3.10 on the fatal path: with `--json`, stdout carries exactly one
+/// The fatal path: with `--json`, stdout carries exactly one
 /// object and nothing else. `joy release publish` printed its progress
 /// there as well, so the whole answer an agent got was
 /// `Pushing to origin...{"version":1,...}`, which parses as nothing.
-/// The progress is still said, on stderr, where D3.10 puts progress and
+/// The progress is still said, on stderr, where the rule puts progress and
 /// diagnostics anyway.
 #[test]
 fn the_json_answer_of_a_refused_publish_is_one_object_and_nothing_else() {

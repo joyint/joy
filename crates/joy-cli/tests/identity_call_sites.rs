@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The identity call sites of the CLI (D3.9 and package J11 of the forge
-//! connection NG design, JOY-02A0-6E; corrected by the operator's
+//! The identity call sites of the CLI (JOY-02A0-6E; corrected by the operator's
 //! decision of 2026-09-19, JOY-02AE-1A).
 //!
 //! Every command that needs to know who is acting asks
@@ -336,7 +335,7 @@ fn assert_every_step_needed_an_identity(steps: &[Step]) {
     }
 }
 
-/// Every group of identity call sites D3.9 lists, in one run: auth,
+/// Every group of identity call sites the rule lists, in one run: auth,
 /// crypt, board (the item write), project and the event log behind them.
 /// The passphrase commands come last because they end the session.
 fn identity_script(machine: &Machine) -> Vec<Step> {
@@ -552,7 +551,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
 /// host: the migration rekeys every human member, so the address a
 /// machine was founded with stops being a member key halfway through.
 ///
-/// Under J11 this was the one command git config could not rescue,
+/// Earlier this was the one command git config could not rescue,
 /// because the address was no longer a member map key after the rekey;
 /// the migration re-pinned the acting member itself to cover it. The
 /// operator's 2026-09-19 correction (JOY-02AE-1A) removes the need for
@@ -771,7 +770,7 @@ fn the_session_answers_every_identity_call_site_until_it_ends() {
     }
 }
 
-/// The acceptance of J11 was that every joy command needing an identity
+/// The earlier acceptance was that every joy command needing an identity
 /// worked in a repository with no git config once the member was known,
 /// because the founding pin answered for it. The operator's 2026-09-19
 /// correction (JOY-02AE-1A) retires that pin from resolve_identity, so
@@ -796,7 +795,7 @@ fn every_identity_command_needs_a_session_a_git_config_or_a_forge_account() {
     );
 }
 
-/// The acceptance of J11 was that removing `user.email` changed no joy
+/// The earlier acceptance was that removing `user.email` changed no joy
 /// command's behaviour. Replaced by its inverse, as the item says: with
 /// `user.email` set the binary knows the member, without it and without
 /// a forge account it does not.
@@ -921,10 +920,10 @@ fn the_privacy_migration_needs_git_config_too() {
 /// git config that names a registered member of this very project, and
 /// no pin at all.
 ///
-/// Before this correction (package J11 of D3.9) nothing on such a
+/// Before this correction nothing on such a
 /// machine answered, and a person had to name themselves again despite
 /// their own checkout already saying who they were. Now the git config
-/// decides on its own, exactly the way it did before D3.9 first took it
+/// decides on its own, exactly the way it did before the rule first took it
 /// out of the order, and `joy auth status` names it as the source.
 #[test]
 fn a_git_config_alone_decides_who_acts() {
@@ -960,7 +959,7 @@ fn a_git_config_alone_decides_who_acts() {
 
     // A write, with no session at all, resolves the founder from git
     // config alone and succeeds outright: the exact opposite of what
-    // package J11 accepted.
+    // was accepted before.
     let add = machine.joy(&["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
 
@@ -980,10 +979,10 @@ fn a_git_config_alone_decides_who_acts() {
 }
 
 /// A delegation session answers WHO is acting, and nothing about what
-/// they may do (D3.9): the rights question is the guard's, and the crypt
+/// they may do: the rights question is the guard's, and the crypt
 /// verbs that change who can read a zone ask it.
 ///
-/// This is the shape J11 creates and therefore has to close, on a
+/// This is the shape identity resolution creates and therefore has to close, on a
 /// machine whose git config names the founder (operator decision
 /// 2026-09-19, JOY-02AE-1A: the human writes below need SOME identity,
 /// and a session answers only for the AI). An AI session with no manage
@@ -1043,7 +1042,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
     );
 }
 
-/// The order of D3.9, at its top: a delegation session outranks git
+/// The order, at its top: a delegation session outranks git
 /// config. `joy deauth` under an AI session ends THAT session, and the
 /// operator whose address the git config carries keeps theirs.
 #[test]
@@ -1150,7 +1149,7 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
 /// AI member has no `kdf_nonce` and can never have one, so resolving it
 /// there would refuse the operator work they are entitled to do.
 ///
-/// This is the shape the CLI had before J11, and the operator's
+/// This is the shape the CLI had before, and the operator's
 /// 2026-09-19 correction (JOY-02AE-1A) brought git config back for the
 /// plain human write below; the point this test still makes is that a
 /// delegation session, once it exists, outranks that config for the AI
@@ -1177,7 +1176,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     // A member write is a different matter: the guard refuses an AI
     // manage action whatever the passphrase says, and it names the AI in
     // the refusal, because the AI is who is acting. Identity and rights
-    // are two questions, and only the first one moved in J11.
+    // are two questions, and only the first one moved.
     let member_add = machine.joy_with_session(
         &[
             "project",
@@ -1219,7 +1218,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
 
 /// An anonymous project hands every command the operator's OPAQUE id,
 /// because that is what the member map is keyed by, whichever of
-/// resolve_identity's sources answers (D3.9, package J11; the source is
+/// resolve_identity's sources answers (the source is
 /// git config since the operator's 2026-09-19 correction, JOY-02AE-1A,
 /// but the opaque id at rest is the same either way). Two writes on the
 /// token path were still keyed by ADDRESS, and an address matches no
@@ -1362,9 +1361,9 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
     );
 }
 
-/// D3.9 promises a person that naming themselves once settles it: this
-/// repository's own git config remembers the member (JOY-02AE-1A,
-/// correcting D3.9; the device pin that used to carry this, including
+/// The rule promises a person that naming themselves once settles it: this
+/// repository's own git config remembers the member (JOY-02AE-1A;
+/// the device pin that used to carry this, including
 /// through `acting_member`, is retired for good). In an ANONYMOUS
 /// project git config still carries the real address, because that is
 /// what it has always held; the project's own member map key is the

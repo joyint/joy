@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The acceptance sentence of J4p, run: with a proxy variable set and a
+//! With a proxy variable set and a
 //! proxy that requires Basic, a fetch succeeds, and no proxy password
-//! appears in any log line or error text (design D1.11).
+//! appears in any log line or error text.
 //!
 //! The proxy is in this process: a minimal HTTP proxy on the loopback
 //! interface that answers `407 Proxy Authentication Required` until it
@@ -386,7 +386,7 @@ fn a_fetch_through_a_proxy_that_requires_basic_succeeds_and_leaks_nothing() {
     repo.remote("origin", &format!("{address}/forge.git"))
         .expect("remote");
     // The proxy's own login, where a person would put it: a credential
-    // helper keyed on the proxy (D1.11: `protocol=http`,
+    // helper keyed on the proxy (`protocol=http`,
     // `host=<proxyhost>[:port]`).
     let helper = tmp.path().join("proxy-helper");
     helper_script(&helper);
@@ -453,7 +453,7 @@ fn a_fetch_through_a_proxy_that_requires_basic_succeeds_and_leaks_nothing() {
             "a log line carries the proxy password: {line}"
         );
     }
-    // the proxy IS named, because a 407 has to name it (D1.8c)
+    // the proxy IS named, because a 407 has to name it
     assert!(
         lines.iter().any(|line| line.contains("127.0.0.1")),
         "the proxy is named in the log: {lines:#?}"
@@ -629,7 +629,7 @@ fn no_proxy_keeps_a_named_host_away_from_the_proxy() {
     joy_core::vcs::contact::set_gaps("");
 }
 
-/// A SOCKS proxy is refused by name before anything is dialled (D1.11).
+/// A SOCKS proxy is refused by name before anything is dialled.
 #[test]
 fn a_socks_proxy_is_refused_before_the_contact() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());

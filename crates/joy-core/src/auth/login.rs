@@ -26,7 +26,7 @@ pub struct LoginOutcome {
     /// Who just authenticated, as a person reads it. In open mode that is
     /// the address the caller logged in with, which is what they typed.
     /// In anonymous mode the caller is usually holding the opaque `m-`
-    /// id, because that is what the member pin answers with (D3.9), and
+    /// id, because that is what the member pin answers with, and
     /// telling somebody they are an opaque id is the one thing ADR-042
     /// asks every output not to do: there this is the address out of
     /// members.yaml, which this very login opened on its way past the
@@ -234,12 +234,12 @@ pub fn cached_members_zone_key(
 ///
 /// An attestation never signs the opaque id (the id is this project's own
 /// invention and says nothing about the person), so the id cannot answer
-/// the binding check. Before package J11 the address arrived with the
+/// the binding check. Earlier the address arrived with the
 /// caller, because `joy auth` resolved its member from `git config
 /// user.email`. Now it arrives as the member this device pinned, which IS
 /// the opaque id, and every returning member of an anonymous project was
 /// told their own entry looked tampered with unless they typed `--user
-/// <address>` again. D3.9 promises the opposite: naming yourself once
+/// <address>` again. The rule promises the opposite: naming yourself once
 /// settles it, and the device remembers.
 ///
 /// `None` when the members file cannot be opened (a member without a
@@ -340,7 +340,7 @@ pub fn relock_unlocked_files(
     seed: &[u8; 32],
 ) -> usize {
     // By the at-rest KEY. The lookup was by address, and the caller has
-    // handed it the member this device pinned since package J11 (D3.9),
+    // handed it the member this device pinned,
     // which in an anonymous project is an opaque id that no address
     // matcher resolves: the member was not found, and a login that says
     // it re-locks quietly re-locked nothing.

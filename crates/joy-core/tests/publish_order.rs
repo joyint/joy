@@ -32,7 +32,7 @@
 //! <dependent>` then asks crates.io for a version that was never
 //! uploaded. That was true of joy-process, joy-forge-net and
 //! joy-telemetry, and none of them may be added to that list from
-//! here, because no package of the forge connection NG plan may edit
+//! here, because that work may not edit
 //! .joy. They inherit instead: `version.workspace = true` against the
 //! `[workspace.package]` version of the root manifest, which is in the
 //! list, and the two joy-core pins they carry inherit from
@@ -72,7 +72,7 @@
 //! the shared NO_PROXY matcher while joy-forge-net still rode after
 //! joy-core in the list. That edge is gone: the matcher lives in the
 //! engine and the connector layer re-exports it, because the layer
-//! already depends on the engine for the refresh lock of D2.6a and the
+//! already depends on the engine for the refresh lock and the
 //! second edge would have been a cycle. The rule it exposed stays, and
 //! so does its guard.
 

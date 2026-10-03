@@ -1,10 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The connector runner against real child processes (JOY-0293-12,
-//! package J1 of the forge connection NG design).
+//! The connector runner against real child processes (JOY-0293-12).
 //!
-//! Every case here is one of J1's acceptance sentences, and each needs a
+//! Every case here is one acceptance sentence, and each needs a
 //! process: a 1 MB answer, a connector that refuses with text on stderr,
 //! a connector that never answers and leaves a grandchild behind, a
 //! protocol 1 binary beside a protocol 2 one, and an event stream a
@@ -47,7 +46,7 @@ fn lock() -> MutexGuard<'static, ()> {
 }
 
 /// The registry row every case asks with. `github` is the first row, so
-/// its binary names are `joy-forge` then `joy-github`, the order D2.2
+/// its binary names are `joy-forge` then `joy-github`, the order the rule
 /// fixes.
 fn github() -> &'static ForgePluginSpec {
     forge_plugins::by_id("github").expect("the registry carries github")
@@ -80,7 +79,7 @@ if [ -n "$JOY_STUB_ARGV" ]; then
   echo "$@" >> "$JOY_STUB_ARGV"
 fi
 # The handshake asks the BINARY what protocol it speaks, never a forge
-# inside it (D2.2a), so `version` arrives as the first argument with
+# inside it, so `version` arrives as the first argument with
 # nothing before it and answers for every forge this file carries.
 if [ "$1" = "version" ]; then
   echo '{"protocol":2,"plugin":"joy-forge 0.21.0","forges":["github","gitlab","gitea"]}'
@@ -146,7 +145,7 @@ esac
 
 /// A connector from before the handshake existed: clap rejects the
 /// unknown subcommand, prints usage on stderr and exits 2 with nothing
-/// on stdout (D2.2a). It still answers the six old verbs.
+/// on stdout. It still answers the six old verbs.
 const PROTOCOL_1: &str = r#"#!/bin/sh
 if [ -n "$JOY_STUB_ARGV" ]; then
   echo "$@" >> "$JOY_STUB_ARGV"
@@ -184,10 +183,10 @@ fn argv_lines(path: &Path) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------
-// Resolution and the handshake (D2.2, D2.2a)
+// Resolution and the handshake
 // ---------------------------------------------------------------------
 
-/// J1 acceptance: a protocol 1 `joy-github` in `~/.cargo/bin` is
+/// A protocol 1 `joy-github` in `~/.cargo/bin` is
 /// reported as protocol 1, and a protocol 2 binary named `joy-forge` in
 /// the same directory wins the name order.
 #[test]
@@ -211,7 +210,7 @@ fn joy_forge_wins_the_name_order_over_a_stale_legacy_binary() {
     );
 
     // The new connector lands beside it and nothing is deleted: the
-    // name order alone makes the stale binary harmless (D3.12).
+    // name order alone makes the stale binary harmless.
     stub(cargo_bin.path(), COMBINED_BINARY, PROTOCOL_2);
     forge_plugins::set_plugin_dirs(vec![cargo_bin.path().to_path_buf()]);
     let fresh = forge_plugins::resolve_plugin(github()).expect("the fresh binary is there");
@@ -228,7 +227,7 @@ fn joy_forge_wins_the_name_order_over_a_stale_legacy_binary() {
     assert_eq!(candidates[1].0, cargo_bin.path().join("joy-github"));
 }
 
-/// J1 acceptance: a binary placed next to the CALLING executable is
+/// A binary placed next to the CALLING executable is
 /// found on macOS and Linux without PATH. This test binary is the
 /// caller, so the directory is the one its own executable sits in, and
 /// no directory is registered and no test hook is set.
@@ -254,7 +253,7 @@ fn a_connector_beside_the_calling_executable_is_found_without_path() {
     assert_eq!(resolved.protocol, 2);
 }
 
-/// The test hook of D2.2 is a hook: in a DEVELOPMENT build it is
+/// The test hook is a hook: in a DEVELOPMENT build it is
 /// searched before everything the host registered, which is what makes
 /// it useful to a test, and a shipped joy does not read it at all,
 /// which is what keeps it from being a product switch. The case is
@@ -276,7 +275,7 @@ fn the_test_hook_is_searched_first() {
     assert_eq!(resolved.found_in, FoundIn::TestHook);
 }
 
-/// D2.2a: the handshake is asked of the FILE, once per path and mtime.
+/// The handshake is asked of the FILE, once per path and mtime.
 /// `joy-forge` answers for every forge it carries, which is why its
 /// answer lists them, so a machine with one connector and three
 /// registry rows spawns ONE `version` process, and the question that
@@ -306,7 +305,7 @@ fn one_file_is_asked_its_protocol_once_for_every_forge_it_carries() {
 }
 
 /// Nothing installed is its own state, with the names that were looked
-/// for (D2.2a: `plugin_missing`).
+/// for (`plugin_missing`).
 #[test]
 fn nothing_installed_is_plugin_missing() {
     let _guard = lock();
@@ -337,8 +336,8 @@ fn nothing_installed_is_plugin_missing() {
     );
 }
 
-/// D2.2a: a protocol 1 connector still answers the six old verbs with
-/// `--remote`, and every verb of D2.4 is `plugin_outdated` with the
+/// A protocol 1 connector still answers the six old verbs with
+/// `--remote`, and every verb is `plugin_outdated` with the
 /// resolved path and the `rm` line.
 #[test]
 fn a_protocol_one_connector_answers_the_old_verbs_and_refuses_the_new_ones() {
@@ -394,10 +393,10 @@ fn a_protocol_one_connector_answers_the_old_verbs_and_refuses_the_new_ones() {
 }
 
 // ---------------------------------------------------------------------
-// The runner (D2.3)
+// The runner
 // ---------------------------------------------------------------------
 
-/// J1 acceptance: a connector answer of 1 MB is returned intact instead
+/// A connector answer of 1 MB is returned intact instead
 /// of timing out. Reading stdout only after the child exits deadlocks at
 /// the pipe buffer (64 KiB on Linux), which is well under what a
 /// repository listing produces.
@@ -429,7 +428,7 @@ fn a_one_megabyte_answer_comes_back_whole() {
     }
 }
 
-/// J1 acceptance: a connector that exits 3 with text on stderr produces
+/// A connector that exits 3 with text on stderr produces
 /// an error naming the connector and the text, not `None`. Stderr is
 /// piped and captured now, so the message survives a host with no
 /// terminal.
@@ -506,7 +505,7 @@ fn a_clean_answer_carries_what_the_connector_said_while_it_answered() {
     assert_eq!(quiet.note, None, "silence is not a note");
 }
 
-/// D2.3: the deadline ends the call, and the process GROUP is killed,
+/// The deadline ends the call, and the process GROUP is killed,
 /// so a `gh` or `curl` grandchild does not outlive it (and does not
 /// hold the pipe open, which would hang the runner just as badly as the
 /// old sequential read did).
@@ -558,7 +557,7 @@ fn a_connector_that_never_answers_is_stopped_with_its_grandchildren() {
     );
 }
 
-/// D2.3: the deadline bounds the CALL, not the connector's own
+/// The deadline bounds the CALL, not the connector's own
 /// lifetime, and the process group is killed on EVERY path.
 ///
 /// This is the shape a connector that shells out to `gh`, `glab`, `tea`
@@ -623,7 +622,7 @@ fn a_connector_that_leaves_a_grandchild_behind_does_not_hold_the_call() {
     );
 }
 
-/// D2.2a scopes "exit 2 with empty stdout" to the HANDSHAKE. A protocol
+/// The rule scopes "exit 2 with empty stdout" to the HANDSHAKE. A protocol
 /// 2 connector that rejects an unknown subcommand or an unknown flag (a
 /// joy-forge built before `web-url`, say) exits 2 in the same way, and
 /// telling its owner to `rm` it would contradict the protocol 2 this
@@ -650,8 +649,8 @@ fn an_unknown_verb_on_a_protocol_two_connector_is_a_refusal_not_a_stale_binary()
     assert!(text.contains("unrecognized subcommand"), "{text}");
 }
 
-/// D2.3: `claims --host github.com` works with no project on disk, and
-/// every call carries the host kind (D1.10) and the login pin (D4.1c).
+/// `claims --host github.com` works with no project on disk, and
+/// every call carries the host kind and the login pin.
 ///
 /// "No project on disk" is observed and not assumed: this test binary
 /// runs inside the joy repository, which IS a project, so the case
@@ -705,7 +704,7 @@ fn a_rootless_call_carries_the_host_the_host_kind_and_the_pin() {
     );
 }
 
-/// D2.3: `{"known":false}` is an ANSWER, and the five ways a call can
+/// `{"known":false}` is an ANSWER, and the five ways a call can
 /// fail are five other things. Every caller can tell all of them apart.
 #[test]
 fn known_false_is_not_a_failure_and_the_failures_differ() {
@@ -754,7 +753,7 @@ fn known_false_is_not_a_failure_and_the_failures_differ() {
     assert!(forge_plugins::identity(github(), None, &ctx).is_some());
 }
 
-/// The old promise, kept (D5 and package P1a): best effort is not the
+/// The old promise, kept: best effort is not the
 /// same as silent. Every failed call leaves one warn line naming the
 /// connector and the verb, because that pair is what a reader needs to
 /// act on.
@@ -812,7 +811,7 @@ fn every_failed_call_is_warned_with_the_connector_and_the_verb() {
     assert!(unstartable.contains("claims"), "{unstartable}");
 }
 
-/// P1a's acceptance sentence: "a deliberately removed plugin produces a
+/// "a deliberately removed plugin produces a
 /// warn log line and a failing startup probe instead of a silent
 /// unknown". The two states that reach no process, `plugin_missing` and
 /// `plugin_outdated`, are the ones a caller turns into `false` and
@@ -873,7 +872,7 @@ fn a_removed_and_a_stale_connector_are_warned_about_on_the_normal_call_path() {
 }
 
 // ---------------------------------------------------------------------
-// The streaming runner (D2.3, D2.4's login event shapes)
+// The streaming runner (the login event shapes)
 // ---------------------------------------------------------------------
 
 /// What a caller does with the event stream: keep the events, and
@@ -896,7 +895,7 @@ impl EventSink for Events {
         if let Some(cancel) = &self.cancel_on_first {
             cancel.cancel();
         }
-        // The second bound of D2.3: the verification event's own
+        // The second bound: the verification event's own
         // `expires_in`, which the runner caps at `bounds.total`.
         if event.get("event").and_then(|e| e.as_str()) == Some("verification") {
             return self.grant.or_else(|| {
@@ -910,7 +909,7 @@ impl EventSink for Events {
     }
 }
 
-/// D2.3: `run_stream` hands every line to the caller WHILE the child
+/// `run_stream` hands every line to the caller WHILE the child
 /// runs. That is what makes `login` usable: the verification code is on
 /// screen a second before the connector is done polling the forge.
 #[test]
@@ -970,7 +969,7 @@ fn events_reach_the_caller_before_the_connector_exits() {
     );
 }
 
-/// D2.3's second bound: after the first event the call lives for what
+/// the second bound: after the first event the call lives for what
 /// that event granted, not for the 15 s that bounded the first one and
 /// not for ever.
 #[test]
@@ -1017,7 +1016,7 @@ fn the_first_event_sets_the_deadline_for_the_rest() {
     );
 }
 
-/// D2.3, the streaming half of the same rule: a connector that answered
+/// The streaming half of the same rule: a connector that answered
 /// and exited must end the call, even when something it started still
 /// holds stdout open. End of file is the only other way out of the
 /// event loop, and a `gh` grandchild postpones it past every bound the
@@ -1086,7 +1085,7 @@ fn a_stream_ends_at_the_connector_and_not_at_its_grandchild() {
     assert!(!alive, "the grandchild {pid} outlived the stream");
 }
 
-/// D2.3: cancelling ends the call at once, and the process group goes
+/// Cancelling ends the call at once, and the process group goes
 /// with it.
 #[test]
 fn a_cancelled_stream_ends_the_connector_and_its_grandchildren() {

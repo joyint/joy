@@ -28,8 +28,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 
 @test "joy auth init rejects unregistered member" {
     joy init --name "Auth Test"
-    # Naming yourself is how a person says who they are since package
-    # J11; git config is only what joy OFFERS them (D3.9). A stranger who
+    # Naming yourself is how a person says who they are;
+    # git config is only what joy OFFERS them. A stranger who
     # names themselves is told the project does not know them.
     run joy auth init --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
@@ -172,8 +172,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
     # Dev cannot reset others (no manage capability). Redeeming the
     # invitation enrols dev; naming dev in this repository's git config
-    # is what makes the bare command below act as dev (JOY-02AE-1A,
-    # correcting D3.9).
+    # is what makes the bare command below act as dev (JOY-02AE-1A).
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     git config user.email dev@example.com
     run joy auth reset test@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
@@ -566,7 +565,7 @@ YAML
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     joy auth --otp "$OTP" --user alice@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     # Naming alice in this repository's git config is what makes the bare
-    # `joy auth passphrase` below act as her (JOY-02AE-1A, correcting D3.9).
+    # `joy auth passphrase` below act as her (JOY-02AE-1A).
     git config user.email alice@example.com
 
     # alice's capability block is now multi-line (defaults exclude

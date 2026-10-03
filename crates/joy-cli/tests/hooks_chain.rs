@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! joy owns `core.hooksPath` and chains (design D3.5).
+//! joy owns `core.hooksPath` and chains.
 //!
 //! `core.hooksPath` REPLACES the hook location entirely, so the two
 //! choices are "joy's check runs for nobody" and "joy runs what was
@@ -11,7 +11,7 @@
 //!
 //! The hooks are bash, so the run needs a shell. A machine without one
 //! has no hooks at all (git would not run them either) and gets the in
-//! process validator of D3.3 instead, which
+//! process validator instead, which
 //! `joy-core/tests/commit_msg_rule.rs` covers.
 
 use std::path::Path;

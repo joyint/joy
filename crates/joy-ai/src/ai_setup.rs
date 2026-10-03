@@ -1076,8 +1076,8 @@ pub fn init_tool(
     let mut project = joy_core::store::read_project(&project_path)?;
     let member_id = format!("ai:{tool}@joy");
     if !project.has_member_key(&member_id) {
-        // The attester is the human this device acts for (JOY-02AE-1A,
-        // correcting D3.9): the operator behind a delegation session,
+        // The attester is the human this device acts for (JOY-02AE-1A):
+        // the operator behind a delegation session,
         // else this repository's own git config, else the forge account.
         // An anonymous project (ADR-042) answers with the opaque id,
         // which is exactly what the member map is keyed by.

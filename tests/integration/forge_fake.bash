@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # The forge boundary for the integration tests (JOY-0298-E4).
 #
-# The connectors speak HTTP themselves now (design D2.8), so the marked
+# The connectors speak HTTP themselves now, so the marked
 # stub is a small server on 127.0.0.1 plus a `forges.yaml` that points
 # one host at it. `gh` stays a stub too, but only for what it still is:
-# a source of a TOKEN (decision 19), never an HTTP client.
+# a source of a TOKEN, never an HTTP client.
 
 # Start the fake forge. Sets FAKE_FORGE_DIR, FAKE_FORGE_PORT and
 # FAKE_FORGE_BASE.
@@ -36,7 +36,7 @@ stop_fake_forge() {
     return 0
 }
 
-# Point one host at the fake through forges.yaml (design D2.5). HOME and
+# Point one host at the fake through forges.yaml. HOME and
 # XDG_CONFIG_HOME are the test's own, so this file is the connector's.
 point_forge_at_fake() {
     local host="${1:-github.com}" kind="${2:-github}"
@@ -48,7 +48,7 @@ point_forge_at_fake() {
 YAML
 }
 
-# The gh stub: a TOKEN source and nothing else (decision 19).
+# The gh stub: a TOKEN source and nothing else.
 install_gh_token_stub() {
     local token="${1:-gho_test-token}"
     STUB_DIR="$TEST_DIR/stub-bin"

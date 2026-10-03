@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The founding question with a real terminal on the other end (D3.9 and
-//! D1.1 of the forge connection NG design, JOY-0297-1A).
+//! The founding question with a real terminal on the other end
+//! (JOY-0297-1A).
 //!
-//! Two of J9's acceptance criteria are about what `joy init` does for a
+//! Two acceptance criteria are about what `joy init` does for a
 //! PERSON at a terminal, and neither can be proven by a test harness that
 //! hands joy a pipe: with a pipe the host is `Background` whatever else
 //! is true, so the interactive branch is never entered and a refusal
@@ -146,7 +146,7 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// The acceptance of J9: `joy init` with no git config ON A TERMINAL asks
+/// `joy init` with no git config ON A TERMINAL asks
 /// for the address and completes. The first answer is the anonymous mode
 /// question `joy init` asks a person, the second is the address.
 #[test]
@@ -174,10 +174,10 @@ fn init_on_a_terminal_asks_for_the_address_and_completes() {
     );
 }
 
-/// The acceptance of J9 for the delegated host: THE SAME COMMAND, the
+/// THE SAME COMMAND, the
 /// same terminal, the same missing git config, under a live `JOY_SESSION`
 /// refuses with the named sentence and asks nobody. An agent that owns a
-/// terminal is still an agent (D1.1), so the terminal is what makes this
+/// terminal is still an agent, so the terminal is what makes this
 /// case worth anything: without one, `Background` would have refused for
 /// its own reason and the session would prove nothing.
 #[test]
@@ -240,7 +240,7 @@ fn a_live_session(home: &Path) -> String {
     let (ok, seen) = joy(&["init", "--name", "Delegator", "--user", "human@example.com"]);
     assert!(ok, "{seen}");
     // This checkout gets a git identity of its own: the commands that
-    // mint a delegation are J11's call sites and still read one. The
+    // mint a delegation still read one. The
     // checkout under test never sees it (its own HOME is empty and this
     // config is repository local), which is the whole point of the case.
     let repo = git2::Repository::open(&root).unwrap();

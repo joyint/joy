@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! What a commit joy writes is signed with (D4.5 of the forge connection
-//! NG design, JOY-0297-1A): the acting member decides both fields, git
+//! What a commit joy writes is signed with
+//! (JOY-0297-1A): the acting member decides both fields, git
 //! config is a prefill for the display name and nothing else, and an
 //! anonymous project never lets an address into a commit.
 
@@ -64,7 +64,7 @@ fn head_signature(root: &Path) -> (String, String, String, String) {
     )
 }
 
-/// The acceptance of J9: a commit in an anonymous mode project carries the
+/// A commit in an anonymous mode project carries the
 /// opaque `m-<id>` in BOTH signature fields, whatever git config says.
 #[test]
 fn a_commit_in_an_anonymous_project_carries_the_opaque_id_in_both_fields() {
@@ -107,7 +107,7 @@ fn a_commit_in_an_anonymous_project_carries_the_opaque_id_in_both_fields() {
 /// The rule is the PROJECT's, not the shape of the string the caller
 /// carries: hand the gate the person's address in an anonymous project
 /// and it signs with the opaque id all the same. Every auth and crypt
-/// path still holds a raw address until J11 moves them onto
+/// path may still hold a raw address instead of going through
 /// `resolve_identity`, so this is the case that decides whether a git2
 /// commit can undo ADR-042.
 #[test]

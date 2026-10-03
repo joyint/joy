@@ -8,10 +8,10 @@
 //! Gitea (and its fork Forgejo) is SELF-HOSTED software with no
 //! canonical host: any domain can run it, and no instance belongs in
 //! this code. So the connector claims a host only when the person's own
-//! tea configuration names it, when an operator's `forges.yaml` does
-//! (D2.5), or when the project's own `forge:` override says so.
+//! tea configuration names it, when an operator's `forges.yaml` does,
+//! or when the project's own `forge:` override says so.
 //!
-//! Since JOY-0298-E4 (design D2.8) every API call is made in process
+//! Since JOY-0298-E4 every API call is made in process
 //! over the connector's own HTTP client.
 
 use joy_forge_net::auth::oauth::{Flow, OAuth};
@@ -79,7 +79,7 @@ pub struct TeaLogin {
 }
 
 /// Every login tea has on file, offline, from the first of the per
-/// operating system locations of D2.4 that exists. Empty when tea is
+/// operating system locations that exists. Empty when tea is
 /// not set up.
 pub fn tea_logins() -> Vec<TeaLogin> {
     match joy_forge_net::foreign::first_readable(&joy_forge_net::foreign::tea_config_files()) {
@@ -136,7 +136,7 @@ pub fn parse_config_yml(text: &str) -> Vec<TeaLogin> {
 }
 
 /// The API root of the instance a host runs: what an operator
-/// configured (D2.5), else the host's own `/api/v1`.
+/// configured, else the host's own `/api/v1`.
 pub fn api_base(host: &str, ctx: &Ctx) -> String {
     if let Some(base) = ctx.instance(host).and_then(|i| i.api_base.clone()) {
         return base;
@@ -161,7 +161,7 @@ fn api_get(ctx: &Ctx, host: &str, url: &str) -> Option<Answer> {
     }
 }
 
-/// What a refusal means (D2.7c). Gitea says which scopes it wanted, in
+/// What a refusal means. Gitea says which scopes it wanted, in
 /// prose it writes itself, and the `required=` list is parsed out of it.
 pub fn classify(answer: &Answer) -> &'static str {
     match answer.status {
@@ -176,15 +176,15 @@ pub fn classify(answer: &Answer) -> &'static str {
 /// The `required=...` list out of Gitea's own refusal:
 /// "token does not have at least one of required scope(s), required=[read:repository], token scope=read:user"
 ///
-/// D2.7c: this list is what goes into `needed`.
+/// This list is what goes into `needed`.
 pub fn required_scopes(body: &str) -> Option<Vec<String>> {
     scope_list(body, "required=")
 }
 
 /// The `token scope=...` list out of the same refusal: what the token
-/// actually holds, which is what `have` carries (D2.7c). Gitea is the
+/// actually holds, which is what `have` carries. Gitea is the
 /// only forge of the three that names it in the refusal itself; until
-/// the connector keeps the granted set beside its own token (J3), this
+/// the connector keeps the granted set beside its own token, this
 /// is the only place the set can be read at all.
 pub fn token_scopes(body: &str) -> Option<Vec<String>> {
     scope_list(body, "token scope=")
@@ -211,7 +211,7 @@ fn scope_list(body: &str, key: &str) -> Option<Vec<String>> {
 
 /// The account's addresses, best effort, from the instance's own API.
 /// Without a credential nothing is asked: an anonymous request cannot
-/// name an account (decision 20).
+/// name an account.
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
     if ctx.token("gitea", host).is_none() {
         return Vec::new();
@@ -330,7 +330,7 @@ fn store_verdict(file: Option<Answer>, repo: impl FnOnce() -> Option<Answer>) ->
         };
     };
     // Gitea's API `size` is KiB (services/convert/repository.go:205);
-    // the protocol carries bytes (D2.4).
+    // the protocol carries bytes.
     let size_bytes = body
         .get("size")
         .and_then(|v| v.as_u64())
@@ -409,7 +409,7 @@ fn files_verdict(mut page: impl FnMut(usize) -> Option<Answer>) -> Value {
     json!({ "state": "files", "paths": paths, "truncated": true })
 }
 
-// -- the repository list (D2.4) ------------------------------------------------
+// -- the repository list ------------------------------------------------
 
 /// The REPOSITORIES answer: the repositories this account can reach.
 pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Value {
@@ -429,7 +429,7 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
     // Bounded by the caller's limit as well as by the instance's page
     // maximum, so no page is ever cut in half: a cursor is a page
     // number, and the rest of a half read page would never be shown
-    // again (D2.4).
+    // again.
     let per_page = limit.clamp(1, 50);
     let mut repositories: Vec<Value> = Vec::new();
     let mut more = false;
@@ -491,18 +491,18 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
     }))
 }
 
-// -- creating a repository (D2.4, decision 17) ---------------------------------
+// -- creating a repository ---------------------------------
 
 /// The CREATE-REPOSITORY answer. `POST /user/repos` is checked twice by
 /// Gitea, by the /user group and by the route, which is why the scope
-/// set for it is `write:user write:repository` (D2.7a).
+/// set for it is `write:user write:repository`.
 ///
-/// There is no local pre check here, and it is not an omission: D2.7c
-/// builds that check on "the plugin records the granted scope set
+/// There is no local pre check here, and it is not an omission: that
+/// check builds on "the plugin records the granted scope set
 /// beside the token in the same entry", and Gitea has no endpoint that
 /// names the set of the token in use (`GET /user` does not, and
 /// `/users/{u}/tokens` wants basic auth, not a token). Until the
-/// connector keeps its own entry (J3), the set is unknown here, and an
+/// connector keeps its own entry, the set is unknown here, and an
 /// unknown set is never reported as a missing one. What the instance
 /// refuses is classified instead, from the two lists it writes into the
 /// refusal itself, so a scope problem is still never `denied`.
@@ -513,8 +513,8 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     let Some(token) = ctx.token("gitea", &host) else {
         return json!({ "state": "needs_sign_in", "host": host });
     };
-    // The local pre check of D2.7c. The family's API does not
-    // introspect a token, so before J3 the only way to learn the set
+    // The local pre check. The family's API does not
+    // introspect a token, so earlier the only way to learn the set
     // was to be refused by it; now the set joy REQUESTED is stored
     // beside the token and answers the question for free.
     if let Some(refused) =
@@ -547,7 +547,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
         if state == "scope_missing" {
             // Gitea names both lists in the refusal it writes: what the
             // route demanded goes into `needed`, what the token holds
-            // into `have` (D2.7c). Where it named no demand, joy's own
+            // into `have`. Where it named no demand, joy's own
             // set for the verb is what a person is asked to sign in
             // with.
             let needed = required_scopes(&answer.body)
@@ -583,9 +583,9 @@ fn message_of(answer: &Answer) -> String {
         .unwrap_or_else(|| format!("the instance answered {}", answer.status))
 }
 
-// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+// -- the sign in half --------------------------------
 
-/// The scope sets of D2.7a. Gitea and Forgejo scope per CATEGORY and
+/// The scope sets. Gitea and Forgejo scope per CATEGORY and
 /// let the HTTP method pick the level ("use the http method to
 /// determine the access level"), so the read set and the write set
 /// differ by one word. `POST /user/repos` is checked twice, by the
@@ -600,7 +600,7 @@ pub fn scopes_for(purpose: Purpose) -> &'static str {
     }
 }
 
-/// The OAuth application for a host (D2.7).
+/// The OAuth application for a host.
 ///
 /// No device grant exists in any released version of Gitea or Forgejo,
 /// so the door is the authorization code flow with PKCE S256 on a
@@ -691,7 +691,7 @@ fn api_get_as_or_say(ctx: &Ctx, host: &str, url: &str, token: &str) -> Option<An
 ///
 /// The granted set is `None` on purpose: Gitea's `AccessTokenResponse`
 /// has no scope field, and the API does not introspect a token, so the
-/// caller stores the set it REQUESTED (D2.7c).
+/// caller stores the set it REQUESTED.
 pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
     let base = api_base(host, ctx);
     let answer = match api_get_as(ctx, host, &format!("{base}/user"), token) {
@@ -741,7 +741,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
 }
 
 /// Whether this token reaches `owner/repo`, and whether it may push
-/// (the probe of D4.1c).
+/// (the probe).
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
     let answer = api_get_as_or_say(ctx, host, &url, token)?;
@@ -756,12 +756,12 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
             .and_then(|v| v.as_bool())
             .unwrap_or(false),
         // The Gitea family has no application approval per
-        // organisation, so there is no wall of D2.7c to find here.
+        // organisation, so there is no wall to find here.
         wall: false,
     })
 }
 
-/// Every login tea has on this host, in file order (D4.1c's probe
+/// Every login tea has on this host, in file order (the probe
 /// candidate order). tea is multi login per host.
 pub fn tea_logins_for(host: &str) -> Vec<String> {
     tea_logins()
@@ -847,7 +847,7 @@ mod tests {
         );
     }
 
-    /// D2.7c: Gitea writes the scopes it wanted into its refusal, and
+    /// Gitea writes the scopes it wanted into its refusal, and
     /// that list is parsed instead of being reported as `denied`.
     #[test]
     fn a_scope_refusal_is_read_out_of_giteas_own_sentence() {
@@ -888,7 +888,7 @@ mod store_tests {
         });
         assert_eq!(verdict["state"], "store");
         assert_eq!(verdict["project_yaml"], "name: Demo\n");
-        // Gitea counts KiB; the protocol carries bytes (D2.4)
+        // Gitea counts KiB; the protocol carries bytes
         assert_eq!(verdict["size_bytes"], 3 * 1024);
     }
 
@@ -978,7 +978,7 @@ mod sign_in_tests {
         Ctx::bare(std::env::temp_dir())
     }
 
-    /// D2.7a: the family scopes per CATEGORY and the HTTP method picks
+    /// The family scopes per CATEGORY and the HTTP method picks
     /// the level, and `POST /user/repos` is checked twice, by the /user
     /// group and by the route.
     #[test]
@@ -988,7 +988,7 @@ mod sign_in_tests {
         assert_eq!(scopes_for(Purpose::Release), "read:user write:repository");
         assert_eq!(scopes_for(Purpose::Create), "write:user write:repository");
         // and every set names a non OIDC scope, or the grant would hold
-        // the person's full rights (D2.7)
+        // the person's full rights
         for purpose in [
             Purpose::Read,
             Purpose::Write,
@@ -1001,7 +1001,7 @@ mod sign_in_tests {
         }
     }
 
-    /// D2.7: no device grant exists in any released version, so the
+    /// No device grant exists in any released version, so the
     /// door is authorization code with PKCE on a loopback listener.
     #[test]
     fn the_family_signs_in_through_pkce_and_never_through_a_device_code() {
@@ -1038,7 +1038,7 @@ mod sign_in_tests {
         assert_eq!(instance.scopes, "write:user write:repository");
     }
 
-    /// D2.6: joy never removes a foreign credential, and tea names a
+    /// Joy never removes a foreign credential, and tea names a
     /// LOGIN rather than a host.
     #[test]
     fn the_foreign_logout_command_names_teas_own_word() {

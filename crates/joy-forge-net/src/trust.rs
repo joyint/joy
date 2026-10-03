@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Which certificates the connector's own client trusts (D1.12, applied
-//! to the connector by D2.8: "the client honours ... the same OS trust
+//! Which certificates the connector's own client trusts (applied
+//! to the connector: "the client honours ... the same OS trust
 //! store").
 //!
 //! The default is the operating system's own store, through rustls'
@@ -12,7 +12,7 @@
 //! `SSL_CERT_FILE` write. A corporate CA installed the normal way is
 //! therefore trusted with no joy setting anywhere.
 //!
-//! The one escape hatch is joy's own and Linux only (decision 25):
+//! The one escape hatch is joy's own and Linux only:
 //! `ca_bundle` / `ca_dir` in `forges.yaml`, and `http.sslCAInfo` /
 //! `http.sslCAPath` from git config, because that is the setting a
 //! corporate workstation image already carries. On macOS and Windows
@@ -22,7 +22,7 @@
 //! (`GIT_OPT_SET_SSL_CERT_LOCATIONS` is compiled for OpenSSL and
 //! mbedTLS only).
 //!
-//! What joy will not do is listed in D1.12 and holds here: no
+//! What joy will not do is listed and holds here: no
 //! `http.sslVerify`, no way to turn verification off, no client
 //! certificate.
 
@@ -48,11 +48,11 @@ const FORGES_YAML: &str = "forges.yaml";
 const GIT_CONFIG: &str = "git config";
 
 /// The sentence a person reads when they set a CA location on an
-/// operating system whose store joy cannot replace (D1.12).
+/// operating system whose store joy cannot replace.
 ///
 /// It is word for word the sentence `joy_core::vcs::proxy` prints for
 /// the same entry on the engine side, and its per OS step is the
-/// `tls_untrusted` next step of D1.8c, so a person behind an
+/// `tls_untrusted` next step, so a person behind an
 /// intercepting CA reads ONE instruction and not two, whichever half of
 /// joy made the contact.
 pub fn foreign_ca_sentence(key: &str, source: &str) -> String {
@@ -72,7 +72,7 @@ pub fn foreign_ca_sentence(key: &str, source: &str) -> String {
 }
 
 /// One configured CA location, with the key it was written under and
-/// the place it came from, so that a refusal can name both (D1.12).
+/// the place it came from, so that a refusal can name both.
 struct Configured {
     key: &'static str,
     source: &'static str,
@@ -270,7 +270,7 @@ mod tests {
         }
     }
 
-    // D1.12 quotes this sentence, and `joy_core::vcs::proxy::ca_refusal`
+    // The rule quotes this sentence, and `joy_core::vcs::proxy::ca_refusal`
     // builds the same one for the same entry on the engine side. The
     // half of joy that refuses is not the half CI runs on, so the
     // wording is checked here on every operating system.

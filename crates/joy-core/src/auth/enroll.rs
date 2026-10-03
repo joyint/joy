@@ -189,7 +189,7 @@ pub fn reverse_attest_founder(project: &mut Project, redeemer: &str, keypair: &I
 /// passphrase, apply it, persist, and open a session. The CLI and the desktop
 /// app both call this; only the presentation of the recovery key differs.
 ///
-/// `member` is the member the HOST resolved (D3.9): `--user`, the app's
+/// `member` is the member the HOST resolved: `--user`, the app's
 /// mask, the device pin. This function no longer reads git config, so a
 /// founder created on a machine without one can enrol. `None` leaves the
 /// answer to the OTP, which is an identity proof of its own.

@@ -73,7 +73,7 @@ load setup
     joy init --name "Test Project" 2>/dev/null
     # `joy init` registered the founder under this repository's own git
     # config (set by setup() to $FOUNDER_EMAIL); `forget_this_device`
-    # clears that too now (JOY-02AE-1A, correcting D3.9), or it would
+    # clears that too now (JOY-02AE-1A), or it would
     # still answer for who acts. What is left is the machine that
     # answers nobody, which is a fresh clone or a second one. Nobody is
     # named on this call either (`--user` is how one would be), so it

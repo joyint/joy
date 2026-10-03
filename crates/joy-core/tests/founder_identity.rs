@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The founding step on a machine that has no git identity at all
-//! (D3.9 of the forge connection NG design, JOY-0297-1A).
+//! (JOY-0297-1A).
 //!
 //! Its own test binary, because it isolates the git configuration of the
 //! whole process: HOME, the XDG config home, git's own `GIT_CONFIG_NOSYSTEM`
@@ -54,7 +54,7 @@ fn a_machine_without_a_git_identity() {
     });
 }
 
-/// D3.9: on a host with a person at it, `joy init` asks for the address
+/// On a host with a person at it, `joy init` asks for the address
 /// instead of failing, and the project is founded on what they typed.
 /// The fake stdin is the person.
 #[test]
@@ -77,7 +77,7 @@ fn an_interactive_host_asks_for_the_address_and_completes() {
     assert!(project.member_by_key("founder@example.com").is_some());
 }
 
-/// D3.9: a host with nobody at it refuses with the named sentence, and
+/// A host with nobody at it refuses with the named sentence, and
 /// leaves nothing half-initialized behind.
 #[test]
 fn a_background_or_delegated_host_refuses_by_name() {
@@ -105,7 +105,7 @@ fn a_background_or_delegated_host_refuses_by_name() {
     }
 }
 
-/// The acceptance of J9: `joy init --user a@b.c` in a repository with no
+/// `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols that member
 /// without reading git config. The enrolment here is the OTP redemption,
 /// the one joy-core owns; the CLI's `joy auth init` path is driven in
@@ -178,7 +178,7 @@ fn an_explicit_user_founds_and_enrols_without_a_git_config() {
 }
 
 /// The named member wins over everything else, which is what the desktop
-/// mask and `--user` hand in (D4.4).
+/// mask and `--user` hand in.
 #[test]
 fn the_enrolment_takes_the_member_the_host_names() {
     a_machine_without_a_git_identity();

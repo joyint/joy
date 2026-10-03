@@ -207,8 +207,8 @@ impl Guard {
 
         // Nobody is acting: no delegation session, no git config naming a
         // member, and no forge account naming one either (operator
-        // decision 2026-09-19, JOY-02AE-1A, correcting D3.9 of package
-        // J11). A fresh clone or a second machine with none of the three
+        // decision 2026-09-19, JOY-02AE-1A).
+        // A fresh clone or a second machine with none of the three
         // arrives here, and an empty name in front of "is not a
         // registered project member" is not a sentence anybody can act
         // on. [`Verdict::enforce`] turns this one into

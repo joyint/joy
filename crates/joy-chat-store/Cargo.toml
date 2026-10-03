@@ -7,7 +7,7 @@ description = "Git storage for Joy's sealed chats: blobs, trees and the chats re
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
-# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# Not a cargo-dist App: only joy-cli is. Why every
 # publishable crate beside it carries this key is written once, in the
 # "Check the release shape" step of .github/workflows/release.yml, which
 # is also what fails when a crate loses it.

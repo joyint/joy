@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The ssh chain as a person's home directory presents it (forge
-//! connection NG, design D1.4).
+//! connection NG).
 //!
 //! The two facts this pins down are the two that used to end a whole
 //! operation: a key file libssh2 cannot read is `LIBSSH2_ERROR_FILE`,
