@@ -4,7 +4,7 @@
 //! Reading one running process's argument list, the way a person with
 //! `ps` would (JOY-02A8-F4).
 //!
-//! J2's acceptance is "`ps` during any call shows no token", and the
+//! The acceptance is "`ps` during any call shows no token", and the
 //! two cases that prove it used to read `/proc/<pid>/cmdline` under a
 //! plain `cfg(unix)` or `cfg(target_os = "linux")`. macOS has no
 //! `/proc` at all, so on the one platform whose keychain this design
@@ -17,7 +17,7 @@
 //! (the Windows job of CI on 1bb6134 did exactly that).
 //!
 //! The cases that call this are unix gated still: PowerShell answers in
-//! hundreds of milliseconds, too slow for the sampler of J2's second
+//! hundreds of milliseconds, too slow for the sampler of the second
 //! case. Until they run there, the reader is dead code on Windows and
 //! says so, because CI builds with warnings as errors.
 #![cfg_attr(windows, allow(dead_code))]

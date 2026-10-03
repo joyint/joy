@@ -108,7 +108,7 @@ sync-tutorial:
 # core. Seconds, not minutes, so nobody is tempted to skip it.
 check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
 
-# ZERO git processes (JOY-01FD-ED, design D3.2). Not "git lives in one
+# ZERO git processes (JOY-01FD-ED). Not "git lives in one
 # place" any more: joy runs on git2 alone, because the operator's reason
 # is mobile and the app has to work on a machine with no git binary at
 # all. joy-core/src/vcs is therefore no longer exempt - it is where the
@@ -162,14 +162,14 @@ guard-vcs:
                 fi
             done
             if [ "$sanctioned" -eq 0 ]; then
-                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only (design D3.2)"
+                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only"
                 bad=1
             fi
         done
     done
     exit $bad
 
-# The ONE `certificate_check` closure (design D1.4a). git2 0.21 holds
+# The ONE `certificate_check` closure. git2 0.21 holds
 # exactly one such slot per contact (remote_callbacks.rs:27), so a
 # second installer anywhere in the tree would silently take the ssh
 # host key decision away from joy_core::vcs::certificates and hand it
@@ -219,7 +219,7 @@ guard-certificate-check:
     fi
     exit $bad
 
-# The interactive gate of design D3.11: `login`, `logout` and the token
+# The interactive gate: `login`, `logout` and the token
 # paste are compiled OUT of every build that must not perform them, and
 # the platform is the build that must not. Three things can let that
 # drift back, so three things are checked here:
@@ -230,7 +230,7 @@ guard-certificate-check:
 #      repository and is out of reach here, so nothing below can see
 #      whether it asks: that one is the app pipeline's to check.
 #   3. the platform's OWN resolved graph carries no `interactive`
-#      feature node, which is the check D3.11 writes down and the only
+#      feature node, which is the check the rule writes down and the only
 #      one no manifest reading can replace. It needs the platform
 #      checked out beside joy; where it is not, the recipe says so and
 #      the manifest half still runs.
@@ -252,7 +252,7 @@ guard-interactive manifest="../platform/Cargo.toml":
         bad=1
     fi
     if grep -qE '^default = .*"interactive"' "$core"; then
-        echo "guard-interactive: $core has interactive in its DEFAULT features; D3.11 wants it off"
+        echo "guard-interactive: $core has interactive in its DEFAULT features; the rule wants it off"
         bad=1
     fi
     askers=$(grep -lE '^joy-core = .*"interactive"' crates/*/Cargo.toml | sort | tr '\n' ' ')
@@ -281,9 +281,9 @@ guard-interactive manifest="../platform/Cargo.toml":
 
 # Take the pinned host keys off the three public forges again and check
 # them against crates/joy-core/data/host-keys.json, the pin file a
-# release ships (design D1.4a: the Codeberg pin is a blob taken once
+# release ships (the Codeberg pin is a blob taken once
 # and checked against a page that publishes fingerprints only). This is
-# the build step of D1.4a, and CI runs it every night
+# the build step, and CI runs it every night
 # (.github/workflows/ci.yaml, job host-key-pins), so a rotation or a
 # hand-edited pin is noticed by a job and not by a person whose contact
 # failed. Needs the network; the offline half of the same check is the
@@ -417,14 +417,14 @@ setup:
 # queries, JOY-0251-AA)
 #
 # The layout an install has (JOY-029E-9D): joy and joy-forge in the bin
-# directory, so joy resolves the connector by the name order of D2.2,
-# and the host key pin file of design D1.4a under the prefix's share
+# directory, so joy resolves the connector by the name order,
+# and the host key pin file under the prefix's share
 # directory, which is the second candidate of pins::candidates and the
-# path the installers of W1 write. Not into ~/.local/bin: a pin file
+# path the installers write. Not into ~/.local/bin: a pin file
 # there is the first candidate and would shadow the share copy for
 # good. The `rm` line clears exactly that, because an earlier revision
 # of this recipe wrote one. The three legacy names stay in the recipe
-# on purpose: a machine that carries them is the shadowing case of D2.2a.
+# on purpose: a machine that carries them is the shadowing case.
 install:
     cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin ~/.local/share/joy && cp target/release/joy target/release/joy-forge target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/ && rm -f ~/.local/bin/host-keys.json && cp crates/joy-core/data/host-keys.json ~/.local/share/joy/
 
@@ -523,7 +523,7 @@ publish-crates: sync-tutorial
     # joy-bi rides after joy-core (its only internal dependency);
     # joy-forge-net rides after joy-core too, because the connector's
     # refresh lock takes `joy_core::util::file_lock` and its NO_PROXY
-    # matcher is the engine's (D2.6a, JOY-02A3-E4); the three forge
+    # matcher is the engine's (JOY-02A3-E4); the three forge
     # connectors ride after joy-forge-net, which is what they share,
     # joy-telemetry rides after joy-core too, its only internal
     # dependency; and joy-cli after all of them, because it links the
@@ -559,7 +559,7 @@ publish-crates: sync-tutorial
     # old version while every dependent was bumped past them, and
     # `cargo publish -p joy-cli` then asked crates.io for a
     # joy-telemetry that was never uploaded (JOY-02A4-89, the shape of
-    # JOY-0246-B7). No package of the forge connection NG plan may edit
+    # JOY-0246-B7). That work may not edit
     # .joy, so the three inherit instead: `version.workspace = true`
     # against the `[workspace.package]` version of the root manifest,
     # which is in the list, and their joy-core requirement inherits
@@ -696,7 +696,7 @@ publish-crates: sync-tutorial
 # The macOS lane has no recipe here: the apple archives are built,
 # Developer ID signed and verified by the `build-local-artifacts` job of
 # .github/workflows/release.yml, which the tag this step pushes starts
-# (JOY-02A8-F4, design decision 6). What that lane REQUIRES, wherever it
+# (JOY-02A8-F4). What that lane REQUIRES, wherever it
 # runs, is one identity for both copies of the connector: the Developer
 # ID Application certificate of Joydev GmbH, the same one the desktop
 # app signs its sidecars with. On a GitHub hosted runner it arrives as

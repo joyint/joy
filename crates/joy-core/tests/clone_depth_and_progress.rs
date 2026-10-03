@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The two arguments a clone grew for the desktop (D4.3, package A4):
+//! The two arguments a clone grew for the desktop:
 //! how much history it downloads, and who watches it arrive.
 //!
 //! In process, against a git smart-HTTP server of this test binary's own
@@ -219,7 +219,7 @@ fn history_length(checkout: &std::path::Path, tip: git2::Oid) -> usize {
     walk.count()
 }
 
-/// The lean shape of D4.3: one snapshot, and the repository says so.
+/// The lean shape: one snapshot, and the repository says so.
 #[test]
 fn a_depth_one_clone_lands_shallow_and_counts_its_objects() {
     let forge = a_forge();
@@ -254,7 +254,7 @@ fn a_depth_one_clone_lands_shallow_and_counts_its_objects() {
     let last = seen.last().expect("the callback was called");
     assert!(
         last.total_objects > 0 && last.received_objects > 0 && last.received_bytes > 0,
-        "the bytes AND the objects of D4.3 are counted, not invented: {last:?}"
+        "the bytes AND the objects are counted, not invented: {last:?}"
     );
 }
 
@@ -284,7 +284,7 @@ fn depth_full_clones_the_whole_history() {
     );
 }
 
-/// The cancel of D4.3: a callback that says stop stops the DOWNLOAD,
+/// The cancel: a callback that says stop stops the DOWNLOAD,
 /// which is the difference between a person waiting ten seconds and a
 /// person waiting for a 2 GB pack nobody wants any more.
 #[test]

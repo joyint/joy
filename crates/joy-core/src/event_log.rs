@@ -582,10 +582,10 @@ pub fn actors_for_items(root: &Path, item_ids: &[String]) -> Result<Vec<ActorSta
 /// Read `git config user.email`.
 ///
 /// No joy command uses this any more: the CLI's actors come from
-/// [`crate::identity::resolve_identity`] since package J11, and the
+/// [`crate::identity::resolve_identity`], and the
 /// convenience twin `log_event`, which read this for the log's actor,
 /// is gone with it. It stays public for the desktop, whose four
-/// remaining callers move onto the acting member in D4.5, and it is
+/// remaining callers move onto the acting member, and it is
 /// named after what it does rather than after an identity, so nobody
 /// reaches for it by accident.
 pub fn get_git_email() -> Result<String, JoyError> {
@@ -597,7 +597,7 @@ pub fn get_git_email() -> Result<String, JoyError> {
 /// for AI members.
 ///
 /// This is the only way joy writes the log. The convenience twin that
-/// took the actor from `git config user.email` is gone with D3.9: the
+/// took the actor from `git config user.email` is gone: the
 /// log's actor is the resolved identity and nothing else, and it had no
 /// callers left.
 pub fn log_event_as(

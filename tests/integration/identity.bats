@@ -36,7 +36,7 @@ load setup
     setup_human_auth
     joy add task "Reject test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Reject test" | awk '{print $1}')
-    # --user always beats git config (JOY-02AE-1A, correcting D3.9), so
+    # --user always beats git config (JOY-02AE-1A), so
     # somebody the project does not know is turned away here regardless
     # of what this repository's git config says.
     run joy auth --user nobody@invalid.com --passphrase "$TEST_PASSPHRASE"

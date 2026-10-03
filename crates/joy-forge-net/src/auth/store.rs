@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The connector's own credential entry (D2.6).
+//! The connector's own credential entry.
 //!
 //! Who may read which entry is decided and narrow: **the connector
 //! binary owns the entry and nobody else touches it**. The app and the
@@ -10,7 +10,7 @@
 //! confirmation dialog, because a generic password is created with an
 //! ACL that trusts the creating application alone.
 //!
-//! Three decisions of D2.6 are load bearing here:
+//! Three decisions are load bearing here:
 //!
 //! - **`Entry::new` only, never `new_with_target`.** The service is the
 //!   connector's own name, the user is `<host>` or `<host>|<login>`.
@@ -36,7 +36,7 @@
 //! Two rules hold for the file, and neither is optional:
 //!
 //! - **One writer at a time.** The file is ONE document for every host
-//!   and every login, while the refresh lock of D2.6a is per host and
+//!   and every login, while the refresh lock is per host and
 //!   login: two `login` runs for two logins on one host take two
 //!   different locks. Every read-modify-write of the file therefore
 //!   takes one more whole file lock, on the same primitive, beside the
@@ -55,7 +55,7 @@
 //! person stored and it may never change it. Its vault is therefore
 //! built read only ([`Vault::read_only`]), which is a refusal in
 //! [`Vault::put`] and [`Vault::remove`] and a "do not renew" in the
-//! refresh of D2.6a. Nothing about that decision is per call: the flag
+//! refresh. Nothing about that decision is per call: the flag
 //! is set once, where the host kind is known (`Ctx::new`).
 
 use std::collections::BTreeMap;
@@ -66,27 +66,27 @@ use serde::{Deserialize, Serialize};
 use super::Source;
 
 /// The service name of the connector's own entries. It is the binary's
-/// own name, as D2.6 says, and never a forge's.
+/// own name, as the rule says, and never a forge's.
 pub const SERVICE: &str = "joy-forge";
 
 /// The service name of the per host login index. `Entry::new` cannot
-/// enumerate, and D4.1c's "the only login the host holds" and its probe
+/// enumerate, and the "the only login the host holds" and its probe
 /// candidate order both need the list, so the list is an entry of its
 /// own under a service that no `<host>|<login>` user can collide with.
 pub const INDEX_SERVICE: &str = "joy-forge.logins";
 
-/// The file joy writes when the credential store cannot answer (D2.6).
+/// The file joy writes when the credential store cannot answer.
 pub const FALLBACK_FILE: &str = "forge-tokens.json";
 
 /// Why a read only vault refused a write. It reaches a person only
-/// through a caller that says so in its own words; the verbs of D2.4
+/// through a caller that says so in its own words; the verbs
 /// refuse before they get this far.
 pub const READ_ONLY: &str =
     "this process runs under a delegation session, which may use the credential this machine \
      holds and may never change it";
 
 /// One stored credential. Everything the refresh and the answers of
-/// D2.4 need is here, so a refresh needs no forge knowledge at all:
+/// The rule need is here, so a refresh needs no forge knowledge at all:
 /// `token_endpoint` and `client_id` are the ones the login used.
 #[derive(Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Record {
@@ -97,7 +97,7 @@ pub struct Record {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_id: Option<String>,
     /// The granted scope set, space separated, beside the token in the
-    /// same entry (D2.7c). GitHub and GitLab report it; Gitea's token
+    /// same entry. GitHub and GitLab report it; Gitea's token
     /// answer has no scope field, so there the connector stores the set
     /// it requested.
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -136,7 +136,7 @@ pub struct Record {
 /// having no `Debug` at all. This type has to stay printable, because a
 /// failing test must be able to say which record it compared, so the
 /// two fields that must not travel are replaced by the twelve hex
-/// digits D2.6a already compares under the lock: they identify a token
+/// digits the rule already compares under the lock: they identify a token
 /// without carrying it. One `tracing::debug!(?record)` is therefore
 /// safe by construction and not by discipline.
 impl std::fmt::Debug for Record {
@@ -161,7 +161,7 @@ impl std::fmt::Debug for Record {
 
 impl Record {
     /// Whether this token is past its lifetime, measured against the
-    /// 60 s skew of D2.6a.
+    /// 60 s skew.
     pub fn is_expired(&self) -> bool {
         self.expires_in().is_some_and(|left| left <= 60)
     }
@@ -188,7 +188,7 @@ impl Record {
         self.refused_reason.is_some()
     }
 
-    /// The fingerprint D2.6a compares under the lock.
+    /// The fingerprint the rule compares under the lock.
     pub fn fingerprint(&self) -> String {
         super::fingerprint(&self.token)
     }
@@ -205,7 +205,7 @@ pub struct Vault {
     file: PathBuf,
     /// Whether this vault may only be read. A `Delegated` host gets
     /// one that may not: it uses what the person stored and changes
-    /// nothing of it (D1.10, D3.8).
+    /// nothing of it.
     read_only: bool,
 }
 
@@ -216,14 +216,14 @@ enum Keys {
     #[default]
     None,
     /// The operating system's, through `keyring::Entry::new` and
-    /// nothing else (D2.6).
+    /// nothing else.
     Os,
     /// An in process store with the same semantics an operating
     /// system's one has: it persists across `Entry` objects, which is
     /// exactly the property keyring's own mock lacks and which the read
     /// back of [`Keys::put_checked`] tests for. Behind `fake-api`, so a
     /// shipped connector never carries it, and it is what lets a test
-    /// execute the keychain half of D2.6 at all: every test that drove
+    /// execute the keychain half at all: every test that drove
     /// the file alone left the entry addressing, the login index and
     /// the mock detector unproven.
     #[cfg(feature = "fake-api")]
@@ -258,7 +258,7 @@ impl Keys {
             // `NoEntry` is the normal answer for a host nobody signed
             // in to; `NoStorageAccess` and `PlatformFailure` are a
             // store that could not answer. Both end here, and the
-            // caller falls through to the 0600 file of D2.6.
+            // caller falls through to the 0600 file.
             Keys::Os => {
                 let (service, user) = (service.to_string(), user.to_string());
                 bounded(move || {
@@ -323,7 +323,7 @@ impl Keys {
 
     /// One entry written, then read back through a NEW handle.
     ///
-    /// The read back is the mock detector of D2.6: keyring's in process
+    /// The read back is the mock detector: keyring's in process
     /// mock keeps the password inside the `Entry` object, so a second
     /// entry for the same service and user finds nothing, and joy must
     /// write its own file instead of believing a store that stored
@@ -345,10 +345,10 @@ impl Keys {
 /// draw the prompt (an ssh login, a headless box, a session whose
 /// prompter died) that call never returns: on 2026-09-18 a `login` sat
 /// in the write after GitHub had already granted the token, until the
-/// device code expired and the grant was lost (JOY-02AA-ED). D2.6 says
+/// device code expired and the grant was lost (JOY-02AA-ED). The rule says
 /// a store that cannot answer is the file's turn, and a store that does
 /// not answer in this time is that store. The bound is well under the
-/// 20 seconds joy gives the connector as a whole (D1.9a), so a locked
+/// 20 seconds joy gives the connector as a whole, so a locked
 /// keyring costs one wait per process and never a "plugin did not
 /// answer" on top.
 pub const KEYRING_BOUND: std::time::Duration = std::time::Duration::from_secs(5);
@@ -404,21 +404,21 @@ impl Vault {
     ///
     /// This is what a `Delegated` host gets. The agent runs on the
     /// person's own machine and inherits their credentials through the
-    /// joy CLI (G2, D3.8), so refusing it the store would refuse it
+    /// joy CLI (G2), so refusing it the store would refuse it
     /// every ssh and https contact the person can make. What it may
     /// never do is CHANGE what it inherited: no `token-store`, no
     /// `logout`, and no refresh, because a refresh at a forge that
     /// rotates refresh tokens retires the one the person holds and
     /// signs them out of their own machine. Where a refresh would be
     /// needed the answer is `known:false` with the sentence that names
-    /// who has to sign in (D1.10: a delegated host never prompts).
+    /// who has to sign in (a delegated host never prompts).
     pub fn read_only(mut self) -> Self {
         self.read_only = true;
         self
     }
 
     /// A vault that only ever uses the file under `dir`. This is the
-    /// fallback path of D2.6 on purpose, and it is what most tests
+    /// fallback path on purpose, and it is what most tests
     /// drive: a test must never write into the person's own keychain,
     /// and on a machine with a real Secret Service it would.
     pub fn file_at(dir: impl AsRef<Path>) -> Self {
@@ -498,7 +498,7 @@ impl Vault {
     }
 
     /// Every login this vault holds for a host, in insertion order.
-    /// D4.1c's step 3 ("the only login the host holds, with no probe at
+    /// the step 3 ("the only login the host holds, with no probe at
     /// all") is exactly this list having one entry.
     pub fn logins(&self, host: &str) -> Vec<String> {
         if self.is_none() {
@@ -547,7 +547,7 @@ impl Vault {
 
     /// Remove one record from wherever it is. Answers which store held
     /// it, `Ok(None)` when nothing was there, and an error when the
-    /// entry is still there because joy could not write the file: D2.4
+    /// entry is still there because joy could not write the file: the verb
     /// answers `"removed": true`, so a read only or full state
     /// directory has to be a refusal and never a silent success.
     pub fn remove(&self, host: &str, login: Option<&str>) -> Result<Option<Source>, String> {
@@ -671,7 +671,7 @@ impl Vault {
 
     /// Hold the document for a read-modify-write.
     ///
-    /// The refresh lock of D2.6a is keyed by host and login, and this
+    /// The refresh lock is keyed by host and login, and this
     /// file is one document for all of them, so that lock does not
     /// serialise two logins of one host against each other. This one
     /// does, on the same primitive, beside the file it protects.
@@ -699,7 +699,7 @@ impl Vault {
 
 /// The shape of `forge-tokens.json`: hosts, then logins, then records.
 /// The empty login key holds the record of a host with no login name,
-/// which is the `<host>` form of D2.6's entry addressing.
+/// which is the `<host>` form of the entry addressing.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct FileVault {
     #[serde(default)]
@@ -713,7 +713,7 @@ impl FileVault {
             Some(login) => logins.get(login).cloned(),
             // No login asked for: the unnamed record first, then the
             // only named one there is. Two named logins and no pin is
-            // the question D4.1c answers, not this one.
+            // the question the rule answers, not this one.
             None => logins
                 .get("")
                 .cloned()
@@ -761,7 +761,7 @@ impl FileVault {
 }
 
 /// The user half of `Entry::new(service, user)`: `<host>` or
-/// `<host>|<login>`, exactly as D2.6 writes it.
+/// `<host>|<login>`, exactly as the rule writes it.
 pub fn user_key(host: &str, login: Option<&str>) -> String {
     match login {
         Some(login) if !login.is_empty() => format!("{host}|{login}"),
@@ -782,8 +782,8 @@ fn default_file() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(FALLBACK_FILE))
 }
 
-/// Write a file only this person can read: 0600 in a 0700 directory
-/// (D2.6). On Windows the directory's inherited ACL is what protects
+/// Write a file only this person can read: 0600 in a 0700 directory.
+/// On Windows the directory's inherited ACL is what protects
 /// it, which is the same protection `%APPDATA%` gives every other
 /// credential file on that system.
 ///
@@ -862,7 +862,7 @@ fn private_dir(_dir: &Path) {}
 #[cfg(test)]
 mod tests {
 
-    /// D2.6's "a store that cannot answer" includes one that never
+    /// the "a store that cannot answer" includes one that never
     /// answers: the Secret Service waiting on an unlock prompt nobody
     /// can see (JOY-02AA-ED). The bound turns that silence into `None`
     /// within [`KEYRING_BOUND`], and the second call does not wait at
@@ -903,7 +903,7 @@ mod tests {
         }
     }
 
-    /// D2.6's entry addressing, written down once: the service is the
+    /// the entry addressing, written down once: the service is the
     /// connector's own name and the user is `<host>` or `<host>|<login>`.
     #[test]
     fn an_entry_is_addressed_by_host_and_login_and_nothing_else() {
@@ -929,7 +929,7 @@ mod tests {
         let mut logins = vault.logins("github.com");
         logins.sort();
         assert_eq!(logins, vec!["scotty".to_string(), "work".to_string()]);
-        // two logins and no name: D4.1c decides that, not the vault
+        // two logins and no name: The rule decides that, not the vault
         assert!(vault.get("github.com", None).is_none());
         assert_eq!(
             vault.remove("github.com", Some("work")),
@@ -940,7 +940,7 @@ mod tests {
         assert_eq!(vault.remove("github.com", Some("nobody")), Ok(None));
     }
 
-    /// The fallback file is joy's own, and D2.6 says what it must look
+    /// The fallback file is joy's own, and the rule says what it must look
     /// like on disk: 0600 in a 0700 directory.
     #[test]
     #[cfg(unix)]
@@ -989,8 +989,8 @@ mod tests {
         assert!(record.can_refresh());
     }
 
-    /// D2.6: the file is ONE document for every host and every login,
-    /// and the refresh lock of D2.6a is per host and login, so the
+    /// The file is ONE document for every host and every login,
+    /// and the refresh lock is per host and login, so the
     /// document has a lock of its own. Two writers for two logins of
     /// one host must both survive.
     #[test]
@@ -1060,7 +1060,7 @@ mod tests {
         );
     }
 
-    /// D2.6's keychain half, executed: the entry addressing, the login
+    /// the keychain half, executed: the entry addressing, the login
     /// index that `Entry::new` cannot enumerate, and the removal.
     ///
     /// The store here is an in process one with the semantics of an
@@ -1085,7 +1085,7 @@ mod tests {
             "a store that answered means no 0600 file at all"
         );
         // `Entry::new` cannot enumerate, so the logins live in an index
-        // entry of their own, and D4.1c's step 3 and its probe order
+        // entry of their own, and the step 3 and its probe order
         // both read it.
         let mut logins = vault.logins("github.com");
         logins.sort();
@@ -1105,7 +1105,7 @@ mod tests {
         assert_eq!(vault.remove("github.com", Some("scotty")), Ok(None));
     }
 
-    /// The mock detector of D2.6, against the store it was written for.
+    /// The mock detector, against the store it was written for.
     ///
     /// keyring's own mock keeps the password inside the `Entry` object
     /// (`CredentialPersistence::EntryOnly`), so the read back through a
@@ -1126,7 +1126,7 @@ mod tests {
         let (found, source) = vault.get("github.com", Some("work")).unwrap();
         assert_eq!(found.token, "gho_a");
         assert_eq!(source, Source::File);
-        assert!(vault.file().exists(), "the 0600 file of D2.6 took over");
+        assert!(vault.file().exists(), "the 0600 file took over");
         assert_eq!(vault.logins("github.com"), vec!["work".to_string()]);
         assert_eq!(
             vault.remove("github.com", Some("work")),
@@ -1176,7 +1176,7 @@ mod tests {
     }
 
     /// The record carries the granted set beside the token in the same
-    /// entry, which is what D2.7c's local pre check reads.
+    /// entry, which is what the local pre check reads.
     #[test]
     fn a_record_round_trips_through_its_json_with_the_granted_set() {
         let dir = tempfile::tempdir().unwrap();

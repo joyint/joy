@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! A clone decides its proxy only AFTER git's own system config rule is
-//! applied (JOY-028D-46, D1.11).
+//! applied (JOY-028D-46).
 //!
 //! libgit2 always adds the system-wide gitconfig; git skips it when
 //! `GIT_CONFIG_NOSYSTEM` is true, and the one place that takes the

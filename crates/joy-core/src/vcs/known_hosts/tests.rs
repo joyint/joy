@@ -499,7 +499,7 @@ fn pins_match_the_published_fingerprints() {
     }
 }
 
-/// The operator answered decision 23, so the pin file a release ships
+/// The operator approved the pins, so the pin file a release ships
 /// carries the three public forges and a contact may consult them.
 /// `shipped` reads the release the running binary belongs to and
 /// `recorded` reads the file in this source tree; in a test binary,
@@ -523,7 +523,7 @@ fn the_pin_file_a_release_ships_carries_the_three_public_forges() {
     assert!(pins::consulted_for("forge.example.com").is_none());
 }
 
-/// D1.4a asks for the pins as DATA in the release: a key rotation at a
+/// The rule asks for the pins as DATA in the release: a key rotation at a
 /// pinned forge has to be a file that is replaced, never a joy that is
 /// rebuilt. So the file is looked for in the release, in both layouts
 /// the installers produce, and the compiled-in copy answers only where

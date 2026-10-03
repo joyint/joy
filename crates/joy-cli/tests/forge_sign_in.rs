@@ -1,24 +1,24 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The sign in verbs, driven as PROCESSES (JOY-029B-B0, package J3).
+//! The sign in verbs, driven as PROCESSES (JOY-029B-B0).
 //!
-//! The rest of J3's proof runs inside the connector crate; two things
+//! The rest of the proof runs inside the connector crate; two things
 //! cannot be proved there and are proved here, with the shipped
 //! `joy-forge` binary:
 //!
-//! - **two processes refreshing one entry at once** (D2.6a). Two
+//! - **two processes refreshing one entry at once**. Two
 //!   threads contend on the same flock, but "two joy processes" is what
 //!   the acceptance says, so two joy processes is what runs.
-//! - **`ps` during a `token-store` shows no token** (D2.4, D5). The
+//! - **`ps` during a `token-store` shows no token**. The
 //!   token goes in on stdin; here the child's own `/proc/<pid>/cmdline`
 //!   is read while it runs, which is exactly what `ps` reads.
 //!
 //! No real network and no forge CLI: PATH is emptied for every child,
 //! the forge is an in process fake on the loopback interface, and the
-//! credential store is the 0600 file of D2.6, because every child gets
+//! credential store is the 0600 file, because every child gets
 //! a `DBUS_SESSION_BUS_ADDRESS` that answers nothing. That is not a
-//! trick: it is the machine D2.6 wrote the fallback for, a host whose
+//! trick: it is the machine the rule wrote the fallback for, a host whose
 //! credential store cannot be reached.
 
 #![cfg(unix)]
@@ -72,8 +72,8 @@ fn write_script(path: &std::path::Path, body: &str) {
 }
 
 /// One sandbox per case: its own config directory (the credential file
-/// of D2.6 lives there), its own state directory (the refresh locks of
-/// D2.6a and the login memory of D4.1c live there) and its own
+/// lives there), its own state directory (the refresh locks of
+/// The rule and the login memory live there) and its own
 /// `forges.yaml`.
 struct Sandbox {
     dir: tempfile::TempDir,
@@ -112,7 +112,7 @@ impl Sandbox {
             .env("XDG_CONFIG_HOME", self.path().join("config"))
             .env("XDG_STATE_HOME", self.path().join("state"))
             // No credential store answers here, which is the case the
-            // 0600 file of D2.6 exists for.
+            // 0600 file exists for.
             .env(
                 "DBUS_SESSION_BUS_ADDRESS",
                 "unix:path=/nonexistent/joy-test-no-bus",
@@ -124,7 +124,7 @@ impl Sandbox {
     /// Put a fake `gh` on this sandbox's PATH, with a `hosts.yml` that
     /// names these logins, the active one first.
     ///
-    /// Spawning a forge CLI by name is what decision 19 asks for, so a
+    /// Spawning a forge CLI by name is the rule, so a
     /// test of that path has to have one to spawn. This one prints a
     /// token per `--user` and nothing else, exactly as
     /// `gh auth token` does.
@@ -261,11 +261,11 @@ fn answer_of(output: &std::process::Output) -> Value {
     })
 }
 
-/// D2.6a, the acceptance verbatim: two joy processes refreshing the
+/// Two joy processes refreshing the
 /// same entry at once produce ONE refresh and one `busy`, and the token
 /// still works afterwards.
 ///
-/// The fake holds the first refresh past the ten second bound of D2.6a
+/// The fake holds the first refresh past the ten second bound
 /// on purpose: that bound is what turns the second process from "a
 /// second refresh" into "an answer that says busy", and a refresh that
 /// answered instantly would never reach it.
@@ -484,7 +484,7 @@ fn a_named_refusal_through_the_connector_binary_is_remembered_across_processes()
     );
 }
 
-/// D2.4 and D5: `token-store` reads the token from STDIN, and `ps`
+/// `token-store` reads the token from STDIN, and `ps`
 /// during the run shows no token. `/proc/<pid>/cmdline` is what `ps`
 /// reads, so that is what this asserts, on the running child.
 #[test]
@@ -542,7 +542,7 @@ fn the_token_of_a_token_store_is_never_in_the_process_list() {
     let answer = answer_of(&output);
     assert_eq!(answer["known"], true, "{answer}");
     assert_eq!(answer["login"], "scotty");
-    assert_eq!(answer["source"], "file", "the 0600 file of D2.6");
+    assert_eq!(answer["source"], "file", "the 0600 file");
     assert_eq!(answer["scopes"], "repo user:email");
 
     // It is stored, so `token` finds it without asking the forge again.
@@ -561,7 +561,7 @@ fn the_token_of_a_token_store_is_never_in_the_process_list() {
         "a stored token costs no request"
     );
 
-    // The file joy wrote is readable by its owner alone (D2.6).
+    // The file joy wrote is readable by its owner alone.
     use std::os::unix::fs::PermissionsExt;
     let mode = std::fs::metadata(sandbox.tokens_file())
         .unwrap()
@@ -570,7 +570,7 @@ fn the_token_of_a_token_store_is_never_in_the_process_list() {
     assert_eq!(mode & 0o777, 0o600);
 }
 
-/// D2.4: `web-url` is answered from the address and the instance
+/// `web-url` is answered from the address and the instance
 /// configuration alone, with no credential and no request.
 #[test]
 fn web_url_answers_without_a_credential_and_without_a_request() {
@@ -603,7 +603,7 @@ fn web_url_answers_without_a_credential_and_without_a_request() {
     assert!(fake.calls().is_empty());
 }
 
-/// D3.11: a delegated session is refused instantly, and the refusal
+/// A delegated session is refused instantly, and the refusal
 /// names the headless door. The connector refuses this for itself, so
 /// an agent image that carries the binary cannot start a browser flow
 /// nobody can finish.
@@ -633,7 +633,7 @@ fn a_delegated_login_is_refused_by_the_connector_itself() {
     assert!(fake.calls().is_empty(), "nothing was contacted");
 }
 
-/// J3's acceptance, through the shipped binary: `login` prints the
+/// `login` prints the
 /// verification line within fifteen seconds and the CALLER SEES IT
 /// BEFORE THE PROCESS EXITS. The line is read off the child's stdout
 /// while it is still polling the forge.
@@ -704,10 +704,10 @@ fn a_login_prints_its_verification_line_while_it_is_still_running() {
     let _ = child.wait();
 }
 
-/// J3's acceptance: on a machine with a signed in gh, `token` answers
+/// On a machine with a signed in gh, `token` answers
 /// `"source":"gh"` with zero clicks and zero dialogs. There is no
 /// credential of joy's own here, and no credential store is reachable
-/// either, so the only way to the token is spawning gh (decision 19).
+/// either, so the only way to the token is spawning gh.
 #[test]
 fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
     let fake = FakeForge::start(|_| Reply::not_found());
@@ -727,7 +727,7 @@ fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
         "reading gh's token costs no forge request"
     );
     // joy never writes, refreshes or revokes what gh owns: `logout`
-    // names gh's own command and removes nothing (D2.6).
+    // names gh's own command and removes nothing.
     let out = sandbox
         .connector_with_gh("scotty")
         .args(["github", "logout", "--host", "forge.test"])
@@ -739,15 +739,15 @@ fn a_signed_in_gh_answers_the_token_verb_by_being_spawned() {
     assert_eq!(answer["command"], "gh auth logout --hostname forge.test");
 }
 
-/// D1.10, mechanism 5: "every plugin call carries the host kind as a
-/// protocol field, and the plugin uses it to skip any step that can
-/// raise an operating system dialog".
+/// Every plugin call carries the host kind as a protocol field, and
+/// the plugin uses it to skip any step that can raise an operating
+/// system dialog.
 ///
 /// A DELEGATED session is an agent the person lent this machine to. G2
-/// and D3.8 say it inherits everything through the joy CLI, so it READS
+/// and the rule say it inherits everything through the joy CLI, so it READS
 /// the credential the person stored and it changes nothing of it: no
-/// `token-store`, no `logout`, no refresh. D3.11 refuses `login` on top
-/// of that, and D1.10's promise holds because a read is the one access
+/// `token-store`, no `logout`, no refresh. The rule refuses `login` on top
+/// of that, and the promise holds because a read is the one access
 /// that raises no question of joy's own.
 ///
 /// This runs through the shipped binary, so the wiring from
@@ -844,11 +844,11 @@ fn a_delegated_session_reads_this_persons_credential_and_changes_nothing() {
     }
 }
 
-/// The other half of the same rule (D2.6, D2.6a): a credential that
+/// The other half of the same rule: a credential that
 /// expired under a delegated session is NOT renewed, because a forge
 /// that rotates refresh tokens would retire the one the person holds
 /// and sign them out of their own machine. The answer says who has to
-/// sign in instead, and it never asks anybody itself (D1.10).
+/// sign in instead, and it never asks anybody itself.
 #[test]
 fn a_delegated_session_never_refreshes_the_credential_it_inherited() {
     let refreshes = Arc::new(AtomicUsize::new(0));
@@ -900,8 +900,8 @@ fn a_delegated_session_never_refreshes_the_credential_it_inherited() {
     );
 
     // the platform's own hand over is untouched by all of this: the
-    // variable the CALLER named is the whole answer where it is given
-    // (D2.4), expired entry or not, and it costs no request
+    // variable the CALLER named is the whole answer where it is given,
+    // expired entry or not, and it costs no request
     let handed = sandbox
         .connector()
         .env("JOY_TEST_DELEGATED_TOKEN", "gho_handed_to_the_agent")
@@ -941,9 +941,9 @@ fn a_delegated_session_never_refreshes_the_credential_it_inherited() {
     assert_eq!(refreshes.load(Ordering::SeqCst), 1);
 }
 
-/// D4.1c, step 4, through the shipped binary: `--for` is the direction
-/// of the probe, and "the first that answers 200, and for a push
-/// direction reports write, wins".
+/// Through the shipped binary: `--for` is the direction of the
+/// probe, and the first that answers 200, and for a push direction
+/// reports write, wins.
 #[test]
 fn the_for_flag_decides_which_login_the_probe_accepts() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
@@ -1001,7 +1001,7 @@ fn the_for_flag_decides_which_login_the_probe_accepts() {
     assert!(String::from_utf8_lossy(&wrong.stderr).contains("read, write, create or release"));
 }
 
-/// J3's acceptance: a host with TWO gh accounts answers `token` for a
+/// A host with TWO gh accounts answers `token` for a
 /// repository only the second account can reach, and reports
 /// `"chose_by":"probe"`.
 ///
@@ -1048,13 +1048,13 @@ fn a_host_with_two_gh_accounts_probes_for_the_one_that_reaches_the_repository() 
     );
 
     // The winner is remembered per remote, so the second call picks the
-    // login without asking any candidate (D4.1c): ONE request, not two,
+    // login without asking any candidate: ONE request, not two,
     // and it is the reach of the remembered login alone.
     //
     // That one request is deliberate (JOY-02A9-48). The memory decides
     // which LOGIN answers and knows nothing about reachability, and an
     // answer that skipped the question entirely made the organisation
-    // wall of D2.7c depend on a memory row: the same machine said
+    // wall depend on a memory row: the same machine said
     // "no login of yours can reach this" one minute and
     // "your organisation must approve Joy" the next.
     let before = fake.calls().len();

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The connector's command line: one parser for the combined binary and
-//! for every legacy name (D2.1, D2.2, D2.2a).
+//! for every legacy name.
 //!
 //! `joy-forge` carries every forge and takes the forge id as its first
 //! argument; `joy-github`, `joy-gitlab` and `joy-gitea` carry one forge
@@ -10,7 +10,7 @@
 //! the protocol cannot drift between them.
 //!
 //! The `version` verb is asked of the BINARY and never of a forge
-//! inside it, so it comes first and alone (D2.2a).
+//! inside it, so it comes first and alone.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -22,7 +22,7 @@ use crate::auth::Purpose;
 use crate::config::Instances;
 use crate::forge::{Ctx, Forge, HostKind, Listing, NewRepository, ReleaseRequest, Target};
 
-/// The protocol this connector speaks (D2.2a).
+/// The protocol this connector speaks.
 pub const PROTOCOL: u32 = 2;
 
 /// What the binary is called and which version it is, for the `version`
@@ -38,10 +38,10 @@ struct Cli {
     /// Run as if started in <PATH> (parity with joy's -w).
     #[arg(short = 'w', long, global = true)]
     working_dir: Option<PathBuf>,
-    /// Who is behind the calling process (D1.10).
+    /// Who is behind the calling process.
     #[arg(long, global = true)]
     host_kind: Option<String>,
-    /// The login this call is pinned to (D4.1c).
+    /// The login this call is pinned to.
     #[arg(long, global = true)]
     login: Option<String>,
     /// The NAME of an environment variable holding a forge token. Never
@@ -120,14 +120,14 @@ enum Command {
         private: bool,
     },
     /// The credential this machine holds for the host, and which login
-    /// it belongs to (D2.4, D4.1c).
+    /// it belongs to.
     Token {
         #[arg(long)]
         remote: Option<String>,
         #[arg(long)]
         host: Option<String>,
         /// Which access the token is for: read, write, create or
-        /// release. It is the direction of D4.1c's probe, "the first
+        /// release. It is the direction of the probe, "the first
         /// that answers 200, and for a push direction reports write,
         /// wins".
         #[arg(long = "for")]
@@ -139,7 +139,7 @@ enum Command {
         renew: bool,
     },
     /// Read ONE token from stdin, validate it with `identity` and store
-    /// it. The token is never an argument (D2.4).
+    /// it. The token is never an argument.
     TokenStore {
         #[arg(long)]
         remote: Option<String>,
@@ -147,19 +147,19 @@ enum Command {
         host: Option<String>,
     },
     /// Sign in to the forge. Newline delimited JSON events on stdout;
-    /// the connector never opens a browser (D2.4, D2.7).
+    /// the connector never opens a browser.
     Login {
         #[arg(long)]
         remote: Option<String>,
         #[arg(long)]
         host: Option<String>,
         /// Which access the sign in asks for: read, write, create or
-        /// release (D2.7a).
+        /// release.
         #[arg(long = "for")]
         purpose: Option<String>,
     },
     /// Remove the credential this connector holds, and revoke it at the
-    /// forge where the forge offers that (D2.4).
+    /// forge where the forge offers that.
     Logout {
         #[arg(long)]
         remote: Option<String>,
@@ -167,7 +167,7 @@ enum Command {
         host: Option<String>,
     },
     /// The https twin of a remote: only the forge knows the web base of
-    /// a self hosted instance (D1.5, D2.4).
+    /// a self hosted instance.
     WebUrl {
         #[arg(long)]
         remote: Option<String>,
@@ -193,7 +193,7 @@ enum Command {
 
 /// Run the connector with this list of forges. Returns the process exit
 /// code: 0 for every answer, non-zero only where a verb reports a
-/// failure instead of degrading (D2.3, the `release` verb).
+/// failure instead of degrading (the `release` verb).
 pub fn run(forges: &[&'static dyn Forge], manifest: &Manifest) -> i32 {
     run_from(forges, manifest, std::env::args_os())
 }
@@ -201,8 +201,8 @@ pub fn run(forges: &[&'static dyn Forge], manifest: &Manifest) -> i32 {
 /// [`run`] with an explicit argument list, for the tests.
 ///
 /// The forges are `'static` because the context carries the one that
-/// answers: every verb reaches its credential through the login order
-/// of D4.1c, whose fourth step needs the forge itself (D4.1c).
+/// answers: every verb reaches its credential through the login order,
+/// whose fourth step needs the forge itself.
 pub fn run_from<I, T>(forges: &[&'static dyn Forge], manifest: &Manifest, args: I) -> i32
 where
     I: IntoIterator<Item = T>,
@@ -214,7 +214,7 @@ where
         Ok(cli) => cli,
         Err(error) => {
             // clap's own exit code and stream: usage on stderr with
-            // code 2, which is also the protocol 1 detector of D2.2a.
+            // code 2, which is also the protocol 1 detector.
             let _ = error.print();
             return error.exit_code();
         }
@@ -255,7 +255,7 @@ where
         _ => None,
     };
     let mut ctx = Ctx::new(host_kind, cli.login, user_id, cli.token_env, root).with_forge(forge);
-    // The login order of D4.1c is per remote, so every token lookup
+    // The login order is per remote, so every token lookup
     // inside a verb needs the remote without every verb passing it on.
     ctx.remote = remote_of(&cli.command);
     if let Command::Login {
@@ -430,7 +430,7 @@ fn answer(forge: &dyn Forge, command: &Command, ctx: &Ctx) -> i32 {
 }
 
 /// Whether this forge answers for the target, over all three sources of
-/// D2.5: the forge's own knowledge, the instances an operator
+/// The forge's own knowledge, the instances an operator
 /// configured, and the project's `forge:` override.
 fn claims(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> bool {
     let Some(host) = target.host() else {
@@ -455,7 +455,7 @@ fn claims(forge: &dyn Forge, target: &Target, ctx: &Ctx) -> bool {
 
 /// The `--for` of a call, or the exit code of a word that is not one of
 /// the four. `None` is "no direction stated", which is not the same as
-/// the default: the probe of D4.1c reads the difference.
+/// the default: the probe reads the difference.
 fn parse_purpose(raw: Option<&str>) -> Result<Option<Purpose>, i32> {
     match raw.map(str::parse::<Purpose>) {
         Some(Ok(purpose)) => Ok(Some(purpose)),
@@ -475,7 +475,7 @@ fn target(remote: Option<&str>, host: Option<&str>) -> Option<Target> {
     }
 }
 
-/// The one object `version` answers (D2.2a).
+/// The one object `version` answers.
 fn version_answer(forges: &[&dyn Forge], manifest: &Manifest) -> Value {
     json!({
         "protocol": PROTOCOL,
@@ -652,7 +652,7 @@ mod tests {
         assert!(pick(&forges, Some("gitlab")).is_err());
     }
 
-    /// D2.5: `claims` consults the forge, the configured instances and
+    /// `claims` consults the forge, the configured instances and
     /// the project override, and a host configured for another forge is
     /// that forge's business.
     #[test]

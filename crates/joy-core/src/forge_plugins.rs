@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! THE forge-connector registry, its resolution contract and its runner
-//! (JOY-0293-12, package J1 of the forge connection NG design; the
+//! (JOY-0293-12; the
 //! original registry was JOY-0252-1A, epic JOY-0251-AA).
 //!
 //! All forge knowledge (host names, alias address formats, API access)
@@ -12,15 +12,15 @@
 //!
 //! Three things happen here, in this order:
 //!
-//! 1. **Resolution** (D2.2): a spec names its binaries, `joy-forge`
+//! 1. **Resolution**: a spec names its binaries, `joy-forge`
 //!    first and the legacy `joy-<forge>` name after it, and the search
 //!    walks the directories the host registered, then the directory of
 //!    the current executable, then PATH. The first hit wins.
-//! 2. **The handshake** (D2.2a): the resolved binary is asked `version`
+//! 2. **The handshake**: the resolved binary is asked `version`
 //!    once per path and mtime. It answers the protocol number, or it is
 //!    a protocol 1 binary, which is detected without its cooperation
 //!    (exit 2 with empty stdout, or any answer that does not parse).
-//! 3. **The runner** (D2.3): [`run_once`] reads stdout concurrently with
+//! 3. **The runner**: [`run_once`] reads stdout concurrently with
 //!    waiting under a per verb deadline and pipes stderr, [`run_stream`]
 //!    reads newline delimited JSON events while the child runs, and
 //!    both end the child's whole process group once the call is over,
@@ -50,15 +50,15 @@ use crate::host::HostKind;
 /// is outdated (or newer than this joy, which the same sentence covers).
 pub const PROTOCOL: u32 = 2;
 
-/// The one binary that carries every forge (D2.1). It is tried first in
+/// The one binary that carries every forge. It is tried first in
 /// every directory, so a fresh connector beside a stale `joy-<forge>`
 /// wins wherever both are installed.
 pub const COMBINED_BINARY: &str = "joy-forge";
 
-/// The documented TEST HOOK of D2.2, and nothing else: a list of
+/// The documented TEST HOOK, and nothing else: a list of
 /// directories (separated like PATH) searched before everything else.
 ///
-/// It is read in DEVELOPMENT builds only. D2.2 calls it "a documented
+/// It is read in DEVELOPMENT builds only. The rule calls it "a documented
 /// test hook, not a product switch", and a shipped joy must not let one
 /// environment variable redirect a connector call, and with it the
 /// forge token that call carries, to any executable a stray line in a
@@ -79,7 +79,7 @@ pub struct ForgePluginSpec {
     pub display: &'static str,
     /// The binaries that may answer for this forge, in the order they
     /// are tried inside every directory: the combined connector first,
-    /// the legacy single-forge name after it (D2.2).
+    /// the legacy single-forge name after it.
     pub binary_names: &'static [&'static str],
 }
 
@@ -128,7 +128,7 @@ pub fn by_id(id: &str) -> Option<&'static ForgePluginSpec> {
 }
 
 // ---------------------------------------------------------------------
-// Resolution (D2.2)
+// Resolution
 // ---------------------------------------------------------------------
 
 /// Where a connector was found. Part of every answer a person or an
@@ -167,7 +167,7 @@ impl std::fmt::Display for FoundIn {
 /// A connector that exists on this machine, with everything the runner
 /// and every sentence about it need: which forge it answers for, which
 /// file answered, where that file was found, and what its handshake
-/// said (D2.2, D2.2a).
+/// said.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedPlugin {
     /// The forge id of the spec this was resolved for.
@@ -198,7 +198,7 @@ impl ResolvedPlugin {
             .is_some_and(|stem| stem.eq_ignore_ascii_case(COMBINED_BINARY))
     }
 
-    /// The `rm` line D2.2a prints beside an outdated connector. It names
+    /// The `rm` line the rule prints beside an outdated connector. It names
     /// the file that answered and nothing else: joy never removes a
     /// binary it did not install.
     pub fn removal_line(&self) -> String {
@@ -212,8 +212,8 @@ fn registered_dirs() -> &'static RwLock<Vec<PathBuf>> {
     DIRS.get_or_init(|| RwLock::new(Vec::new()))
 }
 
-/// Register the directories this host ships its connector in (D2.2,
-/// step 1): the desktop passes the parent of its own executable, the
+/// Register the directories this host ships its connector in:
+/// the desktop passes the parent of its own executable, the
 /// CLI its install directory. Called at startup, before the first verb.
 ///
 /// It replaces the list rather than appending, so a host that decides
@@ -228,7 +228,7 @@ pub fn set_plugin_dirs(dirs: Vec<PathBuf>) {
         .clear();
 }
 
-/// The search order of D2.2, as directories: the directories the host
+/// The search order, as directories: the directories the host
 /// registered, then the directory of the current executable, then PATH,
 /// with the test hook of [`PLUGIN_DIR_ENV`] in front of all three in a
 /// development build. Duplicates are dropped, so a directory that is
@@ -309,7 +309,7 @@ fn may_execute(_meta: &std::fs::Metadata) -> bool {
 
 /// The resolution plus the handshake.
 ///
-/// The handshake belongs to the FILE, not to the forge (D2.2a): one
+/// The handshake belongs to the FILE, not to the forge: one
 /// `joy-forge` answers for every forge it carries, which is why its
 /// answer lists them. It is therefore asked once per canonical path and
 /// mtime, so a machine with one connector and three registry rows spawns
@@ -339,7 +339,7 @@ pub fn resolve_plugin(spec: &ForgePluginSpec) -> Result<ResolvedPlugin, PluginEr
 /// The handshake cache's key: the file, canonicalised because two names
 /// can be one file, and its mtime, because `cargo install` replacing the
 /// file under a running desktop must not keep answering from the old
-/// handshake (D2.2a).
+/// handshake.
 type CacheKey = (PathBuf, Option<std::time::SystemTime>);
 
 /// One verdict about one file, and when it was reached.
@@ -350,7 +350,7 @@ struct Verdict {
 
 /// How long a FAILED handshake stays cached. Without caching it at all,
 /// a connector whose `version` hangs costs a fresh 5 s spawn on every
-/// verb and D2.2a's "it is not asked per verb, so the 1 Hz chat poll
+/// verb and the "it is not asked per verb, so the 1 Hz chat poll
 /// costs no extra process" would hold for the working case only. The
 /// window is short, because the fix for a broken connector is to
 /// replace it and the next call should see that.
@@ -403,10 +403,10 @@ fn mtime_of(path: &Path) -> Option<std::time::SystemTime> {
 }
 
 // ---------------------------------------------------------------------
-// The handshake (D2.2a)
+// The handshake
 // ---------------------------------------------------------------------
 
-/// What `version` answers (D2.2a). Exactly one object, and anything
+/// What `version` answers. Exactly one object, and anything
 /// else means protocol 1.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct VersionAnswer {
@@ -456,14 +456,14 @@ impl HandshakeFailure {
 /// Ask one FILE what protocol it speaks, under the 5 s query class.
 ///
 /// The question is `version` and nothing before it, for the combined
-/// binary as much as for a legacy one (D2.2a: "`joy-forge version` (and
+/// binary as much as for a legacy one ("`joy-forge version` (and
 /// every legacy `joy-<forge> version`) answers exactly one object"). The
 /// answer is about the binary and not about one forge inside it, which
 /// is why it carries a `forges` list.
 ///
 /// A protocol 1 binary needs no cooperation to be recognised: its clap
 /// parser rejects the unknown subcommand and exits 2 with usage on
-/// stderr and nothing on stdout. The rule of D2.2a is therefore: exit
+/// stderr and nothing on stdout. The rule is therefore: exit
 /// code 2 with empty stdout, or any answer that does not parse as the
 /// object above, means protocol 1.
 fn handshake(path: &Path) -> Result<Handshake, HandshakeFailure> {
@@ -499,12 +499,12 @@ fn handshake(path: &Path) -> Result<Handshake, HandshakeFailure> {
 }
 
 // ---------------------------------------------------------------------
-// The states every caller tells apart (D2.3)
+// The states every caller tells apart
 // ---------------------------------------------------------------------
 
 /// Why a connector call produced no answer. Every caller distinguishes
 /// these, plus the connector's own `{"known":false}`, which is an
-/// ANSWER and therefore not in here (D2.3).
+/// ANSWER and therefore not in here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PluginError {
     /// No file with any of the names exists anywhere in the search
@@ -559,7 +559,7 @@ pub enum PluginError {
 
 impl PluginError {
     /// The state name, the word every surface and every log uses. The
-    /// two that D2.2a names explicitly are `plugin_missing` and
+    /// two that the rule names explicitly are `plugin_missing` and
     /// `plugin_outdated`.
     pub fn state(&self) -> &'static str {
         match self {
@@ -699,7 +699,7 @@ impl std::fmt::Display for PluginError {
 impl std::error::Error for PluginError {}
 
 // ---------------------------------------------------------------------
-// The runner (D2.3)
+// The runner
 // ---------------------------------------------------------------------
 
 /// How long a connector may take per query class. Queries are local
@@ -718,11 +718,11 @@ const STORE_TIMEOUT: Duration = Duration::from_secs(30);
 /// read queries must not have.
 const RELEASE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// How long `login` may take to say its first word (D2.3): the device
+/// How long `login` may take to say its first word: the device
 /// grant's first round trip and nothing more.
 const LOGIN_FIRST_EVENT: Duration = Duration::from_secs(15);
 
-/// The cap on the rest of a `login` (D2.3): the verification event's own
+/// The cap on the rest of a `login`: the verification event's own
 /// `expires_in` decides, and this is the most it may ask for.
 const LOGIN_TOTAL_CAP: Duration = Duration::from_secs(900);
 
@@ -744,7 +744,7 @@ const LOGIN_TOTAL_CAP: Duration = Duration::from_secs(900);
 /// crate, so the number is written here and not imported.
 const LAST_WORD_GRACE: Duration = Duration::from_secs(20);
 
-/// The deadline for ONE SHOT of one verb (D2.3), the bound
+/// The deadline for ONE SHOT of one verb, the bound
 /// [`run_once`] and therefore [`query`] use. Every verb of the
 /// catalogue is named; anything else gets the shortest class, because a
 /// verb nobody wrote down must not be the one that stalls a command.
@@ -765,7 +765,7 @@ pub fn timeout_for(verb: &str) -> Duration {
     }
 }
 
-/// What one connector call did, whatever it did (D2.3). Every field is
+/// What one connector call did, whatever it did. Every field is
 /// filled on every path, so no caller has to guess why it got nothing.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PluginOutcome {
@@ -792,8 +792,8 @@ pub struct PluginOutcome {
     pub wait_error: Option<String>,
 }
 
-/// A stop signal shared between a caller and a running connector
-/// (D2.3). Cancelling kills the child's whole process group.
+/// A stop signal shared between a caller and a running connector.
+/// Cancelling kills the child's whole process group.
 #[derive(Debug, Clone, Default)]
 pub struct CancelToken(Arc<AtomicBool>);
 
@@ -814,7 +814,7 @@ impl CancelToken {
     }
 }
 
-/// The two bounds of a streaming call (D2.3). `login` is the verb that
+/// The two bounds of a streaming call. `login` is the verb that
 /// needs both: 15 s until its first event, then that event's own
 /// `expires_in`, capped.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -827,7 +827,7 @@ pub struct StreamBounds {
 }
 
 impl StreamBounds {
-    /// The bounds of D2.3 for a verb.
+    /// The bounds for a verb.
     pub fn for_verb(verb: &str) -> Self {
         match verb {
             "login" => StreamBounds {
@@ -847,7 +847,7 @@ impl StreamBounds {
 /// The sink may extend the call: returning `Some(d)` sets the remaining
 /// deadline to `d`, capped by [`StreamBounds::total`]. That is how the
 /// `login` verb's second bound works, its `verification` event carrying
-/// the `expires_in` the forge granted (D2.3).
+/// the `expires_in` the forge granted.
 pub trait EventSink {
     /// One newline delimited JSON object the connector flushed.
     fn event(&mut self, event: &serde_json::Value) -> Option<Duration>;
@@ -865,7 +865,7 @@ impl<F: FnMut(&serde_json::Value)> EventSink for F {
 }
 
 /// Run one connector call to its end, reading stdout CONCURRENTLY with
-/// waiting (D2.3).
+/// waiting.
 ///
 /// Concurrently is the whole point: reading stdout only after the child
 /// exited deadlocks every answer above the pipe buffer (64 KiB on
@@ -886,7 +886,7 @@ pub fn run_once(
 }
 
 /// [`run_once`] with a working directory. A connector call needs no
-/// project root (D2.3, `claims --host github.com` with nothing on
+/// project root (`claims --host github.com` with nothing on
 /// disk); a caller that has one passes it so a connector that reads
 /// project.yaml still can.
 pub fn run_once_in(
@@ -908,8 +908,7 @@ fn verb_of<'a>(spec: &ResolvedPlugin, args: &'a [String]) -> &'a str {
 }
 
 /// The one place a connector call can fail silently, so the one place
-/// that says so (forge connection NG, D5 and D2.3, packages J1 and
-/// P1a).
+/// that says so.
 ///
 /// The ANSWER of a read verb stays best effort: every failure still
 /// degrades to "unknown" in the caller. What changes is that the
@@ -984,7 +983,7 @@ fn run_path(
         }
     };
     // The connector has been reaped, and now its whole GROUP goes, on
-    // every path including the normal one (D2.3, "cancellation kills
+    // every path including the normal one ("cancellation kills
     // the process group ... because child.kill() leaves curl or gh
     // grandchildren behind"). A `gh` the connector started in the
     // background inherited stdout, and a pipe reaches end of file only
@@ -1048,7 +1047,7 @@ fn wait_until(child: &mut Child, deadline: Instant) -> Option<std::process::Exit
 const POLL_GAP: Duration = Duration::from_millis(20);
 
 /// Run a connector that speaks while it works, one newline delimited
-/// JSON object per line (D2.3).
+/// JSON object per line.
 ///
 /// Every line reaches `sink` as it arrives, not when the child exits,
 /// which is what makes `login` usable: the caller shows the
@@ -1095,8 +1094,8 @@ pub fn run_stream(
         }
     });
     let mut deadline = Instant::now() + bounds.first_event;
-    // The cap the FIRST event asks for, and never a second one: D2.3
-    // gives `login` the verification code's own `expires_in` capped at
+    // The cap the FIRST event asks for, and never a second one:
+    // `login` gets the verification code's own `expires_in` capped at
     // `bounds.total`, and that span starts when the forge issues the
     // code, not when the connector was spawned. Counting it from the
     // spawn stopped a sign in a moment BEFORE the code expired, so the
@@ -1173,7 +1172,7 @@ pub fn run_stream(
     outcome.exit_code = child.wait().ok().and_then(|status| status.code());
     // The connector is reaped; whatever it started is not, and it still
     // holds both pipes open. Both joins below wait for end of file, so
-    // the group goes first, on every path (D2.3).
+    // the group goes first, on every path.
     group.kill_group();
     drop(lines_rx);
     let _ = line_reader.join();
@@ -1218,7 +1217,7 @@ fn spawn(
 }
 
 /// Give the child a process group of its own, so the runner can end the
-/// connector AND whatever it started (D2.3): `child.kill()` alone
+/// connector AND whatever it started: `child.kill()` alone
 /// leaves a `gh` or a `curl` grandchild running with the pipe still
 /// open.
 #[cfg(unix)]
@@ -1233,7 +1232,7 @@ fn own_process_group(command: &mut Command) {
 fn own_process_group(_command: &mut Command) {}
 
 /// The handle the runner ends a connector with: the child's process
-/// group on unix, a job object on Windows (D2.3).
+/// group on unix, a job object on Windows.
 struct ProcessGroup {
     #[cfg(unix)]
     pid: i32,
@@ -1295,7 +1294,7 @@ impl ProcessGroup {
 }
 
 /// The job object that holds a connector and its grandchildren on
-/// Windows (D2.3). `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` means the whole
+/// Windows. `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` means the whole
 /// tree also dies when joy itself dies, which is what a person expects
 /// after closing the window a login was started from.
 #[cfg(windows)]
@@ -1390,7 +1389,7 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> Drain {
 }
 
 // ---------------------------------------------------------------------
-// What a call carries (D2.3, D1.10, D4.1c)
+// What a call carries
 // ---------------------------------------------------------------------
 
 /// Caller facts a multi-account host hands to the connector: the
@@ -1399,7 +1398,7 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> Drain {
 /// connector finds its own facts (e.g. the forge CLI's config).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CallerFacts {
-    /// The login this call is pinned to (D4.1c). Travels as `--login`
+    /// The login this call is pinned to. Travels as `--login`
     /// on every protocol 2 call.
     pub login: Option<String>,
     pub user_id: Option<String>,
@@ -1412,7 +1411,7 @@ pub struct CallerFacts {
 }
 
 /// What a verb is asked about: a remote URL, or a bare host for the
-/// calls that have no repository (D2.3, "all verbs accept `--host`").
+/// calls that have no repository ("all verbs accept `--host`").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     Remote(String),
@@ -1446,15 +1445,15 @@ impl Target {
 
 /// Everything a connector call carries besides its verb and its target:
 /// the project root if there is one (there need not be), the host kind
-/// of D1.10 and the caller's facts.
+/// and the caller's facts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallContext {
     /// The project root, when the caller has one. `None` is the normal
-    /// case for the host-only verbs (D2.3, rootless invocation).
+    /// case for the host-only verbs (rootless invocation).
     pub root: Option<PathBuf>,
     /// Who is behind this process. Travels as `--host-kind` on every
     /// protocol 2 call, so the connector can skip any step that would
-    /// raise an operating system dialog nobody can answer (D1.10).
+    /// raise an operating system dialog nobody can answer.
     pub host_kind: HostKind,
     /// Who acts, and where their token is.
     pub facts: CallerFacts,
@@ -1474,7 +1473,7 @@ impl Default for CallContext {
 }
 
 impl CallContext {
-    /// A call with no project on disk (D2.3).
+    /// A call with no project on disk.
     pub fn rootless() -> Self {
         Self::default()
     }
@@ -1516,7 +1515,7 @@ impl CallContext {
     }
 }
 
-/// The verbs a protocol 1 connector still answers (D2.2a). Everything
+/// The verbs a protocol 1 connector still answers. Everything
 /// else asked of one is `plugin_outdated`.
 const LEGACY_VERBS: &[&str] = &["claims", "identity", "resolve", "store", "files", "release"];
 
@@ -1524,7 +1523,7 @@ const LEGACY_VERBS: &[&str] = &["claims", "identity", "resolve", "store", "files
 /// the six: protocol 1 gave `identity` `--login`, `--user-id` and
 /// `--token-env`, `resolve` `--email`, and `release` `--tag`, `--title`
 /// and `--notes-file` and nothing else. clap refuses an argument it
-/// does not know with exit code 2 and an empty stdout, which D2.2a
+/// does not know with exit code 2 and an empty stdout, which the rule
 /// reads as "stale binary", so handing one of those three a target
 /// would end `joy release publish` on a machine with an old connector.
 const LEGACY_TARGET_VERBS: &[&str] = &["claims", "store", "files"];
@@ -1556,7 +1555,7 @@ fn call_args(
     }
     if let Some(login) = ctx.facts.login.as_deref() {
         // Protocol 1 knows `--login` on `identity` alone; on protocol 2
-        // it is the login pin of D4.1c and travels on every call.
+        // it is the login pin and travels on every call.
         if resolved.protocol >= PROTOCOL || verb == "identity" {
             args.push("--login".to_string());
             args.push(login.to_string());
@@ -1569,7 +1568,7 @@ fn call_args(
     args
 }
 
-/// Whether this connector may be asked this verb at all (D2.2a): a
+/// Whether this connector may be asked this verb at all: a
 /// protocol 1 binary answers the six old verbs about a REMOTE target,
 /// and nothing else. What the gate reads is the target, not the
 /// argument: only three of the six carry a `--remote` on the command
@@ -1595,7 +1594,7 @@ fn refuse_outdated(
 }
 
 /// The warn line for the two failures that happen BEFORE any process
-/// exists (D5, package P1a: "silent failure is fixed at the source").
+/// exists: silent failure is fixed at the source.
 ///
 /// [`run_path`] logs everything a running connector can do to a call:
 /// it could not be started, it refused, it did not answer in time. The
@@ -1673,9 +1672,8 @@ fn note_of(stderr: &str) -> Option<String> {
     Some(format!("{}...", &text[..cut]))
 }
 
-/// Ask one verb and read its one JSON answer, with every failure named
-/// (D2.3). This is the door every verb of the catalogue goes through,
-/// the ones J3 adds included.
+/// Ask one verb and read its one JSON answer, with every failure named.
+/// This is the door every verb of the catalogue goes through.
 pub fn query<T: serde::de::DeserializeOwned>(
     spec: &ForgePluginSpec,
     verb: &str,
@@ -1761,9 +1759,9 @@ pub fn query_resolved_noted<T: serde::de::DeserializeOwned>(
     if outcome.exit_code != Some(0) {
         // A protocol 1 binary that slipped past the handshake (a file
         // replaced between the two calls) still exits 2 with an empty
-        // stdout, and that is the detector of D2.2a. It is asked only
+        // stdout, and that is the detector. It is asked only
         // of a connector this joy has NOT just heard say "protocol 2":
-        // D2.2a scopes the rule to the handshake, and a protocol 2
+        // The rule scopes the rule to the handshake, and a protocol 2
         // connector that rejects an unknown flag exits 2 as well, which
         // must not be reported as a stale binary to remove.
         if resolved.protocol < PROTOCOL
@@ -1835,7 +1833,7 @@ pub fn claims(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> boo
     claims_full(spec, target, ctx).unwrap_or(false)
 }
 
-/// [`claims`] with the reason (D2.3: missing, outdated, failed, timed
+/// [`claims`] with the reason (missing, outdated, failed, timed
 /// out are four different facts, and `false` is a fifth).
 pub fn claims_full(
     spec: &ForgePluginSpec,
@@ -1879,8 +1877,8 @@ pub fn resolve(spec: &ForgePluginSpec, email: &str, ctx: &CallContext) -> Option
         .filter(|identity| identity.known)
 }
 
-/// [`resolve`] with `known:false` kept apart from every failure (D2.3:
-/// plugin missing, plugin outdated, plugin failed and timed out are
+/// [`resolve`] with `known:false` kept apart from every failure
+/// (plugin missing, plugin outdated, plugin failed and timed out are
 /// four facts, and an answer of `known:false` is a fifth).
 pub fn resolve_full(
     spec: &ForgePluginSpec,
@@ -1900,7 +1898,7 @@ pub enum StoreAnswer {
     Store {
         project_yaml: String,
         /// The repository's size in BYTES, normalised by the connector
-        /// because the unit is forge knowledge (D2.4). Optional, and
+        /// because the unit is forge knowledge. Optional, and
         /// its absence is not an error.
         #[serde(default)]
         size_bytes: Option<u64>,
@@ -1936,7 +1934,7 @@ pub fn store(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> Opti
 /// desktop's setup mask and the platform's forge facts ask, and both
 /// have a different sentence for "no connector installed", "the
 /// connector is stale", "the connector refused" and "the forge could
-/// not be asked" (D2.3).
+/// not be asked".
 pub fn store_full(
     spec: &ForgePluginSpec,
     target: &Target,
@@ -1993,12 +1991,12 @@ pub struct ReleaseOutcome {
 /// stderr, which is now captured rather than inherited).
 ///
 /// `target` names the repository. It became necessary when the verb
-/// moved off gh onto the connector's own HTTP client (D2.8): gh read
+/// moved off gh onto the connector's own HTTP client: gh read
 /// the repository out of the working directory's git remote, and the
 /// REST call has to be told. A protocol 1 connector is asked the way it
 /// understands, without the target ([`LEGACY_TARGET_VERBS`]): its
 /// release runs through gh in the working directory, so an old machine
-/// keeps publishing (D2.2a).
+/// keeps publishing.
 pub fn release(
     spec: &ForgePluginSpec,
     target: Option<&Target>,
@@ -2018,10 +2016,10 @@ pub fn release(
 }
 
 // ---------------------------------------------------------------------
-// The sign in verbs (D2.4, D4.1c, package J3)
+// The sign in verbs
 // ---------------------------------------------------------------------
 
-/// The https twin of a remote (`web-url`, D1.5). `None` when the
+/// The https twin of a remote (`web-url`). `None` when the
 /// connector does not know the remote or could not be asked; the caller
 /// then keeps whatever twin it computed itself.
 pub fn web_url(spec: &ForgePluginSpec, target: &Target, ctx: &CallContext) -> Option<String> {
@@ -2047,7 +2045,7 @@ pub struct WebUrlAnswer {
     pub https_url: Option<String>,
 }
 
-/// One repository as the `repositories` verb carries it (D2.4).
+/// One repository as the `repositories` verb carries it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ForgeRepository {
     pub full_name: String,
@@ -2082,7 +2080,7 @@ pub enum RepositoriesAnswer {
         #[serde(default)]
         host: Option<String>,
     },
-    /// The granted set cannot carry the verb (D2.7c). An answer, not a
+    /// The granted set cannot carry the verb. An answer, not a
     /// failure.
     ScopeMissing {
         #[serde(default)]
@@ -2094,7 +2092,7 @@ pub enum RepositoriesAnswer {
     Unknown,
 }
 
-/// The repositories this account can reach (D2.4). Paginated by the
+/// The repositories this account can reach. Paginated by the
 /// connector so one answer stays well under the 64 KiB a pipe holds.
 pub fn repositories(
     spec: &ForgePluginSpec,
@@ -2147,7 +2145,7 @@ pub enum CreateRepositoryAnswer {
     },
 }
 
-/// Create a repository on the forge (D2.4). A project can only be
+/// Create a repository on the forge. A project can only be
 /// brought to joyint.com when it has a remote repository, so this verb
 /// is what makes "picks or creates a repo" complete.
 pub fn create_repository(
@@ -2169,7 +2167,7 @@ pub fn create_repository(
     query(spec, "create-repository", Some(target), &extra, ctx)
 }
 
-/// What `token` answered (D2.4 as amended by D4.1c).
+/// What `token` answered.
 ///
 /// The token is a secret in a struct and nowhere else: this type has no
 /// `Debug`, so no `{:?}` anywhere in joy can print it by accident, and
@@ -2179,7 +2177,7 @@ pub struct ForgeToken {
     pub known: bool,
     #[serde(default)]
     pub host: Option<String>,
-    /// Which login this token belongs to (D4.1c).
+    /// Which login this token belongs to.
     #[serde(default)]
     pub login: Option<String>,
     #[serde(default)]
@@ -2195,7 +2193,7 @@ pub struct ForgeToken {
     pub scopes: Option<String>,
     #[serde(default)]
     pub expires_at: Option<String>,
-    /// Which step of D4.1c's order chose the login: `pin`, `memory`,
+    /// Which step of the order chose the login: `pin`, `memory`,
     /// `only` or `probe`.
     #[serde(default)]
     pub chose_by: Option<String>,
@@ -2208,18 +2206,18 @@ pub struct ForgeToken {
     #[serde(default)]
     pub message: Option<String>,
     /// The one page this refusal is acted on: the organisation's
-    /// settings page for `needs_org_approval` (D2.7c). A sentence about
+    /// settings page for `needs_org_approval`. A sentence about
     /// an approval nobody is told where to give is not a next step.
     #[serde(default)]
     pub action: Option<String>,
 }
 
-/// What a call asks a credential FOR (`--for`, D2.7a and D4.1c). The
+/// What a call asks a credential FOR (`--for`). The
 /// words are the connector's; this is the list joy may send.
 ///
 /// It lives here and not in [`interactive`] because two verbs take it:
-/// `login`, which is compiled out of the builds that must not sign in
-/// (D3.11), and `token`, which is a read verb and stays everywhere.
+/// `login`, which is compiled out of the builds that must not sign in,
+/// and `token`, which is a read verb and stays everywhere.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Access {
     Read,
@@ -2241,17 +2239,17 @@ impl Access {
 }
 
 /// The credential this machine holds for a host, and which login it
-/// belongs to (D2.4).
+/// belongs to.
 ///
 /// This is a READ verb: it is answered from the connector's own entry,
 /// from the forge's own environment variables or by spawning the forge
 /// CLI, and it never raises a prompt. It is therefore not one of the
-/// interactive verbs of D3.11 and stays compiled into every build.
+/// interactive verbs and stays compiled into every build.
 ///
 /// No direction is stated here. Where the caller knows one, it asks
 /// with [`token_for`]: on a host with several logins the direction is
 /// what tells a login that may only READ the repository from one that
-/// may push to it (D4.1c).
+/// may push to it.
 pub fn token(
     spec: &ForgePluginSpec,
     target: &Target,
@@ -2260,7 +2258,7 @@ pub fn token(
     query(spec, "token", Some(target), &[], ctx)
 }
 
-/// [`token`] for a stated direction (`--for`, D4.1c's step 4: "the
+/// [`token`] for a stated direction (`--for`, the step 4: "the
 /// first that answers 200, and for a push direction reports write,
 /// wins").
 ///
@@ -2313,7 +2311,7 @@ pub fn token_for_renew(
     )
 }
 
-/// The verbs that need a person at the machine (D3.11): compiled into a
+/// The verbs that need a person at the machine: compiled into a
 /// build that asked for them, and into no other. A binary without the
 /// feature cannot call `login`, `logout` or `token-store`, because the
 /// code is not in it.
@@ -2357,7 +2355,7 @@ mod tests {
 
     const GITHUB_NAMES: &[&str] = &[COMBINED_BINARY, "joy-github"];
 
-    /// The name order of D2.2: the combined connector is tried first in
+    /// The name order: the combined connector is tried first in
     /// EVERY directory, so a fresh `joy-forge` beside a stale
     /// `joy-github` in `~/.cargo/bin` wins.
     #[test]
@@ -2395,7 +2393,7 @@ mod tests {
                 size_bytes: None,
             }
         );
-        // D2.4's optional field, in bytes whatever the forge counts in
+        // the optional field, in bytes whatever the forge counts in
         assert_eq!(
             parse(r#"{"state":"store","project_yaml":"x","size_bytes":4096}"#),
             StoreAnswer::Store {
@@ -2435,7 +2433,7 @@ mod tests {
         assert_eq!(parse(r#"{"state":"unknown"}"#), StoreAnswer::Unknown);
     }
 
-    /// The handshake object of D2.2a, exactly as the design writes it.
+    /// The handshake object, field by field.
     #[test]
     fn the_version_answer_parses() {
         let answer: VersionAnswer = serde_json::from_str(
@@ -2447,7 +2445,7 @@ mod tests {
         assert_eq!(answer.forges.len(), 3);
     }
 
-    /// The deadlines of D2.3, per verb and not per call site.
+    /// The deadlines, per verb and not per call site.
     #[test]
     fn every_verb_of_the_catalogue_has_its_deadline() {
         for verb in ["claims", "identity", "resolve", "web-url", "version"] {
@@ -2474,7 +2472,7 @@ mod tests {
         assert_eq!(timeout_for("something-new"), Duration::from_secs(5));
     }
 
-    /// D2.3: stderr is piped so the connector's one explaining sentence
+    /// Stderr is piped so the connector's one explaining sentence
     /// reaches the caller, and a connector that hangs is where that
     /// sentence is worth most.
     #[test]
@@ -2503,8 +2501,8 @@ mod tests {
         assert!(silent.to_string().ends_with("was stopped"), "{silent}");
     }
 
-    /// Every call carries the host kind (D1.10) and the login pin
-    /// (D4.1c), and the combined binary carries its forge id first.
+    /// Every call carries the host kind and the login pin,
+    /// and the combined binary carries its forge id first.
     #[test]
     fn a_protocol_two_call_carries_the_host_kind_and_the_pin() {
         let resolved = resolved_stub("/opt/joy/joy-forge", 2);
@@ -2562,10 +2560,10 @@ mod tests {
         );
     }
 
-    /// D2.2a's promise that an old machine keeps publishing: protocol 1
+    /// the promise that an old machine keeps publishing: protocol 1
     /// `release` knew `--tag`, `--title` and `--notes-file` and nothing
     /// else, so the target joy now passes stays home. On protocol 2 it
-    /// travels, because that is where the REST call needs it (D2.8).
+    /// travels, because that is where the REST call needs it.
     #[test]
     fn a_protocol_one_release_is_asked_without_the_repository() {
         let ctx = CallContext::rootless();
@@ -2596,7 +2594,7 @@ mod tests {
         );
     }
 
-    /// D2.2a: the six old verbs about a remote target are all a
+    /// The six old verbs about a remote target are all a
     /// protocol 1 connector may be asked; everything else is
     /// `plugin_outdated` with the resolved path and the `rm` line.
     #[test]
@@ -2627,7 +2625,7 @@ mod tests {
     }
 
     /// A connector that is not installed says so by name, and the state
-    /// is the one D2.2a gives it.
+    /// is the one the rule gives it.
     #[test]
     fn a_missing_connector_names_what_was_looked_for() {
         let error = PluginError::Missing {
@@ -2641,7 +2639,7 @@ mod tests {
         assert!(text.contains("no GitHub connector is installed"), "{text}");
     }
 
-    /// The search order of D2.2, and the rule that a directory named
+    /// The search order, and the rule that a directory named
     /// twice is searched once.
     #[test]
     fn the_search_order_puts_the_executable_directory_before_path() {

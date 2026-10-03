@@ -5,7 +5,7 @@
 //! config, the REST API. Everything a read query cannot answer degrades
 //! to "unknown".
 //!
-//! Since JOY-0298-E4 (design D2.8) every API call is made in process
+//! Since JOY-0298-E4 every API call is made in process
 //! over the connector's own HTTP client, and it goes to the INSTANCE's
 //! own base. The bug that fixes: `verified_emails` asked
 //! `https://gitlab.com/api/v4/user/emails` even for a self hosted
@@ -36,7 +36,7 @@ const TREE_PAGES: usize = 30;
 /// Does this host belong to GitLab? The product's own domain, plus every
 /// host glab is signed in to: that is how a self-hosted GitLab on any
 /// domain becomes reachable without putting somebody's instance into
-/// this code. `forges.yaml` is the other way (D2.5), and the dispatcher
+/// this code. `forges.yaml` is the other way, and the dispatcher
 /// consults it.
 pub fn claims_host(host: &str, configured: &[String]) -> bool {
     host == "gitlab.com"
@@ -50,7 +50,7 @@ pub fn configured_hosts() -> Vec<String> {
 }
 
 /// glab's `config.yml`, from the first of the per operating system
-/// locations of D2.4 that exists.
+/// locations that exists.
 pub fn glab_hosts() -> Vec<(String, String)> {
     match joy_forge_net::foreign::first_readable(&joy_forge_net::foreign::glab_config_files()) {
         Some((_, text)) => parse_hosts(&text),
@@ -133,8 +133,8 @@ pub fn parse_hosts(text: &str) -> Vec<(String, String)> {
 }
 
 /// The API root of the instance a host runs: what an operator
-/// configured (D2.5), else the host's own `/api/v4`. Never gitlab.com's,
-/// which is the bug of D2.8.
+/// configured, else the host's own `/api/v4`. Never gitlab.com's,
+/// which is the bug.
 pub fn api_base(host: &str, ctx: &Ctx) -> String {
     if let Some(base) = ctx.instance(host).and_then(|i| i.api_base.clone()) {
         return base;
@@ -158,7 +158,7 @@ fn api_get(ctx: &Ctx, host: &str, url: &str) -> Option<Answer> {
     }
 }
 
-/// What a refusal means (D2.7c): a 403 whose WWW-Authenticate carries
+/// What a refusal means: a 403 whose WWW-Authenticate carries
 /// `error="insufficient_scope"` is a scope problem and never `denied`.
 pub fn classify(answer: &Answer) -> &'static str {
     match answer.status {
@@ -212,7 +212,7 @@ fn string_list(answer: &Answer, key: &str) -> Option<Vec<String>> {
 
 /// The account's addresses, best effort, from the INSTANCE's own API.
 /// Without a credential nothing is asked: an anonymous request cannot
-/// name an account (decision 20).
+/// name an account.
 fn verified_emails(ctx: &Ctx, host: &str) -> Vec<String> {
     if ctx.token("gitlab", host).is_none() {
         return Vec::new();
@@ -289,7 +289,7 @@ pub fn store_answer(target: &Target, ctx: &Ctx) -> Value {
         // `statistics=true` is what carries `repository_size`, and
         // GitLab answers it in BYTES for a caller with at least the
         // Reporter role; for everyone else the field is simply absent
-        // and its absence is not an error (D2.4).
+        // and its absence is not an error.
         || api_get(ctx, &host, &format!("{project_url}?statistics=true")),
         || {
             api_get(
@@ -299,12 +299,12 @@ pub fn store_answer(target: &Target, ctx: &Ctx) -> Value {
             )
         },
         // Asked only where the 404 branch needs it, because it costs a
-        // request of its own (D1.9).
+        // request of its own.
         || may_see_private(ctx, &host),
     )
 }
 
-/// Whether a 404 is a verdict (D2.7c): "404 is `gone` only when the set
+/// Whether a 404 is a verdict: "404 is `gone` only when the set
 /// contains `read_api` or `api`".
 ///
 /// GitLab answers 404, not 403, for a private project the caller may
@@ -485,7 +485,7 @@ fn files_verdict(mut page: impl FnMut(usize) -> Option<Answer>) -> Value {
     json!({ "state": "files", "paths": paths, "truncated": true })
 }
 
-// -- the repository list (D2.4) ------------------------------------------------
+// -- the repository list ------------------------------------------------
 
 /// The REPOSITORIES answer: the projects this account is a member of.
 pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Value {
@@ -504,7 +504,7 @@ pub fn repositories_answer(target: &Target, listing: &Listing, ctx: &Ctx) -> Val
     let limit = listing.limit.max(1);
     // The page size is bounded by the caller's limit too, so no page has
     // to be cut in half: a cursor is a page number, and the rest of a
-    // half read page would be lost to every later answer (D2.4).
+    // half read page would be lost to every later answer.
     let per_page = limit.clamp(1, TREE_PAGE);
     let mut repositories: Vec<Value> = Vec::new();
     let mut more = false;
@@ -563,11 +563,11 @@ fn repository_row(entry: &Value) -> Value {
     })
 }
 
-// -- creating a repository (D2.4, decision 17) ---------------------------------
+// -- creating a repository ---------------------------------
 
 /// The CREATE-REPOSITORY answer.
 ///
-/// This is where D2.7a's resolution shows: `write_repository` "Uses
+/// This is where the resolution shows: `write_repository` "Uses
 /// Git-over-HTTP. Does not support API authentication.", so a read
 /// write member is answered locally with `scope_missing` naming `api`
 /// instead of spending a request that GitLab would refuse.
@@ -578,7 +578,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("gitlab", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
-    // The local pre check of D2.7c, cheapest first: since J3 the set
+    // The local pre check, cheapest first: the set
     // the forge granted is stored beside the token, so the two requests
     // `granted_scopes` costs are spent only for a credential joy did
     // not write itself.
@@ -680,9 +680,9 @@ fn message_of(answer: &Answer) -> String {
         .unwrap_or_else(|| format!("GitLab answered {}", answer.status))
 }
 
-// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+// -- the sign in half --------------------------------
 
-/// The three scope sets of D2.7a. v2's single set was wrong in both
+/// The three scope sets. v2's single set was wrong in both
 /// directions and this is the replacement:
 ///
 /// | Set | Scopes | Covers |
@@ -704,7 +704,7 @@ pub fn scopes_for(purpose: Purpose) -> &'static str {
     }
 }
 
-/// The OAuth application for a host (D2.7). GitLab has the device grant
+/// The OAuth application for a host. GitLab has the device grant
 /// from 17.3; gitlab.com's OIDC discovery does not advertise the device
 /// endpoint, so the path is written down rather than discovered.
 pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
@@ -825,7 +825,7 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
 
 /// The granted set of a NAMED token: a personal access token's own
 /// record first, then the OAuth token's info. `None` means "not known",
-/// and an unknown set is never reported as a missing one (D2.7c).
+/// and an unknown set is never reported as a missing one.
 fn scopes_of(ctx: &Ctx, host: &str, token: &str) -> Option<Vec<String>> {
     let base = api_base(host, ctx);
     if let Some(answer) = api_get_as_or_say(
@@ -850,7 +850,7 @@ fn scopes_of(ctx: &Ctx, host: &str, token: &str) -> Option<Vec<String>> {
 }
 
 /// Whether this token reaches `owner/repo`, and whether it may push
-/// (the probe of D4.1c).
+/// (the probe).
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!(
         "{}/projects/{}",
@@ -876,7 +876,7 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
         read: true,
         push: level >= DEVELOPER,
         // GitLab has no OAuth application approval per group: a member
-        // either has the role or does not (D2.7c).
+        // either has the role or does not.
         wall: false,
     })
 }
@@ -909,7 +909,7 @@ pub fn revoke_token(host: &str, record: &joy_forge_net::auth::store::Record, ctx
 }
 
 /// The login glab is signed in as on this host. glab holds ONE token
-/// per host block, so D4.1c's order collapses to step 3 here, and the
+/// per host block, so the order collapses to step 3 here, and the
 /// list has at most one entry.
 pub fn glab_logins(host: &str) -> Vec<String> {
     glab_login(host).into_iter().collect()
@@ -967,7 +967,7 @@ mod tests {
         assert_eq!(parse_config_yml(""), None);
     }
 
-    /// The first hardcoded base of D2.8: a self hosted instance must be
+    /// The first hardcoded base: a self hosted instance must be
     /// asked about its own people, not gitlab.com.
     #[test]
     fn a_self_hosted_instance_is_asked_its_own_api_v4() {
@@ -1041,7 +1041,7 @@ mod store_tests {
     #[test]
     fn a_store_stays_a_store_when_the_project_call_is_refused() {
         // a Reporter role is needed for statistics; without it the
-        // field is absent and that is not an error (D2.4)
+        // field is absent and that is not an error
         let verdict = store_verdict(
             answer(200, "name: Demo\n"),
             || answer(200, "{}"),
@@ -1059,7 +1059,7 @@ mod store_tests {
 
     #[test]
     fn a_404_asks_the_project_whether_it_is_gone_or_only_storeless() {
-        // D2.7c: the same pair is "gone" only for a caller whose set
+        // The same pair is "gone" only for a caller whose set
         // could have seen a private project, and "not known" for
         // everybody else, an anonymous caller included.
         assert_eq!(
@@ -1185,7 +1185,7 @@ mod sign_in_tests {
         Ctx::bare(std::env::temp_dir())
     }
 
-    /// D2.7a's three sets, and the one contradiction they resolve:
+    /// the three sets, and the one contradiction they resolve:
     /// `write_repository` "Does not support API authentication", so
     /// creating a repository and publishing a release need `api`.
     #[test]
@@ -1196,7 +1196,7 @@ mod sign_in_tests {
         assert_eq!(scopes_for(Purpose::Release), "api write_repository");
     }
 
-    /// D2.7: GitLab has the device grant from 17.3, and gitlab.com's
+    /// GitLab has the device grant from 17.3, and gitlab.com's
     /// OIDC discovery does not advertise the endpoint, so the path is
     /// written down.
     #[test]

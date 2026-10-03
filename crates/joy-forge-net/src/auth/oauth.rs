@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The two sign in doors, and the refresh behind them (D2.7).
+//! The two sign in doors, and the refresh behind them.
 //!
 //! There is no single door, because the three forge families do not
 //! offer one:
@@ -48,7 +48,7 @@ pub enum Flow {
 }
 
 /// The OAuth application one host signs in through. Every field can
-/// come from `forges.yaml` (D2.5), because an Enterprise Server or a
+/// come from `forges.yaml`, because an Enterprise Server or a
 /// self hosted GitLab registers its own application and joy must carry
 /// no instance in its code.
 #[derive(Debug, Clone)]
@@ -60,14 +60,14 @@ pub struct OAuth {
     /// PKCE: where the person authorises.
     pub auth_endpoint: String,
     pub token_endpoint: String,
-    /// The set this login asks for, from `--for` and D2.7a.
+    /// The set this login asks for, from `--for` and the rule.
     pub scopes: String,
 }
 
 /// The public OAuth clients joy registers per public forge.
 ///
 /// **These are placeholders.** They are marked so on purpose and in one
-/// place: OAuth client ids are configuration (D2.5), and the real ones
+/// place: OAuth client ids are configuration, and the real ones
 /// exist only once the operator has registered the public clients with
 /// the three forges. Until then a person signs in with
 /// `joy forge login --token-stdin`, or an operator puts a `client_id`
@@ -80,20 +80,20 @@ pub mod clients {
     /// The public client "Joyint Desktop" the operator registered on
     /// github.com on 2026-09-18 (owner: the joyint organisation): device
     /// flow enabled, redirect `http://127.0.0.1`, token expiry off, so no
-    /// refresh token exists (D2.7, decision 3). A client id is public by
+    /// refresh token exists. A client id is public by
     /// design; the client secret GitHub generates is never used.
     pub const GITHUB_COM: &str = "Ov23liNJt50pUmo28YPy";
 
     /// The public application the operator registered on gitlab.com on
     /// 2026-09-18: Confidential off, redirect `http://127.0.0.1`, scopes
     /// registered as the union `api write_repository` so a device request
-    /// may narrow (D2.7, decision 28). A GitLab application id is public
+    /// may narrow. A GitLab application id is public
     /// by design.
     pub const GITLAB_COM: &str = "299407d616bd7e050092e60b512a5e8e6c2d35bde91ae612f8e68e9b0dcef1dc";
 
     /// The public application "Joyint Desktop" registered on codeberg.org
     /// on 2026-09-18 through the Gitea API (owner joydev-horst): redirect
-    /// exactly `http://127.0.0.1`, confidential off (D2.7). No secret is
+    /// exactly `http://127.0.0.1`, confidential off. No secret is
     /// used; a client id is public by design.
     pub const CODEBERG_ORG: &str = "9cf771c7-6d91-459b-8947-05d45ec3637b";
 
@@ -120,8 +120,7 @@ pub struct Grant {
     pub refresh_token: Option<String>,
     pub expires_in: Option<i64>,
     /// The granted set as the forge wrote it. Gitea's answer has no
-    /// scope field at all, so there the caller stores what it asked for
-    /// (D2.7c).
+    /// scope field at all, so there the caller stores what it asked for.
     pub scope: Option<String>,
 }
 
@@ -156,7 +155,7 @@ impl Grant {
 pub enum Poll {
     /// `authorization_pending`: the person has not finished yet.
     Pending,
-    /// `slow_down`: the next interval is five seconds longer (D2.7).
+    /// `slow_down`: the next interval is five seconds longer.
     SlowDown,
     Granted(Grant),
     /// A named end: `access_denied`, `expired_token`, `invalid_scope`,
@@ -194,7 +193,7 @@ impl std::fmt::Debug for DeviceStart {
     }
 }
 
-/// Where the newline delimited events of D2.4 go. One object per line,
+/// Where the newline delimited events go. One object per line,
 /// each flushed explicitly, because the caller shows the verification
 /// code while the connector is still polling.
 pub trait Events {
@@ -223,7 +222,7 @@ impl Events for Vec<Value> {
 /// which is the only way to prove a five second `slow_down` without
 /// spending five seconds.
 ///
-/// [`Clock::now`] is what makes the countdown of D2.4 honest. Counting
+/// [`Clock::now`] is what makes the countdown honest. Counting
 /// the code's life in whole intervals assumes every poll is free, and a
 /// poll that waits fifteen seconds for a name that does not resolve is
 /// not: the connector then reported "870 seconds left" while the code
@@ -294,7 +293,7 @@ impl Clock for NoWait {
     }
 }
 
-/// Ask the forge to start a device grant (D2.7).
+/// Ask the forge to start a device grant.
 pub fn start_device(http: &Http, oauth: &OAuth) -> Result<DeviceStart, Poll> {
     let body = form(&[("client_id", &oauth.client_id), ("scope", &oauth.scopes)]);
     let answer = http
@@ -411,7 +410,7 @@ fn token_request(http: &Http, endpoint: &str, body: String) -> Poll {
     })
 }
 
-/// The `error` field of an OAuth answer, mapped to the codes D2.4's
+/// The `error` field of an OAuth answer, mapped to the codes the
 /// `error` event names.
 fn named_error(json: &Value) -> Option<Poll> {
     let code = json.get("error").and_then(|v| v.as_str())?;
@@ -473,7 +472,7 @@ pub fn form(pairs: &[(&str, &str)]) -> String {
         .join("&")
 }
 
-// -- PKCE on a loopback listener (D2.7) ---------------------------------------
+// -- PKCE on a loopback listener ---------------------------------------
 
 /// One PKCE attempt: the verifier stays here, the challenge goes to the
 /// forge, and the listener waits for the one redirect that carries the
@@ -514,7 +513,7 @@ impl Pkce {
     }
 
     /// The URL the person opens. The connector prints it and never
-    /// opens it (D2.4).
+    /// opens it.
     pub fn authorize_url(&self, oauth: &OAuth) -> String {
         format!(
             "{}?{}",
@@ -541,7 +540,7 @@ impl Pkce {
 
     /// Wait for the one redirect. `tick` is called about once a second
     /// with the seconds left, which is where the `waiting` events of
-    /// D2.4 come from.
+    /// The rule come from.
     pub fn wait(&self, total: Duration, mut tick: impl FnMut(i64)) -> Result<String, Poll> {
         let started = Instant::now();
         let mut last_tick = Instant::now();
@@ -710,7 +709,7 @@ fn decode_component(value: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The `verification` event of D2.4.
+/// The `verification` event.
 pub fn verification_event(
     host: &str,
     url: &str,
@@ -730,11 +729,11 @@ pub fn verification_event(
     })
 }
 
-/// The `waiting` event of D2.4, with the reason where the wait has one.
+/// The `waiting` event, with the reason where the wait has one.
 ///
 /// A transient transport failure during a device poll is a wait and not
 /// an end: the code is still good, the person is still on the forge's
-/// page, and the poll is tried again (D2.4, JOY-02A9-48). The reason
+/// page, and the poll is tried again (JOY-02A9-48). The reason
 /// says what is being waited out, so a host can show it instead of
 /// leaving a person to guess.
 pub fn waiting_event(seconds_left: i64, reason: Option<&str>) -> Value {
@@ -786,7 +785,7 @@ pub fn failed_code(poll: &Poll) -> Option<&str> {
     }
 }
 
-/// The `error` event of D2.4.
+/// The `error` event.
 pub fn error_event(code: &str, message: &str) -> Value {
     json!({ "event": "error", "code": code, "message": message })
 }
@@ -868,7 +867,7 @@ mod tests {
         assert!(sentence.contains("forges.yaml"));
     }
 
-    /// D2.7's list, each mapped to the event code a host renders.
+    /// the list, each mapped to the event code a host renders.
     #[test]
     fn every_named_oauth_error_becomes_its_own_poll_answer() {
         assert_eq!(

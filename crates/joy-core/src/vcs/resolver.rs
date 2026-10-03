@@ -1,22 +1,22 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The credential resolver of design D1.1, assembled (package J4b).
+//! The credential resolver, assembled.
 //!
 //! [`super::forge::Auth::Local`] keeps its name and its place; this
 //! module is the body it grew. For one operation it answers three
 //! questions, in this order:
 //!
-//! 1. Which transport carries the credential (D1.2)? The candidates of
+//! 1. Which transport carries the credential? The candidates of
 //!    a configured ssh remote come FIRST, and the https twin is a
 //!    consequence of "no working local ssh credential", never of "a
 //!    token exists". A host whose memory says `ssh-worked` never goes
 //!    to the twin, whatever tokens exist.
-//! 2. What is the twin's address (D1.5)? The connector's `web-url` is
+//! 2. What is the twin's address? The connector's `web-url` is
 //!    the source of truth, the engine's table for github.com,
 //!    gitlab.com and codeberg.org is the fallback, and four conditions
 //!    refuse the twin outright.
-//! 3. Which credential rides on it (D1.6, D1.7)? A forge token asked
+//! 3. Which credential rides on it? A forge token asked
 //!    from the connector per HOST and cached with a TTL, so a 1 Hz chat
 //!    poll spawns no connector per contact.
 //!
@@ -37,11 +37,11 @@ use super::forge::ForgeKind;
 use crate::host::HostKind;
 
 // ---------------------------------------------------------------------
-// The transport memory (D1.2, D1.5)
+// The transport memory
 // ---------------------------------------------------------------------
 
 /// What joy learnt about a host's ssh transport. Three words, each with
-/// its own consequence for the next operation (D1.2 rule 3).
+/// its own consequence for the next operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum TransportState {
@@ -50,15 +50,15 @@ pub enum TransportState {
     SshWorked,
     /// joy established BEFORE a contact that this machine has no usable
     /// ssh credential for the host: no agent or no identity in it, and
-    /// no key file that survived pre-validation (D1.2 rule 3a).
+    /// no key file that survived pre-validation.
     NoSshCredential,
     /// An ssh contact failed with an authentication class failure
-    /// (D1.2 rule 3b, `class == Ssh` with `code == Auth`).
+    /// (`class == Ssh` with `code == Auth`).
     SshFailed,
 }
 
 impl TransportState {
-    /// The word the state file carries, which is also the word D1.2
+    /// The word the state file carries, which is also the word the rule
     /// uses.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -78,7 +78,7 @@ impl TransportState {
 }
 
 /// The ssh facts an entry was written under. `no-ssh-credential` is
-/// dropped as soon as one of them changes (D1.2 rule 3a: "as soon as
+/// dropped as soon as one of them changes ("as soon as
 /// `SSH_AUTH_SOCK` appears, an agent identity appears, or a candidate
 /// key file's mtime changes").
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,7 +102,7 @@ pub struct SshSignals {
 pub struct HostMemory {
     pub state: TransportState,
     /// When the row was written, in seconds since the epoch. The TTL of
-    /// D1.2 is read from here.
+    /// The rule is read from here.
     #[serde(default)]
     pub at: u64,
     /// The transport that authenticated: `ssh` or `https`.
@@ -113,7 +113,7 @@ pub struct HostMemory {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential: Option<String>,
     /// The user name the token was sent under, remembered per host
-    /// beside the transport (D1.6, last paragraph).
+    /// beside the transport (last paragraph).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shape: Option<String>,
     #[serde(default)]
@@ -151,13 +151,13 @@ impl HostMemory {
         self
     }
 
-    /// Whether the row is still inside the 24 hour TTL of D1.2.
+    /// Whether the row is still inside the 24 hour TTL.
     pub fn fresh(&self, now: u64) -> bool {
         now.saturating_sub(self.at) < MEMORY_TTL.as_secs()
     }
 
     /// The sentence a surface may show for "which credential did joy
-    /// use here" (acceptance of J4b: the twin contact "says which
+    /// use here" (the twin contact "says which
     /// credential it used"). It names no secret, only its source.
     pub fn sentence(&self, host: &str) -> String {
         let credential = match self.credential.as_deref() {
@@ -176,7 +176,7 @@ impl HostMemory {
     }
 }
 
-/// How long a transport memory row stands (D1.2 rule 3).
+/// How long a transport memory row stands.
 pub const MEMORY_TTL: Duration = Duration::from_secs(24 * 60 * 60);
 
 /// The name of joy's own state file inside `app_state_dir()`.
@@ -188,7 +188,7 @@ struct StateFile {
     version: u32,
     #[serde(default)]
     hosts: BTreeMap<String, HostMemory>,
-    /// What a credential has already achieved on a host (D1.8b), beside
+    /// What a credential has already achieved on a host, beside
     /// the transport memory and with a life of its own: the transport
     /// rows are dropped when an agent appears or a key file changes,
     /// and none of that says anything about a token.
@@ -204,7 +204,7 @@ pub enum TokenProof {
     Contact,
     /// The connector answered a token it had validated itself: an entry
     /// of its own vault, which nothing enters without `identity`, or a
-    /// login the probe of D4.1c chose by asking the forge with it.
+    /// login the probe chose by asking the forge with it.
     Connector,
 }
 
@@ -221,8 +221,8 @@ impl TokenProof {
 /// One host's answer to "has a credential ever authenticated here".
 ///
 /// It is the difference between a 404 that means "no such repository"
-/// and a 404 that means "your organisation has not approved Joy"
-/// (D1.8b), and it has to survive the process: a one shot CLI command
+/// and a 404 that means "your organisation has not approved Joy",
+/// and it has to survive the process: a one shot CLI command
 /// makes exactly ONE contact, so a fact that only a second contact of
 /// the same process can establish is never established at all
 /// (JOY-02A9-48).
@@ -246,17 +246,17 @@ static STATE_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 /// way: by a host that knows better, and by the tests, which must never
 /// write into the person's own state directory.
 ///
-/// `None` puts it back where D1.2 says it lives, exactly as
+/// `None` puts it back where the rule says it lives, exactly as
 /// `set_gaps("")` and `set_plugin_dirs(vec![])` restore their own
 /// defaults. It does NOT switch the memory off: a host that asked for
-/// the default and got no memory at all would lose the whole of D1.2's
+/// the default and got no memory at all would lose the whole of the
 /// transport memory without a word.
 pub fn set_state_file(path: Option<PathBuf>) {
     *STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()) = path;
 }
 
-/// Where the transport memory lives: `<app_state_dir>/forge-state.json`
-/// (D1.2), or wherever [`set_state_file`] pointed it.
+/// Where the transport memory lives: `<app_state_dir>/forge-state.json`,
+/// or wherever [`set_state_file`] pointed it.
 pub fn state_file() -> Option<PathBuf> {
     if let Some(override_path) = STATE_PATH.lock().unwrap_or_else(|e| e.into_inner()).clone() {
         return Some(override_path);
@@ -273,7 +273,7 @@ fn read_state(path: &Path) -> StateFile {
         .unwrap_or_default()
 }
 
-/// Write the file at mode 0600 (D1.2). Best effort: a state directory
+/// Write the file at mode 0600. Best effort: a state directory
 /// that cannot be written costs a memory row, never the operation.
 fn write_state(path: &Path, state: &StateFile) {
     if let Some(parent) = path.parent() {
@@ -314,8 +314,8 @@ fn write_private(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 
 /// The lock beside the state file: two joy processes on one machine
 /// read, change and write the same rows, and the loser of that race
-/// would drop the winner's row. The primitive is J4a's
-/// ([`crate::util::file_lock`]); a lock that cannot be had costs the
+/// would drop the winner's row. The primitive is
+/// [`crate::util::file_lock`]; a lock that cannot be had costs the
 /// row, never the operation.
 fn with_state<T>(work: impl FnOnce(&Path, &mut StateFile) -> T) -> Option<T> {
     let path = state_file()?;
@@ -352,7 +352,7 @@ pub fn remember(host: &str, memory: HostMemory) {
 }
 
 /// Drop this host's row, because one of the facts it was written under
-/// changed (D1.2 rule 3a).
+/// changed.
 pub fn forget(host: &str) {
     let host = host.to_ascii_lowercase();
     with_state(|path, state| {
@@ -362,7 +362,7 @@ pub fn forget(host: &str) {
     });
 }
 
-/// Remember that a credential authenticated on this host (D1.8b, the
+/// Remember that a credential authenticated on this host (the
 /// 403 and 404 rows).
 ///
 /// Best effort, exactly like every other row here: a state directory
@@ -428,12 +428,12 @@ fn unix_now() -> u64 {
 }
 
 // ---------------------------------------------------------------------
-// The ssh probe (D1.2 rule 3a)
+// The ssh probe
 // ---------------------------------------------------------------------
 
 /// What this machine can offer a host over ssh, established BEFORE the
-/// contact. `candidates` is the length of the chain of D1.4: zero is
-/// "no usable ssh credential", which is trigger (a) of D1.2.
+/// contact. `candidates` is the length of the chain: zero is
+/// "no usable ssh credential", which is trigger (a).
 #[derive(Debug, Clone, Default)]
 pub struct SshProbe {
     pub candidates: usize,
@@ -456,13 +456,13 @@ impl SshProbe {
 }
 
 /// Ask the machine what it holds for `host`, without contacting the
-/// forge: the agent probe of D1.4 and the key file pre-validation, plus
+/// forge: the agent probe and the key file pre-validation, plus
 /// the facts the answer is invalidated by.
 pub fn probe_ssh(host: &str, configured: Option<&str>, kind: HostKind) -> SshProbe {
     let settings = super::ssh_config::for_contact(host, configured);
     // The agent variable is pointed at this host's `IdentityAgent` for
     // as long as the probe lasts, exactly as a contact does it, so the
-    // probe reads the agent the contact would read (D1.4).
+    // probe reads the agent the contact would read.
     let _scope = super::ssh_config::AgentScope::apply(&settings);
     let agent = super::ssh_auth::probe_agent();
     let url_user = configured
@@ -507,11 +507,11 @@ fn mtime_of(path: &Path) -> u64 {
 }
 
 // ---------------------------------------------------------------------
-// The twin (D1.5)
+// The twin
 // ---------------------------------------------------------------------
 
 /// Why a remote has no https twin. Each one falls back to the
-/// configured remote and says so (D1.5, "Refusal conditions").
+/// configured remote and says so ("Refusal conditions").
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TwinRefusal {
     /// No connector claims the host and it is not one of the three the
@@ -560,7 +560,7 @@ impl TwinRefusal {
     }
 }
 
-/// The engine's own table, for the three hosts of D1.5 and for nothing
+/// The engine's own table, for the three hosts and for nothing
 /// else. `ssh.github.com` is github.com and `altssh.gitlab.com` is
 /// gitlab.com, because the two public forges answer ssh under those
 /// sub-domains.
@@ -598,7 +598,7 @@ pub fn twin_from_table(url: &str) -> Result<String, TwinRefusal> {
 }
 
 /// The `owner/repo` part of a twin, refused when there are fewer than
-/// two segments (D1.5).
+/// two segments.
 fn twin_path(path: &str) -> Result<String, TwinRefusal> {
     let path = path.trim_start_matches('/').trim_end_matches('/');
     if path.split('/').filter(|s| !s.is_empty()).count() < 2 {
@@ -672,7 +672,7 @@ fn longest_prefix(config: &git2::Config, glob: &str, url: &str) -> Option<String
 }
 
 // ---------------------------------------------------------------------
-// What a connector says about a host (D1.7, D2.4, D4.1c)
+// What a connector says about a host
 // ---------------------------------------------------------------------
 
 /// The token a connector handed out for one host. It carries no
@@ -682,9 +682,9 @@ fn longest_prefix(config: &git2::Config, glob: &str, url: &str) -> Option<String
 pub struct HostToken {
     pub token: String,
     /// The forge kind the connector claims, which decides the user name
-    /// the twin presents beside the token (D1.6).
+    /// the twin presents beside the token.
     pub kind: Option<ForgeKind>,
-    /// Which login the token belongs to, for the surface (D4.1c). Never
+    /// Which login the token belongs to, for the surface. Never
     /// a secret.
     pub login: Option<String>,
     /// `keychain`, `file`, `gh`, `glab`, `tea` or `env`.
@@ -692,13 +692,13 @@ pub struct HostToken {
 }
 
 /// Everything a connector answered about one remote, cached per remote
-/// (D1.7: "asked from the plugin per host, not per contact").
+/// ("asked from the plugin per host, not per contact").
 #[derive(Clone, Default)]
 pub struct HostFacts {
     /// The forge kind the connector claims for the host, if one does.
     pub claimed: Option<ForgeKind>,
     /// Whether a connector claimed the host at all. A claimed host may
-    /// have a twin even when it is in no table (D1.5).
+    /// have a twin even when it is in no table.
     pub claimed_by_plugin: bool,
     /// The connector's own `web-url` answer, which beats the table.
     pub web_url: Option<String>,
@@ -721,23 +721,23 @@ struct CachedFacts {
 static FACTS: Mutex<Option<BTreeMap<String, CachedFacts>>> = Mutex::new(None);
 
 /// The longest a connector answer is reused when it named no expiry
-/// (D1.7: `min(expires_at - 60 s, 5 minutes)`).
+/// (`min(expires_at - 60 s, 5 minutes)`).
 const FACTS_TTL: Duration = Duration::from_secs(5 * 60);
 
-/// How long the ABSENCE of a token is reused. D1.7 gives a TTL to a
+/// How long the ABSENCE of a token is reused. The rule gives a TTL to a
 /// token, not to its lack: a person who has just run `joy forge login`
 /// in another process must not be told "nobody is signed in to
 /// github.com" for the next five minutes by a desktop that cached the
 /// refusal. The window exists only so that one operation's two legs and
 /// the next tick of a poll do not each spawn a connector; five seconds
-/// is five ticks of the fastest poll D1.9 allows, which is one second.
+/// is five ticks of the fastest poll the rule allows, which is one second.
 const NO_TOKEN_TTL: Duration = Duration::from_secs(5);
 
-/// The grace D1.7 takes off a stated expiry.
+/// The grace the rule takes off a stated expiry.
 const EXPIRY_GRACE: Duration = Duration::from_secs(60);
 
 /// Forget everything a connector said about this host: a 401 does this
-/// immediately and triggers one re-ask (D1.7).
+/// immediately and triggers one re-ask.
 pub fn invalidate_facts(host: &str) {
     let host = host.to_ascii_lowercase();
     FACTS
@@ -748,12 +748,12 @@ pub fn invalidate_facts(host: &str) {
 }
 
 // ---------------------------------------------------------------------
-// The organisation wall a connector named (D2.7c, D1.8b)
+// The organisation wall a connector named
 // ---------------------------------------------------------------------
 
 /// What the connector answered when it found an organisation wall in
 /// front of a repository: the token is good, the login is the right
-/// one, and the organisation has not approved Joy (D2.7c).
+/// one, and the organisation has not approved Joy.
 ///
 /// It is kept per host AND repository, because it is a fact about ONE
 /// repository: another repository of the same host, owned by another
@@ -763,7 +763,7 @@ pub struct OrgWall {
     /// `owner/repo`, lowercased and without the `.git` tail.
     pub repo: String,
     /// The organisation's own settings page, which is the action of
-    /// D1.8b: a person told that their organisation must approve Joy
+    /// A person told that their organisation must approve Joy
     /// and not told where cannot act on the sentence.
     pub url: Option<String>,
 }
@@ -856,9 +856,9 @@ pub fn invalidate_all_facts() {
 /// The ACCESS is part of it, because the call really carries `--for
 /// read|write` and on a host with several logins the direction is what
 /// tells a login that may only read the repository from one that may
-/// push to it (D4.1c step 4). Without it a fetch that ran first would
+/// push to it. Without it a fetch that ran first would
 /// lend its read scoped token to the push behind it, the forge would
-/// answer 403 on receive-pack, and D1.8b would read that as
+/// answer 403 on receive-pack, and the rule would read that as
 /// `no_push_rights` for a person who may push.
 fn facts_key(host: &str, remote: &str, access: crate::forge_plugins::Access) -> String {
     format!(
@@ -895,7 +895,7 @@ fn cache_facts(key: &str, facts: &HostFacts, ttl: Duration) {
 }
 
 /// How long a token answer may be reused: `min(expires_at - 60 s, 5
-/// minutes)`, and never a negative span (D1.7).
+/// minutes)`, and never a negative span.
 fn token_ttl(expires_at: Option<&str>) -> Duration {
     let Some(expiry) = expires_at.and_then(parse_expiry) else {
         return FACTS_TTL;
@@ -917,7 +917,7 @@ fn parse_expiry(text: &str) -> Option<SystemTime> {
     Some(UNIX_EPOCH + Duration::from_secs(seconds as u64))
 }
 
-/// The login this project pinned for this host (D4.1c, "Where the pin
+/// The login this project pinned for this host ("Where the pin
 /// lives"): the per project app state file joy-core computes, under
 /// `forgeLogin`. Never `project.yaml`, which is committed and synced to
 /// the forge.
@@ -934,7 +934,7 @@ pub fn pinned_login(root: &Path, host: &str) -> Option<String> {
 }
 
 /// Ask the connectors what they know about this remote, at most once
-/// per host per TTL (D1.7). Everything here is best effort: a machine
+/// per host per TTL. Everything here is best effort: a machine
 /// with no connector answers [`HostFacts::none`] and the resolver falls
 /// back to the engine's table and to the machine's own credentials.
 pub fn host_facts(
@@ -954,7 +954,7 @@ pub fn host_facts(
             cache_facts(&key, &facts, ttl.max(Duration::from_secs(1)));
             facts
         }
-        // D2.6a's `busy`, still busy after the one extra ask
+        // the `busy`, still busy after the one extra ask
         // [`ask_connector`] already gave it, or the connector could not
         // be asked at all: this call learnt nothing, so nothing is what
         // it answers, and NOTHING is cached (gap 3, operator rule
@@ -971,7 +971,7 @@ pub enum Renewal {
     /// A usable token: the SAME leg is worth retrying with it.
     Token(HostToken),
     /// The renewal could not really be attempted: joy's own failure or
-    /// the wire's - a transport failure, D2.6a's lock still busy after
+    /// the wire's - a transport failure, the lock still busy after
     /// the one extra ask, or the connector could not be asked at all.
     /// R3: this must never be read as the person's turn to sign in; the
     /// caller's honest answer is that the forge could not be reached.
@@ -985,7 +985,7 @@ pub enum Renewal {
 
 /// R2's one re-ask: the SAME leg a 401 just fell out of, for a token
 /// that worked before. It never reads the cache - a 401 already
-/// invalidated it (D1.7) - and asks the connector with `--renew`, which
+/// invalidated it - and asks the connector with `--renew`, which
 /// tells `fresh()` to attempt a refresh whatever the record's own local
 /// expiry says. A usable answer is cached exactly as an ordinary
 /// [`host_facts`] answer would be, so the retry this call belongs to and
@@ -1028,7 +1028,7 @@ fn access_of(direction: ContactDirection) -> crate::forge_plugins::Access {
 enum Asked {
     /// A usable answer, cacheable exactly as it stands.
     Answered(HostFacts, Duration),
-    /// D2.6a's `busy`, still busy after the one extra ask this function
+    /// the `busy`, still busy after the one extra ask this function
     /// gives it. Never cached as an absence (gap 3).
     Busy,
     /// `renew` asked for a REAL attempt and it could not be made: the
@@ -1043,7 +1043,7 @@ enum Asked {
 
 /// One call into the connector, shared by [`host_facts`] and
 /// [`renew_token`], `renew` choosing which `token` verb they ask for
-/// (D2.4's `--renew`, R2). Everything here is best effort exactly as
+/// (the `--renew`, R2). Everything here is best effort exactly as
 /// before this function existed: a machine with no connector answers
 /// [`HostFacts::none`].
 fn ask_connector(
@@ -1083,7 +1083,7 @@ fn ask_connector(
     };
     let mut answer = ask();
     if matches!(&answer, Ok(a) if a.reason.as_deref() == Some("busy")) {
-        // D2.6a's `busy`: the connector waited its own lock bound for the
+        // the `busy`: the connector waited its own lock bound for the
         // OTHER holder and gave up. Asking once more gives that holder
         // one more bound, and the connector returns the moment the lock
         // frees, so this costs exactly as long as the other refresh still
@@ -1096,7 +1096,7 @@ fn ask_connector(
     }
     // R2/R3, and only under `renew`: the connector could not be spoken
     // to at all, or its own `token` verb answered `offline` (the token
-    // endpoint itself was unreachable while joy tried to renew, D2.6a's
+    // endpoint itself was unreachable while joy tried to renew, in
     // `fresh()`). Neither is the forge's refusal, so neither may be
     // read, downstream, as `needs_sign_in`; an ordinary (non renewing)
     // call never asked for the distinction and falls through to the
@@ -1116,12 +1116,12 @@ fn ask_connector(
     let token = match answer {
         Ok(answer) if answer.known => {
             ttl = token_ttl(answer.expires_at.as_deref());
-            // The connector validated this token where it says so
-            // (D2.4): a token out of its own vault was checked with
+            // The connector validated this token where it says so:
+            // a token out of its own vault was checked with
             // `identity` before it went in, and a login the probe of
-            // D4.1c chose was chosen by asking the forge with it. That
+            // The rule chose was chosen by asking the forge with it. That
             // is "this token authenticated", and the 403 and 404 rows
-            // of D1.8b need it on the FIRST contact of a process
+            // need it on the FIRST contact of a process
             // (JOY-02A9-48).
             if validated_by_connector(answer.source.as_deref(), answer.chose_by.as_deref()) {
                 note_token_worked(host, TokenProof::Connector);
@@ -1142,7 +1142,7 @@ fn ask_connector(
         Ok(answer) => {
             // "Not this login" and "this organisation has not approved
             // Joy" are two different answers, and only the connector
-            // can tell them apart (D2.7c). The wall it named travels to
+            // can tell them apart. The wall it named travels to
             // the classifier, which would otherwise read the forge's
             // 404 as "github.com does not have this repository".
             if answer.reason.as_deref() == Some("needs_org_approval") {
@@ -1169,7 +1169,7 @@ fn ask_connector(
     };
     // A token that is not there is not a token: it is remembered for
     // the short window above and re-asked, so a sign in that happened
-    // in another process is seen within seconds (D1.7).
+    // in another process is seen within seconds.
     if token.is_none() && !walled {
         ttl = NO_TOKEN_TTL;
     }
@@ -1185,9 +1185,9 @@ fn ask_connector(
 /// Whether a `token` answer implies a token the CONNECTOR validated.
 ///
 /// Two sources are joy's own vault, and nothing enters it that
-/// `identity` did not accept first (D2.4's `token-store`, and the
+/// `identity` did not accept first (the `token-store`, and the
 /// `login` that finishes with an account call). `probe` is the step of
-/// D4.1c that asks the forge for `owner/repo` with the token in hand,
+/// The rule that asks the forge for `owner/repo` with the token in hand,
 /// so a login it chose answered the forge a moment ago.
 ///
 /// A credential from `gh`, `glab`, `tea` or an environment variable is
@@ -1197,10 +1197,10 @@ fn validated_by_connector(source: Option<&str>, chose_by: Option<&str>) -> bool 
     matches!(source, Some("keychain") | Some("file")) || chose_by == Some("probe")
 }
 
-/// The forge kind whose shape the twin should present (D1.6).
+/// The forge kind whose shape the twin should present.
 ///
 /// The connector's own `username` wins where it names one of the two
-/// shapes D1.6 allows, because only the connector knows an instance
+/// shapes the rule allows, because only the connector knows an instance
 /// that presents the other one; otherwise the kind the connector id
 /// names decides. The third shape, a token as the user name with an
 /// empty password, is never one of the answers.
@@ -1208,7 +1208,7 @@ fn validated_by_connector(source: Option<&str>, chose_by: Option<&str>) -> bool 
 /// A name never DECIDES the kind on its own, because two families share
 /// each of the two names: `x-access-token` is GitHub and GitHub
 /// Enterprise Server, and `oauth2` is GitLab, Gitea, Forgejo and
-/// Codeberg (D1.6). Where the connector's own id already names a family
+/// Codeberg. Where the connector's own id already names a family
 /// of that shape, the id keeps it: the kind travels on into
 /// `Auth::ClaimedToken` and into the remembered `shape`, and a Gitea
 /// recorded as GitLab is inherited by the next reader of the row.
@@ -1223,7 +1223,7 @@ fn token_kind(plugin_id: &str, username: Option<&str>) -> Option<ForgeKind> {
 }
 
 // ---------------------------------------------------------------------
-// The plan (D1.2)
+// The plan
 // ---------------------------------------------------------------------
 
 /// Which of the two addresses a leg dials.
@@ -1231,18 +1231,18 @@ fn token_kind(plugin_id: &str, username: Option<&str>) -> Option<ForgeKind> {
 pub enum Way {
     /// The remote as the person configured it.
     Configured,
-    /// The https twin of D1.5, never written into `.git/config`.
+    /// The https twin, never written into `.git/config`.
     Twin,
 }
 
 /// What a leg presents.
 #[derive(Clone)]
 pub enum LegCredential {
-    /// The machine's own chain: the ssh candidates of D1.4, or the
-    /// credential helper of D1.3.
+    /// The machine's own chain: the ssh candidates, or the
+    /// credential helper.
     Machine,
     /// A forge token from a connector, with the helper chain behind it
-    /// inside the same contact (D1.2 rule 1).
+    /// inside the same contact.
     Token(HostToken),
 }
 
@@ -1285,10 +1285,10 @@ pub struct Leg {
     pub credential: LegCredential,
 }
 
-/// The candidate order of D1.2 for one operation, with the sentences
+/// The candidate order for one operation, with the sentences
 /// that say why it looks the way it does.
 ///
-/// At most two legs, which is D1.2's "at most two contacts per
+/// At most two legs, which is the "at most two contacts per
 /// operation": a third attempt happens only after a person acted.
 #[derive(Debug, Clone)]
 pub struct Plan {
@@ -1297,7 +1297,7 @@ pub struct Plan {
     /// own address for this forge, so `ssh.github.com` stays
     /// `ssh.github.com` in their row and in the join.
     ///
-    /// The THROTTLE is not keyed on it and must not be: D1.9's budget is
+    /// The THROTTLE is not keyed on it and must not be: the budget is
     /// requests per second per host per machine, and the machine that
     /// counts them is the one a socket is opened to. Each leg is
     /// therefore charged to the host it really dials, which is
@@ -1307,7 +1307,7 @@ pub struct Plan {
     pub notes: Vec<String>,
     /// What the machine held for this host when the plan was made. The
     /// memory row a contact writes records these, so the row can be
-    /// dropped as soon as one of them changes (D1.2 rule 3a).
+    /// dropped as soon as one of them changes.
     pub probe: SshProbe,
 }
 
@@ -1341,12 +1341,12 @@ impl Plan {
 
 /// The candidate order for one operation, from facts that are already
 /// gathered. Pure: every machine fact, every connector answer and the
-/// git config are arguments, so the rule of D1.2 can be read and tested
+/// git config are arguments, so the rule can be read and tested
 /// without a forge, an agent or a connector.
 ///
-/// `kind` is the host kind of D1.1, and it decides exactly one thing
+/// `kind` is the host kind, and it decides exactly one thing
 /// here: whether the twin may be dialled with no credential at all
-/// (D1.2, "No anonymous polling").
+/// ("No anonymous polling").
 pub fn plan_with(
     configured: &str,
     facts: &HostFacts,
@@ -1365,7 +1365,7 @@ pub fn plan_with(
     };
     let mut notes = Vec::new();
     if transport != Transport::Ssh {
-        // D1.2 rule 1: the forge token first, then a credential from
+        // The forge token first, then a credential from
         // joy's own helper runner, all inside ONE contact. The token
         // rides the configured remote; there is no twin to build.
         let credential = match (&facts.token, transport) {
@@ -1384,7 +1384,7 @@ pub fn plan_with(
     }
 
     // An ssh remote. The twin is a consequence of "no working local ssh
-    // credential", never of "a token exists" (D1.2 rule 2).
+    // credential", never of "a token exists".
     let twin = twin_leg(configured, &host, facts, kind, insteadof, &mut notes);
     let state = memory.map(|memory| memory.state);
     if state == Some(TransportState::SshWorked) {
@@ -1451,7 +1451,7 @@ fn twin_leg(
 ) -> Option<Leg> {
     // The address the person's ssh config really names: `git@work:o/r`
     // with `HostName github.com` has the twin of github.com, while the
-    // configured ssh URL stays the ssh candidate (D1.5).
+    // configured ssh URL stays the ssh candidate.
     let dialled = super::ssh_config::effective_url(configured);
     let source = dialled.as_deref().unwrap_or(configured);
     let url = match facts.web_url.clone() {
@@ -1477,8 +1477,8 @@ fn twin_leg(
         notes.push(TwinRefusal::InsteadOf { rewritten }.sentence(host));
         return None;
     }
-    // "Nobody is signed in" is NOT one of D1.5's four refusals, and
-    // D1.2 allows exactly one contact without a credential: "A person
+    // "Nobody is signed in" is NOT one of the four refusals, and
+    // The rule allows exactly one contact without a credential: "A person
     // initiated one off operation (a clone, an explicit 'check now') may
     // contact an https remote with no credential. A poll or a worker
     // tick may not." A public repository whose remote is ssh, on a
@@ -1509,15 +1509,15 @@ fn twin_leg(
 }
 
 /// Whether this failure is the ssh authentication class failure that is
-/// trigger (b) of D1.2: `class == Ssh` with `code == Auth`, read from
-/// the error's own fields and never from its prose (D1.8a).
+/// trigger (b): `class == Ssh` with `code == Auth`, read from
+/// the error's own fields and never from its prose.
 pub fn is_ssh_auth_failure(error: &git2::Error) -> bool {
     error.class() == git2::ErrorClass::Ssh && error.code() == git2::ErrorCode::Auth
 }
 
 thread_local! {
     /// Whether the contact running on this thread failed with trigger
-    /// (b) of D1.2. It is read off the RAW libgit2 error at the one
+    /// (b). It is read off the RAW libgit2 error at the one
     /// place that still holds one, because the classifier folds an ssh
     /// authentication failure and an https 401 into the same state and
     /// only one of the two may send an operation to the twin.

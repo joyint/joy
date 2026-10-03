@@ -22,7 +22,7 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[
         target: "hooks/prepare-commit-msg",
         executable: true,
     },
-    // The tail of every joy hook (design D3.5): joy owns
+    // The tail of every joy hook: joy owns
     // `core.hooksPath`, so it runs what was there before.
     EmbeddedFile {
         content: include_str!("../data/hooks/joy-chain"),
@@ -35,7 +35,7 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[
 /// the working tree, so it is the same value in every clone.
 pub const JOY_HOOKS_PATH: &str = ".joy/hooks";
 
-/// Where joy remembers the hook path it replaced (design D3.5).
+/// Where joy remembers the hook path it replaced.
 ///
 /// A file joy writes, not a git config key, so it travels with the
 /// checkout of the person who has it and never with the team:
@@ -84,7 +84,7 @@ pub struct InitOptions {
     pub user: Option<String>,
     /// Project language code (ISO 639-1, e.g. "en", "de"). Defaults to "en".
     pub language: Option<String>,
-    /// Who is behind this process. Decided by the host, never here (D1.1).
+    /// Who is behind this process. Decided by the host, never here.
     pub host: HostKind,
     /// How an [`HostKind::Interactive`] host asks for the founder's address
     /// when neither `user` nor git config knows one. `None` means "do not
@@ -124,7 +124,7 @@ impl Default for InitOptions {
     }
 }
 
-/// How a host asks a person for the founding address (D3.9). Implemented
+/// How a host asks a person for the founding address. Implemented
 /// by the CLI over the terminal and by the desktop over its setup mask;
 /// a test implements it over a scripted answer.
 pub trait AskFounderAddress {
@@ -240,7 +240,7 @@ pub struct InitResult {
     pub git_existed: bool,
     /// The founding member this init registered. The caller's next step
     /// (setting up authentication) takes it from here instead of asking
-    /// git config a second time (D3.9).
+    /// git config a second time.
     pub founder: String,
 }
 
@@ -248,7 +248,7 @@ pub struct OnboardResult {
     pub hooks_installed: bool,
     pub hooks_already_set: bool,
     /// The hook path joy took over and now chains to, when there was
-    /// one (design D3.5). `None` when `core.hooksPath` was unset, in
+    /// one. `None` when `core.hooksPath` was unset, in
     /// which case joy's hooks chain to git's own `$GIT_DIR/hooks`.
     pub chained: Option<String>,
 }
@@ -272,7 +272,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     let founder_email = match resolve_founder_email(root, options.user.as_deref())? {
         Some(email) => email,
         // Nothing on file and nothing given. A host with a person in front
-        // of it asks; every other host refuses by name (D3.9) instead of
+        // of it asks; every other host refuses by name instead of
         // telling a server to run `git config`.
         None => ask_for_founder_address(root, options.host, options.ask.as_deref_mut())?,
     };
@@ -373,7 +373,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 }
 
 /// The founding address from the person at this terminal, or the named
-/// refusal of D3.9. An `Interactive` host without an ask (a `--json` run,
+/// refusal. An `Interactive` host without an ask (a `--json` run,
 /// a piped stdin) refuses like a background host: there is nobody to answer.
 ///
 /// A typed address passes the same alias guard as `--user`, and a refused
@@ -433,7 +433,7 @@ fn resolve_founder_email(
 
 /// The capture guard itself, applied to EVERY founding address: the one
 /// from git config, the one `--user` names, and the one a person types at
-/// the ask. Decided this way on purpose (D4.4): an explicit override is
+/// the ask. Decided this way on purpose: an explicit override is
 /// not a reason to let a forge alias become a member key, because the
 /// split identity it produces is the same in both cases, and the person
 /// who typed it cannot see that their forge handed them an alias. The
@@ -471,7 +471,7 @@ pub enum FounderHeal {
 /// Idempotent: does nothing when the project already has members.
 ///
 /// `host` and `ask` are the same two the fresh path takes, and for the
-/// same reason (D3.9): this is the command a person runs to repair a
+/// same reason: this is the command a person runs to repair a
 /// project, so a person at a terminal is asked for the address here too
 /// instead of being sent to `git config`. A background host answers
 /// [`FounderHeal::NoIdentity`] as before.
@@ -521,7 +521,7 @@ pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
 }
 
 /// Sync hook files, remember the hook path joy replaces, and set
-/// core.hooksPath (design D3.5).
+/// core.hooksPath.
 fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
     let actions = embedded::sync_files(root, HOOK_FILES)?;
     let hooks_installed = actions.iter().any(|a| a.action != "up to date");
@@ -545,7 +545,7 @@ fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
 }
 
 /// Remember the hook path joy is about to replace, so every joy hook
-/// can run it afterwards (design D3.5), and say so ONCE.
+/// can run it afterwards, and say so ONCE.
 ///
 /// `core.hooksPath` replaces the hook location entirely, so the
 /// alternative - not setting it - means joy's commit-msg check is absent
@@ -1112,7 +1112,7 @@ mod tests {
         );
     }
 
-    /// D3.9: a host with a person in front of it takes the typed address.
+    /// A host with a person in front of it takes the typed address.
     #[test]
     fn an_interactive_host_takes_the_address_the_person_types() {
         let dir = tempdir().unwrap();
@@ -1123,7 +1123,7 @@ mod tests {
         assert_eq!(ask.asked, 1);
     }
 
-    /// D3.9: a background or delegated host refuses with the named
+    /// A background or delegated host refuses with the named
     /// sentence and asks nobody, even when an ask is at hand.
     #[test]
     fn a_host_with_nobody_at_it_refuses_by_name() {

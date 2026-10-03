@@ -90,7 +90,7 @@ pub use joy_model::InteractionLevel;
 ///
 /// `remote` had one reader, the chat sync gate in joy-cli, and it asked
 /// a different question than the transfer that followed: the engine
-/// contacts the remote `origin_or_first` picks (design D1.1), so a
+/// contacts the remote `origin_or_first` picks, so a
 /// configured name could send the probe to one host and the push to
 /// another. The key is therefore not honoured, and the shape stays so
 /// that a `.joy/config.yaml` which carries it still parses instead of

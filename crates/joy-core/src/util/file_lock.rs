@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! THE cross-process advisory whole-file lock (design D2.6a).
+//! THE cross-process advisory whole-file lock.
 //!
 //! joy had none. [`crate::vcs::forge::checkout_gate`] is a per-process
 //! map of mutexes and says so itself, and a second joy process on the
@@ -46,7 +46,7 @@ use fs4::FileExt;
 const BACKOFF: Duration = Duration::from_millis(50);
 
 /// The wait every joy caller uses unless it has a reason of its own
-/// (D2.6a: "a non blocking attempt in a 50 ms backoff loop, 10 s
+/// ("a non blocking attempt in a 50 ms backoff loop, 10 s
 /// total").
 pub const DEFAULT_WAIT: Duration = Duration::from_secs(10);
 

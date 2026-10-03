@@ -4,10 +4,10 @@
 //! joy-github: the GitHub forge connector (JOY-0254-3C, epic
 //! JOY-0251-AA), a LIBRARY since JOY-0298-E4.
 //!
-//! One binary carries every forge (D2.1), so the GitHub knowledge is
+//! One binary carries every forge, so the GitHub knowledge is
 //! linked into `joy-forge` instead of shipping as a process of its own.
 //! The `joy-github` binary stays beside it as a PATH fallback for
-//! `cargo install` users, for one deprecation window (D2.2a).
+//! `cargo install` users, for one deprecation window.
 //!
 //! Facts, in order of authority:
 //! - handed-in caller facts (`--login/--user-id`, a multi-account
@@ -79,8 +79,8 @@ impl Forge for GitHub {
         github::release_answer(target, request, ctx)
     }
 
-    /// One set covers every verb group on GitHub (D2.7a), so `--for`
-    /// changes nothing here and the design says why: there is no read
+    /// One set covers every verb group on GitHub, so `--for`
+    /// changes nothing here: there is no read
     /// only private scope on GitHub.
     fn scopes(&self, _purpose: Purpose) -> &'static str {
         github::SCOPES

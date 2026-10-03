@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The founding step from the command line on a machine with no git
-//! identity (D3.9 of the forge connection NG design, JOY-0297-1A).
+//! identity (JOY-0297-1A).
 //!
 //! These drive the real binary, because the question is what the CLI does
 //! at its entry point: it decides the host kind once, and everything that
@@ -57,7 +57,7 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// The acceptance of J9: `joy init --user a@b.c` in a repository with no
+/// `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols `a@b.c`
 /// without reading git config, given the same `--user` explicitly. A
 /// later addition to the operator's 2026-09-19 correction (JOY-02AE-1A)
@@ -148,7 +148,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     );
 }
 
-/// D3.9: with no git config and nobody at the terminal (the test harness
+/// With no git config and nobody at the terminal (the test harness
 /// is a pipe, not a terminal), `joy init` refuses with the named sentence
 /// and leaves nothing behind.
 #[test]
@@ -200,7 +200,7 @@ fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     assert!(!root.join(".joy").exists());
 }
 
-/// The acceptance of J9 in the product: a commit joy writes in an
+/// A commit joy writes in an
 /// anonymous mode project carries the opaque `m-<hex>` id in BOTH
 /// signature fields. The git config of this checkout names a person by
 /// name and address, and none of it may reach the commit (ADR-042).

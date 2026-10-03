@@ -42,7 +42,7 @@ pub mod vcs;
 pub mod version_bump;
 pub mod version_files;
 
-/// The ONE process wide TLS trust decision (design D1.12).
+/// The ONE process wide TLS trust decision.
 ///
 /// There is no single CA setting in this stack: Linux verifies against
 /// OpenSSL's default verify paths (which git2's own openssl-probe
@@ -54,7 +54,7 @@ pub mod version_files;
 ///
 /// This is the one escape hatch beside it, for the workstation image
 /// that carries its CA as a file: `ca_bundle` and `ca_dir` from
-/// `forges.yaml` (D2.5) and `http.sslCAInfo` and `http.sslCAPath` from
+/// `forges.yaml` and `http.sslCAInfo` and `http.sslCAPath` from
 /// git config, which libgit2 reads nothing of. It is Linux only,
 /// because `GIT_OPT_SET_SSL_CERT_LOCATIONS` is compiled for OpenSSL and
 /// mbedTLS alone (settings.c:207-223); on macOS and Windows every entry
@@ -121,8 +121,8 @@ pub fn apply_ca_decision(decision: vcs::proxy::CaDecision) {
 }
 
 /// What this machine's configuration says about certificate authority
-/// locations, before anything is applied: the two `forges.yaml` keys of
-/// D2.5, then the two git config keys of D1.12, judged against the
+/// locations, before anything is applied: the two `forges.yaml` keys,
+/// then the two git config keys, judged against the
 /// certificate store this build talks to.
 pub fn ca_locations() -> vcs::proxy::CaDecision {
     let mut entries = vcs::proxy::forges_yaml_ca(&forges_file());
@@ -133,7 +133,7 @@ pub fn ca_locations() -> vcs::proxy::CaDecision {
 }
 
 /// `~/.config/joy/forges.yaml` (Windows: `%APPDATA%\joy\forges.yaml`),
-/// beside the personal config joy already keeps there (D2.5).
+/// beside the personal config joy already keeps there.
 fn forges_file() -> std::path::PathBuf {
     let config = store::global_config_path();
     match config.parent() {

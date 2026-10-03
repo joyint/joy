@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The item reference rule, once, for both readers (design D3.3).
+//! The item reference rule, once, for both readers.
 //!
 //! libgit2 runs no hooks, so every commit joy writes for itself passes
 //! `joy_core::commit_msg::validate` instead of `.joy/hooks/commit-msg`.
@@ -13,7 +13,7 @@
 //! The hook is bash and needs a shell. Where there is none (Windows
 //! without Git for Windows' bundled sh) the test says so and skips the
 //! bash half; the validator half runs everywhere, which is the point of
-//! D3.3 in the first place.
+//! In the first place.
 
 use std::path::Path;
 
@@ -89,7 +89,7 @@ fn the_hook_and_the_validator_answer_the_same_corpus() {
         include_str!("../data/hooks/commit-msg"),
     )
     .unwrap();
-    // The chain tail of D3.5 rides with the hook: without it the hook
+    // The chain tail rides with the hook: without it the hook
     // stops at joy's own verdict, which is the same answer here (there
     // is nothing to chain to in this directory) but a different code
     // path, and the test has to exercise the one that ships.
@@ -133,9 +133,9 @@ fn a_project_without_an_acronym_has_no_rule() {
     }
 }
 
-/// The refusing half of D3.3, where it really sits today.
+/// The refusing half, where it really sits today.
 ///
-/// D3.3 splits the rule: joy's own automatic commits warn and proceed,
+/// The rule splits the rule: joy's own automatic commits warn and proceed,
 /// and "for a person's `joy` command it refuses". There is exactly ONE
 /// refusing call site in the product, `joy release record`
 /// (joy-cli/src/commands/release.rs:305), and the message it validates
@@ -148,7 +148,7 @@ fn a_project_without_an_acronym_has_no_rule() {
 /// writing an unreferenced commit.
 ///
 /// No joy command takes a commit message from a person, so on a machine
-/// WITHOUT git there is nothing else for this half of D3.3 to refuse.
+/// WITHOUT git there is nothing else for this half to refuse.
 /// On a machine with git the person's own `git commit` is refused by
 /// the installed hook, which `joy-cli/tests/hooks_chain.rs` drives
 /// end to end.

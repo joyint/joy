@@ -1011,7 +1011,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
 
             // Derive the attesting human's keypair on first need.
             if acting.is_none() {
-                // The attester is the human this command acts for (D3.9),
+                // The attester is the human this command acts for,
                 // named by their on-disk member key: in anonymous mode
                 // (ADR-042) the stored attester is then the opaque id and
                 // never a cleartext address, and verification resolves it

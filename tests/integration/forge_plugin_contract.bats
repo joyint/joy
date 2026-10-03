@@ -83,7 +83,7 @@ load forge_fake
 }
 
 @test "identity: the token is named by variable, and the answer carries the addresses" {
-    # The forge boundary is the fake API now (design D2.8): the
+    # The forge boundary is the fake API now: the
     # connector speaks HTTP itself, so there is no curl to stub.
     start_fake_forge
     point_forge_at_fake github.com github
@@ -105,7 +105,7 @@ load forge_fake
 }
 
 @test "version: every connector name answers the protocol handshake" {
-    # D2.2a: the question is about the BINARY, so no forge id goes in
+    # The question is about the BINARY, so no forge id goes in
     # front of it, and the answer names every forge the file carries.
     run -0 joy-forge version
     [[ "$output" == *'"protocol":2'* ]]
@@ -119,7 +119,7 @@ load forge_fake
 }
 
 @test "claims: an internal host in forges.yaml is claimed with no forge CLI" {
-    # D2.5: until now a self hosted host was claimed only when gh, glab
+    # Until now a self hosted host was claimed only when gh, glab
     # or tea was signed in to it, which makes the sign in door circular
     # for an enterprise. An operator's file cuts the circle.
     mkdir -p "$XDG_CONFIG_HOME/joy"
@@ -139,7 +139,7 @@ YAML
 }
 
 @test "claims: the project's forge override is consulted too" {
-    # D2.5: the project level `forge:` override wins for that project,
+    # The project level `forge:` override wins for that project,
     # so a connector claims its remotes even where nothing else does.
     joy init --name "Override" --acronym OV >/dev/null
     run -0 joy project set forge gitea

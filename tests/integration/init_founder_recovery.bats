@@ -13,7 +13,7 @@ load setup
     # setup() configured a git identity; remove it to model a fresh repo whose
     # author never ran `git config`. HOME is isolated to TEST_DIR, so there is no
     # global identity to fall back on either. bats gives joy no terminal, so
-    # this is the background host of D3.9: it refuses instead of asking.
+    # this is the background host: it refuses instead of asking.
     git config --unset user.email
     git config --unset user.name || true
 

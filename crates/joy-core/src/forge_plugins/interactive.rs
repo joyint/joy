@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! The three verbs that need a person at the machine: `login`,
-//! `logout` and the token paste (D2.4, D3.11).
+//! `logout` and the token paste.
 //!
-//! They live in a module of their own because D3.11 compiles them out
+//! They live in a module of their own because the rule compiles them out
 //! of every build that must not perform them. The platform sets
 //! `Background` everywhere and its binary is not supposed to carry
-//! these at all: package J10 puts `interactive = []` into joy-core's
+//! these at all: `interactive = []` goes into joy-core's
 //! manifest, marks this module `#[cfg(feature = "interactive")]` and
 //! adds the CI guard that keeps the platform's manifest from drifting
 //! back. Nothing outside this file has to move when it does, which is
 //! the whole reason the three verbs are here and not beside the read
 //! verbs.
 //!
-//! Two of D3.11's three layers are already real here:
+//! Two of the three layers are already real here:
 //!
 //! - **No silent call path.** [`login`] takes a progress sink and a
 //!   cancel token and has no argument free wrapper and no default sink.
@@ -22,7 +22,7 @@
 //! - **Runtime refusal.** The agent image builds joy-cli from source,
 //!   so a delegated agent has `joy forge login` on its PATH. [`login`]
 //!   refuses on a `Background` or `Delegated` host before it spawns
-//!   anything, with the sentence D3.11 writes, and the refusal is
+//!   anything, with the sentence the rule writes, and the refusal is
 //!   instant rather than a fifteen minute wait. The connector refuses
 //!   the same call for itself, so neither side depends on the other.
 
@@ -41,10 +41,10 @@ use crate::host::HostKind;
 
 /// The word list of `--for`. It lives beside the read verbs, because
 /// `token` takes the same flag and stays in every build; this module is
-/// the one D3.11 compiles out.
+/// the one the rule compiles out.
 pub use super::Access;
 
-/// The sentence of D3.11 for a host that has no person at it. It names
+/// The sentence for a host that has no person at it. It names
 /// the headless door, because refusing without one would leave a CI
 /// runner with nothing to do.
 pub const NO_PERSON_HERE: &str =
@@ -52,7 +52,7 @@ pub const NO_PERSON_HERE: &str =
      session. Sign in on the machine that owns the session, or store a token there with \
      joy forge login --token-stdin";
 
-/// What a finished `login` reported (the `result` event of D2.4).
+/// What a finished `login` reported (the `result` event).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct LoginOutcome {
     pub known: bool,
@@ -64,7 +64,7 @@ pub struct LoginOutcome {
     pub emails: Vec<String>,
     #[serde(default)]
     pub scopes: Option<String>,
-    /// `keychain` or `file`: which store took the token (D2.6).
+    /// `keychain` or `file`: which store took the token.
     #[serde(default)]
     pub stored: Option<String>,
     /// How the credential was obtained, where the connector says so
@@ -91,11 +91,11 @@ pub struct LogoutOutcome {
     #[serde(default)]
     pub login: Option<String>,
     /// The foreign command that removes a foreign credential, because
-    /// joy never removes one itself (D2.6).
+    /// joy never removes one itself.
     #[serde(default)]
     pub command: Option<String>,
     /// `busy` where another joy process is writing this credential:
-    /// `logout` writes, so it takes the refresh lock of D2.6a and never
+    /// `logout` writes, so it takes the refresh lock and never
     /// deletes an entry beside a refresh.
     #[serde(default)]
     pub reason: Option<String>,
@@ -111,7 +111,7 @@ pub struct LogoutOutcome {
 
 /// Sign in to a forge.
 ///
-/// The signature is the one D3.11 requires: a progress sink and a
+/// The signature is the one the rule requires: a progress sink and a
 /// cancel token, both mandatory. Every event the connector flushes
 /// reaches `progress` while the connector is still polling, which is
 /// what lets the caller show the verification code inside fifteen
@@ -137,7 +137,7 @@ pub fn login(
             stderr: NO_PERSON_HERE.to_string(),
         });
     }
-    // A protocol 1 connector answers none of the sign in verbs (D2.2a),
+    // A protocol 1 connector answers none of the sign in verbs,
     // and streaming into one would spend the login's whole deadline on
     // a clap usage error. The refusal names the file and the `rm` line
     // instead, which is what the person has to act on.
@@ -166,7 +166,7 @@ pub fn login(
         });
     }
     // The last event that parsed is the `result` or the `error` of the
-    // stream (D2.3). It is read BEFORE the deadline is reported,
+    // stream. It is read BEFORE the deadline is reported,
     // because a connector that said its last word and then took a
     // moment to exit has answered: reporting "did not answer in time"
     // over a finished sign in, or over the connector's own reason for a
@@ -236,7 +236,7 @@ pub fn logout(
     super::query(spec, "logout", Some(target), &[], ctx)
 }
 
-/// Store ONE token the person pasted (`--token-stdin`, D2.4).
+/// Store ONE token the person pasted (`--token-stdin`).
 ///
 /// The token goes in on the child's stdin and is never an argument, so
 /// no process list can carry it, and it is never logged: the answer
@@ -380,7 +380,7 @@ mod tests {
         assert_eq!(Access::Read.as_str(), "read");
     }
 
-    /// D3.11's refusal is instant and names the headless door.
+    /// the refusal is instant and names the headless door.
     #[test]
     fn the_refusal_sentence_names_the_headless_door() {
         assert!(NO_PERSON_HERE.contains("--token-stdin"));
@@ -388,7 +388,7 @@ mod tests {
     }
 
     /// A binary from before the handshake answers none of the sign in
-    /// verbs (D2.2a), and it is refused BEFORE it is started: the path
+    /// verbs, and it is refused BEFORE it is started: the path
     /// below exists on no machine, so a spawn would fail with another
     /// error entirely, and the one that comes back names the file and
     /// the `rm` line instead of spending a login's deadline on a clap

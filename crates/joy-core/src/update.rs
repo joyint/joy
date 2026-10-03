@@ -363,7 +363,7 @@ impl UpdateItem for HooksPathItem {
         if vcs.is_repo(root) {
             // The first `joy update` that finds a FOREIGN path records
             // it and says so once, so the hooks the person installed
-            // keep running after joy's (design D3.5).
+            // keep running after joy's.
             if !before {
                 let previous = vcs.config_get(root, "core.hooksPath").unwrap_or_default();
                 init::record_chained_hooks(root, &previous)?;
