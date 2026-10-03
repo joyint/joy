@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! THE forge contact (JOY-0268-2A, incident JP-00EF-CC; rebuilt for
-//! JOY-0295-36, design forge-connection-ng D1.8 and D1.9): every network
+//! JOY-0295-36, the forge connection design D1.8 and D1.9): every network
 //! verb of the git engine - clone, fetch, ls-remote, push, probe - goes
 //! through [`run`], and only through it. One place therefore
 //!

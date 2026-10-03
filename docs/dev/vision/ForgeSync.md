@@ -2,8 +2,8 @@
 
 > **Superseded (2026-09-17).** The forge door this document describes,
 > `joy forge setup` and `joy sync`, was never built. The sign in door of
-> the CLI is `joy forge login | status | logout | plugins` (design
-> `docs/design/forge-connection-ng.md`, D3.10), and the CLI's own sync
+> the CLI is `joy forge login | status | logout | plugins` (the
+> forge connection design, D3.10), and the CLI's own sync
 > path is the chat ref inside `joy chat`. Read this file as the history
 > of the idea, not as the plan.
 
