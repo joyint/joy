@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! `forges.yaml`: the instances a connector knows without a forge CLI
-//! (D2.5).
+//!.
 //!
 //! Until now a connector claimed a self hosted host only when gh, glab
 //! or tea was already signed in to it, which makes the sign in door of
@@ -53,7 +53,7 @@ pub struct Instance {
     pub auth_endpoint: Option<String>,
     #[serde(default)]
     pub token_endpoint: Option<String>,
-    /// joy's one CA escape hatch, Linux only (D1.12, decision 25).
+    /// joy's one CA escape hatch, Linux only (decision 25).
     #[serde(default)]
     pub ca_bundle: Option<PathBuf>,
     #[serde(default)]
@@ -158,7 +158,7 @@ fn parse(text: &str) -> Result<Vec<Instance>, String> {
 }
 
 /// Where joy looks: the XDG configuration directory, and the one the
-/// platform uses on this operating system (D2.5).
+/// platform uses on this operating system.
 fn files() -> Vec<PathBuf> {
     joy_config_dirs()
         .into_iter()
@@ -203,7 +203,7 @@ pub(crate) fn dedup(dirs: Vec<PathBuf>) -> Vec<PathBuf> {
     seen
 }
 
-/// The `forge:` override of the project the call runs in (D2.5: "the
+/// The `forge:` override of the project the call runs in ("the
 /// existing project level `forge:` override keeps working and wins for
 /// that project"). Read as a line, because the connector needs one key
 /// out of a file joy owns and must not grow a project loader for it.

@@ -72,7 +72,7 @@
 //! the shared NO_PROXY matcher while joy-forge-net still rode after
 //! joy-core in the list. That edge is gone: the matcher lives in the
 //! engine and the connector layer re-exports it, because the layer
-//! already depends on the engine for the refresh lock of D2.6a and the
+//! already depends on the engine for the refresh lock and the
 //! second edge would have been a cycle. The rule it exposed stays, and
 //! so does its guard.
 

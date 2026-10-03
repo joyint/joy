@@ -5,7 +5,7 @@
 //! config, the REST API. Everything a read query cannot answer degrades
 //! to "unknown"; the one write verb (`release`) reports instead.
 //!
-//! Since JOY-0298-E4 (design D2.8) every API call is made in process
+//! Since JOY-0298-E4 every API call is made in process
 //! over the connector's own HTTP client. curl and gh are gone from the
 //! API path: gh is still asked for a TOKEN (decision 19), which is a
 //! different thing and the only device side credential source this wave
@@ -40,7 +40,7 @@ pub fn claims_host(host: &str, configured: &[String]) -> bool {
 /// Every host gh is signed in to, lowercased. That is how a GitHub
 /// Enterprise Server on any domain becomes reachable without putting
 /// somebody's instance into this code; `forges.yaml` is the other way
-/// (D2.5), and the dispatcher consults it.
+///, and the dispatcher consults it.
 pub fn configured_hosts() -> Vec<String> {
     gh_hosts().into_iter().map(|(host, _)| host).collect()
 }
@@ -77,7 +77,7 @@ pub fn parse_alias(email: &str) -> Option<Alias> {
 }
 
 /// gh's `hosts.yml`, from the first of the per operating system
-/// locations of D2.4 that exists.
+/// locations that exists.
 pub fn gh_hosts() -> Vec<(String, String)> {
     match joy_forge_net::foreign::first_readable(&joy_forge_net::foreign::gh_config_files()) {
         Some((_, text)) => parse_hosts(&text),
@@ -136,10 +136,10 @@ pub fn parse_hosts(text: &str) -> Vec<(String, String)> {
 }
 
 /// The API root of the GitHub a host runs: what an operator configured
-/// (D2.5), else github.com's own API host, else a GitHub Enterprise
+///, else github.com's own API host, else a GitHub Enterprise
 /// Server's `/api/v3` ON ITS OWN DOMAIN.
 ///
-/// The second bug D2.8 names lived here: every API call went to
+/// The second bug the rule names lived here: every API call went to
 /// api.github.com, so a GHES instance was asked about a person it had
 /// never heard of.
 pub fn api_base(host: &str, ctx: &Ctx) -> String {
@@ -171,12 +171,12 @@ fn api_get(ctx: &Ctx, host: &str, url: &str, accept: &str) -> Option<Answer> {
 /// The granted scope set of the token in use, from the header GitHub
 /// puts on every authenticated answer. `None` means "not known": a fine
 /// grained token and `GITHUB_TOKEN` carry no such header, and an
-/// unknown set must never be reported as a missing one (D2.7c).
+/// unknown set must never be reported as a missing one.
 pub fn granted_scopes(answer: &Answer) -> Option<Vec<String>> {
     answer.header("x-oauth-scopes").map(scope::parse_granted)
 }
 
-/// What a refusal means (D2.7c). Never `denied` for a scope problem.
+/// What a refusal means. Never `denied` for a scope problem.
 pub fn classify(answer: &Answer) -> &'static str {
     match answer.status {
         403 => {
@@ -249,7 +249,7 @@ fn current_user(ctx: &Ctx, host: &str) -> Option<Value> {
 
 /// The same `GET /user`, with the granted scope set that rides on its
 /// `X-OAuth-Scopes` header. One request carries both facts, and the
-/// budget of D1.9 counts requests, so the two are never asked apart.
+/// budget counts requests, so the two are never asked apart.
 fn current_account(ctx: &Ctx, host: &str) -> Option<(Option<Value>, Option<Vec<String>>)> {
     // Nothing is asked without a credential: the endpoint is about the
     // account the token names (decision 20).
@@ -338,7 +338,7 @@ pub fn store_answer(target: &Target, ctx: &Ctx) -> Value {
 /// The decision over the two answers, pure. Anything but a clear 2xx or
 /// 404 leaves the question unanswered.
 ///
-/// The 404 rule is the one D2.7c corrects: GitHub answers 404 rather
+/// The 404 rule is the one the rule corrects: GitHub answers 404 rather
 /// than 403 for a private repository the caller may not see, so a 404
 /// on a request that carried no token, or a token without `repo`, is
 /// NOT the verdict "your repository is gone".
@@ -385,7 +385,7 @@ fn store_verdict(
     };
     // GitHub's repository `size` is KILOBYTES, and "Size is calculated
     // hourly. When a repository is initially created, the size is 0."
-    // The unit is forge knowledge, so it is normalised here (D2.4).
+    // The unit is forge knowledge, so it is normalised here.
     let size_bytes = body
         .get("size")
         .and_then(|v| v.as_u64())
@@ -469,7 +469,7 @@ fn files_verdict(answer: Option<Answer>) -> Value {
     json!({ "state": "files", "paths": paths, "truncated": truncated })
 }
 
-// -- the repository list (D2.4) ------------------------------------------------
+// -- the repository list ------------------------------------------------
 
 /// Entries per page: GitHub's maximum, so a 200 repository answer costs
 /// two requests and not eight.
@@ -559,7 +559,7 @@ fn repository_row(entry: &Value, query: Option<&str>) -> Option<Value> {
     }))
 }
 
-// -- creating a repository (D2.4, decision 17) ---------------------------------
+// -- creating a repository (decision 17) ---------------------------------
 
 /// The CREATE-REPOSITORY answer. A project can only be brought to
 /// joyint.com when it has a remote repository, so this is what makes
@@ -571,7 +571,7 @@ pub fn create_repository_answer(target: &Target, new: &NewRepository, ctx: &Ctx)
     if ctx.token("github", &host).is_none() {
         return json!({ "state": "needs_sign_in", "host": host });
     }
-    // The local pre check of D2.7c, cheapest first: since J3 the set
+    // The local pre check, cheapest first: since J3 the set
     // the forge granted is stored beside the token, so a token that
     // cannot create is refused before a single request is sent.
     if let Some(refused) =
@@ -655,7 +655,7 @@ fn message_of(answer: &Answer) -> String {
         .unwrap_or_else(|| format!("GitHub answered {}", answer.status))
 }
 
-// -- the release capability (JOY-0256-64, moved to REST by D2.8) ---------------
+// -- the release capability (JOY-0256-64, moved to REST) ---------------
 
 /// Create (or complete) the release for `tag` on GitHub, over REST.
 ///
@@ -690,7 +690,7 @@ pub fn release_answer(
              with --token-env"
         )
     })?;
-    // The local pre check of D2.7c: a token whose stored set cannot
+    // The local pre check: a token whose stored set cannot
     // carry a release is told so, instead of the forge's refusal being
     // reported as a failed publish.
     if let Some(refused) = joy_forge_net::auth::verbs::stored_scope_gate(
@@ -772,35 +772,35 @@ pub fn release_answer(
     }))
 }
 
-// No verb carries an asset yet. D2.8 names the asset upload on
+// No verb carries an asset yet. The rule names the asset upload on
 // uploads.github.com as part of the release move, and the upload host
 // is per release (GitHub puts it in the release's own `upload_url`,
 // which is what would make it work on an Enterprise Server too), but
 // `release` takes notes and nothing else in the verb catalogue of
-// D2.4, and joy's own publish never uploaded one either. The code for
+// And joy's own publish never uploaded one either. The code for
 // it lands with the argument that carries it.
 
-// -- the sign in half (D2.4, D2.7, package J3) --------------------------------
+// -- the sign in half --------------------------------
 
-/// The scope set GitHub asks for (D2.7a). **One set covers A to G**:
+/// The scope set GitHub asks for. **One set covers A to G**:
 /// `repo user:email`. There is no read only private scope on GitHub, so
 /// the minimal scope demand cannot be met with an OAuth App; it is met
 /// later by a GitHub App or a fine grained token with Contents read,
 /// and the design says so instead of promising it now.
 pub const SCOPES: &str = "repo user:email";
 
-/// The sentence a read only member on GitHub hears (D2.7c). It is put
+/// The sentence a read only member on GitHub hears. It is put
 /// on stderr because the connector has no screen: the host renders it.
 pub const READ_IS_WRITE: &str =
     "GitHub grants read and write in one scope, so this sign in asks for both. \
      joy never pushes without an explicit action.";
 
-/// The OAuth application for a host (D2.7).
+/// The OAuth application for a host.
 ///
 /// github.com signs in through joy's own public client; GitHub
 /// Enterprise Server has instance local endpoints AND an instance local
 /// client id, and the app must be registered on the instance, which is
-/// what `forges.yaml` carries (D2.5). A GHES host with no configured
+/// what `forges.yaml` carries. A GHES host with no configured
 /// client has no door, and `login` says so rather than sending a
 /// request nobody can answer.
 pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
@@ -833,7 +833,7 @@ pub fn oauth_for(host: &str, purpose: Purpose, ctx: &Ctx) -> Option<OAuth> {
 }
 
 /// One API GET with a NAMED token, for the calls that validate a token
-/// the context does not hold yet (`token-store`, the probe of D4.1c).
+/// the context does not hold yet (`token-store`, the probe).
 ///
 /// The error half is a sentence and not a bare `None`, because a caller
 /// has to be able to tell "the instance said no" from "the instance
@@ -915,21 +915,21 @@ pub fn account_of(host: &str, token: &str, ctx: &Ctx) -> AccountAnswer {
         emails,
         // The granted set rides on the answer's own header; a fine
         // grained token carries none, and an unknown set must never be
-        // reported as a missing one (D2.7c).
+        // reported as a missing one.
         scopes: granted_scopes(&answer).map(|scopes| scopes.join(" ")),
     })
 }
 
 /// Whether this token reaches `owner/repo`, and whether it may push
-/// (the probe of D4.1c). One request, per remote and never per contact,
+/// (the probe). One request, per remote and never per contact,
 /// plus at most one more where the answer looks like an organisation
-/// wall (D2.7c).
+/// wall.
 pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach> {
     let url = format!("{}/repos/{repo_path}", api_base(host, ctx));
     let answer = api_get_as_or_say(ctx, host, &url, token)?;
     if !answer.ok() {
         // Two refusals wear these numbers, and they are not the same
-        // thing for the person (D2.7c, JOY-02A9-48):
+        // thing for the person (JOY-02A9-48):
         //
         // - the organisation owns the repository, has OAuth App access
         //   restrictions switched on and has not approved Joy. GitHub
@@ -955,7 +955,7 @@ pub fn reaches_repo(host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Opti
 
 /// Whether the OWNER organisation walls this application out of
 /// `owner/repo`, asked only where NO login reached the repository at
-/// all (D2.7c, D4.1c step 5).
+/// all.
 ///
 /// It is asked there and nowhere else because it costs a request, and
 /// because the question only arises then: a login that reads the
@@ -991,7 +991,7 @@ pub fn organisation_wall(host: &str, repo_path: &str, token: &str, ctx: &Ctx) ->
         .is_some_and(|org| org.status == 403 && classify(&org) == "needs_org_approval")
 }
 
-/// Where an owner approves Joy for an organisation (D2.7c). On
+/// Where an owner approves Joy for an organisation. On
 /// github.com this is the documented settings page; on a GitHub
 /// Enterprise Server instance the same path under the instance's own
 /// web address, which is the host itself and never `api.github.com`.
@@ -1044,7 +1044,7 @@ pub fn revoke_token(host: &str, record: &joy_forge_net::auth::store::Record, ctx
 }
 
 /// Every login gh is signed in as on this host, the active one first
-/// (D4.1c's probe candidate order).
+/// (the probe candidate order).
 ///
 /// gh keeps several accounts per host and documents the trap: "Without
 /// the --user flag, the active account for the host is chosen." A
@@ -1179,7 +1179,7 @@ mod tests {
         assert_eq!(parse_hosts_yml("").as_deref(), None);
     }
 
-    /// The second hardcoded base of D2.8: a GHES host must ask its own
+    /// The second hardcoded base: a GHES host must ask its own
     /// `/api/v3`, never api.github.com.
     #[test]
     fn a_ghes_host_asks_its_own_api_v3() {
@@ -1196,7 +1196,7 @@ mod tests {
         );
     }
 
-    /// And an operator's `forges.yaml` overrides even that (D2.5).
+    /// And an operator's `forges.yaml` overrides even that.
     #[test]
     fn a_configured_instance_names_its_own_api_base() {
         let ctx = ctx().with_instances(
@@ -1239,7 +1239,7 @@ mod tests {
         });
         assert_eq!(verdict["state"], "store");
         assert_eq!(verdict["project_yaml"], "name: Demo\n");
-        // GitHub counts kilobytes; the protocol carries bytes (D2.4)
+        // GitHub counts kilobytes; the protocol carries bytes
         assert_eq!(verdict["size_bytes"], 512 * 1024);
     }
 
@@ -1270,7 +1270,7 @@ mod tests {
         assert_eq!(anonymous["may_create"], false);
     }
 
-    /// D2.7c: GitHub answers 404 for a private repository the caller may
+    /// GitHub answers 404 for a private repository the caller may
     /// not see, so an anonymous 404 must not tell a person their
     /// repository is gone.
     #[test]
@@ -1334,7 +1334,7 @@ mod tests {
         );
     }
 
-    /// D2.7c: the page an owner of the organisation acts on. It is the
+    /// The page an owner of the organisation acts on. It is the
     /// instance's OWN web address, which on a GitHub Enterprise Server
     /// is the host itself and never `api.github.com`; a person sent to
     /// github.com for an internal organisation finds nothing there.
@@ -1358,7 +1358,7 @@ mod tests {
         assert_eq!(org_approval_page("github.com", " "), None);
     }
 
-    /// D2.7c, the classification rules that must never say `denied` for
+    /// The classification rules that must never say `denied` for
     /// a scope problem.
     #[test]
     fn a_refusal_is_classified_by_its_headers_and_never_by_prose() {
@@ -1393,7 +1393,7 @@ mod tests {
         );
     }
 
-    /// D2.7: github.com signs in through joy's public client with the
+    /// Github.com signs in through joy's public client with the
     /// device grant; a GitHub Enterprise Server has instance local
     /// endpoints AND an instance local client id, and without one there
     /// is no door at all.
@@ -1432,15 +1432,15 @@ mod tests {
         );
     }
 
-    /// D2.7a: one set covers A to G on GitHub, so `--for` changes
-    /// nothing, and D2.7c says the person is told why.
+    /// One set covers A to G on GitHub, so `--for` changes
+    /// nothing, and the rule says the person is told why.
     #[test]
     fn github_asks_for_one_set_whatever_the_access_level_is() {
         assert_eq!(SCOPES, "repo user:email");
         assert!(READ_IS_WRITE.contains("never pushes without an explicit action"));
     }
 
-    /// D4.1c: gh keeps several accounts per host, and the active one is
+    /// Gh keeps several accounts per host, and the active one is
     /// the first candidate of the probe order.
     #[test]
     fn every_gh_account_of_a_host_is_a_probe_candidate_the_active_one_first() {

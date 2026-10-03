@@ -8,7 +8,7 @@
 # a second run must not repeat them.
 #
 # Since JOY-0298-E4 the release verb speaks REST through the connector's
-# own HTTP client (design D2.8), so the forge boundary is the fake API
+# own HTTP client, so the forge boundary is the fake API
 # and gh is only a source of a TOKEN (decision 19). The fake is
 # STATEFUL: what a PATCH writes, the next GET reports, so idempotence is
 # observed the way the forge would show it.

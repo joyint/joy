@@ -83,7 +83,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: joy
       - uses: extractions/setup-just@v3
-      # The interactive gate of design D3.11: the sign in verbs may be
+      # The interactive gate: the sign in verbs may be
       # compiled into joy-cli and the desktop and into nothing else. The
       # half that reads the manifests runs here; the half that reads the
       # platform's own `cargo tree` runs in the platform's pipeline,
@@ -158,7 +158,7 @@ jobs:
       - run: cargo test --workspace --no-fail-fast
         working-directory: joy
 
-  # The Codeberg pin build step of design D1.4a, run again: every
+  # The Codeberg pin build step, run again: every
   # recorded blob is checked against the key the host really serves and
   # against the fingerprint its forge publishes (`just
   # check-host-key-pins`). It runs nightly and on demand, never on a

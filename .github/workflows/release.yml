@@ -99,10 +99,10 @@ jobs:
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
-      # JOY-029E-9D: the shape design D2.1 asks for, checked before anything
+      # JOY-029E-9D: the shape the rule asks for, checked before anything
       # is built. One App, so the winget step below finds exactly one asset;
       # joy and the connector in every archive, so an install has both; the
-      # host key pin file of D1.4a beside them, so the loader finds it next
+      # host key pin file beside them, so the loader finds it next
       # to the binary. A publishable crate that grows a binary would
       # otherwise become an App of its own at the next tag: give it
       # `[package.metadata.dist] dist = false`, the way every crate beside
@@ -227,7 +227,7 @@ jobs:
       # then re-run dist build: cargo does not recompile (no source change), so
       # it re-archives the *signed* binaries and refreshes the manifest hashes.
       # Since JOY-029E-9D that folder holds two binaries, joy.exe and the
-      # connector joy-forge.exe (design D2.1), and both ship in the same
+      # connector joy-forge.exe, and both ship in the same
       # archive. The action signs every .exe in the folder, so both are covered
       # by this one step; the check below is the proof.
       # Windows + publishing only (fork PRs have no OIDC credentials).
@@ -353,7 +353,7 @@ jobs:
             echo "No certificate secret: signing from the runner's own keychain."
           fi
           # The identifier is the binary's, not the archive's, and both
-          # binaries of design D2.1 ride in every apple archive.
+          # binaries ride in every apple archive.
           for target in $TARGETS; do
             case "$target" in *apple*) ;; *) continue ;; esac
             dir="target/$target/dist"
@@ -632,7 +632,7 @@ jobs:
           # this same string over the dist manifest and fails the release
           # before anything is built when it matches anything but one asset,
           # which is what `dist = false` on every crate beside joy-cli buys
-          # (design D2.1, JOY-029E-9D).
+          # (JOY-029E-9D).
           #
           # Watch the first tag after JOY-029E-9D by hand: that zip now holds
           # joy.exe, joy-forge.exe and host-keys.json where it used to hold

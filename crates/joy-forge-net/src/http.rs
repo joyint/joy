@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The connector's own HTTP client (D2.8).
+//! The connector's own HTTP client.
 //!
 //! Until now every forge call was a `curl` or `gh` subprocess, which is
 //! why a machine without curl could not answer `identity` and why
 //! publishing a release needed gh. The client is in process now, over
-//! rustls, and it honours the proxy sources of D1.11 and the trust
-//! store of D1.12 exactly as the engine does.
+//! rustls, and it honours the proxy sources and the trust
+//! store exactly as the engine does.
 //!
 //! Two rules hold for every call and are why this is one door:
 //!
@@ -24,7 +24,7 @@ use crate::gitconfig::GitConfig;
 use crate::proxy::{self, ProxyChoice};
 use crate::trust::{self, Trust};
 
-/// The default per request bound. The verb deadlines of D2.3 bound the
+/// The default per request bound. The verb deadlines bound the
 /// whole call; this bounds one request inside it, so a host that
 /// accepts a connection and then says nothing cannot eat the verb's
 /// whole budget.
@@ -103,8 +103,8 @@ pub struct Http {
 }
 
 impl Http {
-    /// A client with the trust of D1.12 and the git configuration the
-    /// proxy decision of D1.11 reads.
+    /// A client with the trust and the git configuration the
+    /// proxy decision reads.
     pub fn new(trust: Trust, config: GitConfig, user_agent: impl Into<String>) -> Self {
         Http {
             trust,
@@ -169,7 +169,7 @@ impl Http {
         let tls = self.tls_config()?;
         // The proxy is joy's decision, never ureq's: `Config::default`
         // reads ALL_PROXY, HTTPS_PROXY and HTTP_PROXY with its own
-        // order and its own NO_PROXY grammar, and D1.11 names a
+        // order and its own NO_PROXY grammar, and the rule names a
         // different one. Setting it explicitly (`None` included) is
         // what turns that off.
         let proxy = match choice {
@@ -182,7 +182,7 @@ impl Http {
         };
         let config = ureq::config::Config::builder()
             .proxy(proxy)
-            // joy classifies statuses itself (D2.7c), so a 4xx is an
+            // joy classifies statuses itself, so a 4xx is an
             // answer here and not an error.
             .http_status_as_error(false)
             .user_agent(self.user_agent.clone())
@@ -239,7 +239,7 @@ impl Request<'_> {
     }
 
     /// `Authorization: Basic <user:secret>`, which GitHub's token
-    /// revocation endpoint asks for (D2.4: `DELETE
+    /// revocation endpoint asks for (`DELETE
     /// /applications/{client_id}/token`). A public OAuth client has no
     /// secret, so the secret half is usually empty and the forge is
     /// what decides whether that is enough.

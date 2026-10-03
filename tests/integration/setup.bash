@@ -17,8 +17,8 @@ export PATH="$(dirname "$JOY_BIN"):$PATH"
 TEST_PASSPHRASE="correct horse battery staple extra words"
 
 # The address every project here is founded by. `setup` writes it into
-# the sandbox git config, which is where `joy init` OFFERS it (D3.9 keeps
-# git config as a prefill and nothing more), and `act_as_founder` names
+# the sandbox git config, which is where `joy init` OFFERS it (git config
+# is a prefill and nothing more), and `act_as_founder` names
 # it when a test has to come back from acting as somebody else.
 FOUNDER_EMAIL="test@example.com"
 
@@ -86,7 +86,7 @@ extract_otp() {
 # them AND authenticate as them, which opens their session.
 #
 # This is how a test says who is working now. Since the operator's
-# 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) `resolve_identity`
+# 2026-09-19 correction (JOY-02AE-1A) `resolve_identity`
 # reads `git config user.email` again (repository over global, over the
 # forge account), and the device pin it used to read instead is gone: a
 # bare `joy` command after this acts as `member` because THIS repository's

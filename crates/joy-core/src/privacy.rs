@@ -225,7 +225,7 @@ pub fn email_for(
 /// `operator` is what the delegation token recorded as its `delegated_by`.
 /// That is EITHER a cleartext e-mail, when a person typed one (`joy auth
 /// token add --user`), OR the operator's at-rest member key, which is what
-/// identity resolution answers with since package J11 (D3.9) and what the
+/// identity resolution answers with since package J11 and what the
 /// app's attested issuance always held. When an AI acts under that
 /// delegation, the operator is recorded as the `delegated-by:` part of the
 /// actor in items (`created_by`/`updated_by`), logs, and the commit
@@ -636,7 +636,7 @@ mod tests {
     /// KEY, whichever of the two forms the token recorded.
     ///
     /// The key form is the one an anonymous project hands in since
-    /// identity resolution stopped reading git config (D3.9, package
+    /// identity resolution stopped reading git config (package
     /// J11), and it used to resolve to nothing: the address matcher
     /// cannot match an opaque id against itself, anonymous mode answers
     /// `None` rather than leak a fallback, and the session minted from

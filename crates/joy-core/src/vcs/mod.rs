@@ -5,7 +5,7 @@
 //! All version control operations go through the `Vcs` trait.
 //! Currently only Git is implemented.
 //!
-//! Since JOY-01FD-ED (design D3.2) there is ONE git engine and it is
+//! Since JOY-01FD-ED there is ONE git engine and it is
 //! git2: no verb in this module, and nothing it calls, starts a git
 //! process. The reason is the operator's, recorded on that item and
 //! mobile: the app must work on a machine that has no git binary at
@@ -13,11 +13,11 @@
 //! on the one path nobody tested.
 //!
 //! What that costs is written down rather than discovered: libgit2 runs
-//! no hooks and no clean or smudge filter, and it cannot sign (D3.6).
+//! no hooks and no clean or smudge filter, and it cannot sign.
 //! The hook rule joy's own commits would have missed is enforced in
-//! process instead ([`crate::commit_msg::validate`], D3.3), and the
+//! process instead ([`crate::commit_msg::validate`]), and the
 //! commit paths are scoped to the paths joy wrote so a filtered path in
-//! a person's checkout is never one of them (D3.4).
+//! a person's checkout is never one of them.
 
 use std::path::Path;
 
@@ -56,8 +56,8 @@ pub struct GitVcs;
 
 /// How this host contacts a forge from a person's or an agent's
 /// checkout: the machine's own credentials, for the host kind the entry
-/// point of this process decided (D1.1). The engine's prompt rule of
-/// D1.10 hangs off that word, so a hook, a worker and an agent under
+/// point of this process decided. The engine's prompt rule of
+/// The rule hangs off that word, so a hook, a worker and an agent under
 /// `JOY_SESSION` are never asked anything.
 fn local_auth() -> forge::Auth {
     forge::Auth::LocalAs(crate::host::process_host())
@@ -102,7 +102,7 @@ impl Vcs for GitVcs {
 /// It used to be the version of the git BINARY on PATH, read from
 /// `git --version`. There is no such binary in joy's path any more, and
 /// the version that decides what joy can do is the library's, so this is
-/// libgit2's (D3.2). A machine with no git installed reports the same
+/// libgit2's. A machine with no git installed reports the same
 /// version as a machine with git 2.51, because for joy it is the same
 /// machine.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -178,20 +178,20 @@ impl GitVcs {
     /// Stage all changes (what `git add -A` did).
     ///
     /// In a PERSON's checkout the scoped [`GitVcs::add`] is the right
-    /// verb (D3.4): this one takes whatever else was lying around with
+    /// verb: this one takes whatever else was lying around with
     /// it, and no pre-commit hook stands in the way any more. What it
     /// will NOT do is write a path an external content filter governs:
     /// libgit2 runs no filter program, so a changed `filter=lfs` asset
     /// would be staged as its own bytes where the pointer belongs, and
     /// [`forge::stage_all`] refuses such a path by name instead
-    /// (D3.4). The desktop's release record is the caller that made
+    ///. The desktop's release record is the caller that made
     /// this necessary here and not only in the sweeping commit verbs.
     pub fn add_all(&self, root: &Path) -> Result<(), JoyError> {
         forge::stage_all(root).map_err(|e| JoyError::Git(format!("git add -A failed: {e}")))
     }
 
     /// Create a commit with a message, signed for the member this
-    /// project says is acting (D4.5): libgit2 asks who commits, and the
+    /// project says is acting: libgit2 asks who commits, and the
     /// answer is joy's identity resolution and not `git config`, so a
     /// project founded without one can still be committed to.
     ///
@@ -201,7 +201,7 @@ impl GitVcs {
     /// [`forge::commit_index_paths`](forge::commit_index_paths), which
     /// `joy release record` and the auto-git commit both take. A path
     /// an external content filter governs is refused by name here too,
-    /// whoever staged it (D3.4).
+    /// whoever staged it.
     pub fn commit(&self, root: &Path, message: &str) -> Result<(), JoyError> {
         let (name, email) = crate::identity::acting_signature(root)?;
         forge::commit_index(root, message, &name, &email)
@@ -225,7 +225,7 @@ impl GitVcs {
     /// Push the current branch to the forge.
     ///
     /// `remote` names what the caller believed it was pushing to; the
-    /// remote really contacted is the one D1.1 picks, `origin` or else
+    /// remote really contacted is the one the rule picks, `origin` or else
     /// the first configured one, which is what
     /// [`GitVcs::default_remote`] answers too. The two therefore agree
     /// by construction, and the throttle key, the credential and the
@@ -249,7 +249,7 @@ impl GitVcs {
     }
 
     /// The remote joy contacts for this checkout: `origin` when it is
-    /// configured, otherwise the first one (D1.1).
+    /// configured, otherwise the first one.
     pub fn default_remote(&self, root: &Path) -> Result<String, JoyError> {
         forge::default_remote_name(root).ok_or_else(|| JoyError::Git("no remote configured".into()))
     }
@@ -296,7 +296,7 @@ pub mod resolver;
 pub mod ssh_auth;
 pub mod ssh_config;
 
-/// Who is at the other end of an operation (D1.1). The engine speaks
+/// Who is at the other end of an operation. The engine speaks
 /// about the host kind through `vcs::HostKind`, and it is the ONE type
 /// declared in [`crate::host`], where the entry point of each host sets
 /// it (JOY-02A2-27).
@@ -311,11 +311,11 @@ pub fn default_vcs() -> GitVcs {
 // The scattered direct `git` invocations of joy-cli and joy-ai live here
 // as ONE named verb each. They used to stay on the git BINARY on
 // purpose, so a person's config, credential setup and hooks applied;
-// D3.2 ends that, because a machine without git has no such binary and
+// The rule ends that, because a machine without git has no such binary and
 // the product still has to work there. What the binary did for them is
 // done here instead: libgit2 reads the same config files, the
 // credentials come from `vcs::resolver`, and the hooks a person
-// installed are chained from joy's own (D3.5) rather than run by joy.
+// installed are chained from joy's own rather than run by joy.
 
 /// The unix time of a commit, resolved in the CURRENT directory (merge
 /// drivers run with the repo as cwd). `None` when the rev does not
@@ -344,7 +344,7 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 /// nor the user's ambient credentials, and there is nothing a git
 /// process adds. It sat on the chat write path as
 /// `git -C <root> remote get-url origin`, one spawn per send and per
-/// read, and the git2 only rule leaves no room for it (D3.2, D3.7).
+/// read, and the git2 only rule leaves no room for it.
 ///
 /// The two answers are not identical, and the difference is deliberate:
 /// `git remote get-url <name>` fails for a remote that carries only
@@ -354,7 +354,7 @@ pub fn staged_paths(root: &Path) -> Vec<String> {
 /// is pinned by the cases below because it is a silent change. The chat
 /// gate that used to ask this by NAME asks
 /// [`forge::default_remote_name`] instead, so that the probe and the
-/// contact name one remote (D1.1).
+/// contact name one remote.
 pub fn remote_exists(root: &Path, remote: &str) -> bool {
     git2::Repository::discover(root)
         .and_then(|repo| repo.find_remote(remote).map(|_| ()))

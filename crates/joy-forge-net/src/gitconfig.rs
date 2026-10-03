@@ -6,15 +6,15 @@
 //!
 //! Why not git2: the connector is a small binary that must stay small,
 //! and it needs four keys, not a configuration engine. Why not the git
-//! binary: joy never spawns one (D3.2). So the three files git reads
+//! binary: joy never spawns one. So the three files git reads
 //! are read here, in git's own precedence (system, global, local, last
 //! value wins), for these keys only:
 //!
-//! - `http.proxy` and `http.<url>.proxy` (D1.11);
+//! - `http.proxy` and `http.<url>.proxy`;
 //! - `http.sslCAInfo` and `http.sslCAPath`, honoured on Linux only
-//!   (D1.12, decision 25).
+//!   (decision 25).
 //!
-//! Everything else git offers is deliberately not read, and D1.12 lists
+//! Everything else git offers is deliberately not read, and the rule lists
 //! it so nobody expects it.
 
 use std::path::{Path, PathBuf};

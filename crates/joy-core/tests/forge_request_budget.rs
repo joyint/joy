@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The contact budget of D1.9 (JOY-0295-36), measured in HTTP REQUESTS.
+//! The contact budget (JOY-0295-36), measured in HTTP REQUESTS.
 //!
 //! The acceptance criterion of package J5 is written in requests per
 //! host, not in contacts, because a contact is not a unit: the first
@@ -42,7 +42,7 @@ static SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// joy's own state file, inside this case's temporary directory. A
 /// contact that authenticates writes down that a credential worked on
-/// the host (D1.8b, JOY-02A9-48), and a test must never write that into
+/// the host (JOY-02A9-48), and a test must never write that into
 /// the person's own state directory.
 fn state_file_in(tmp: &std::path::Path) {
     resolver::set_state_file(Some(tmp.join("forge-state.json")));
@@ -116,7 +116,7 @@ fn serve(forge: std::path::PathBuf, refs: Vec<(String, git2::Oid)>, tip: git2::O
 
 /// The same server for a PUBLIC repository: it never challenges, so
 /// libgit2 never asks joy for a credential and joy presents nothing.
-/// That is the remote of D1.9's no anonymous polling rule.
+/// That is the remote of the no anonymous polling rule.
 fn serve_public(
     forge: std::path::PathBuf,
     refs: Vec<(String, git2::Oid)>,
@@ -321,18 +321,18 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
 
     // The other half of the credential memory the test above reads:
     // a token that really went over the wire IS remembered. The
-    // resolver of D1.1 hands every candidate over inside its own chain
-    // (D1.2), so the note of D1.8b has to sit on each of the chain's
+    // resolver hands every candidate over inside its own chain
+    //, so the note has to sit on each of the chain's
     // hand-over points; the sibling test proves the negative case, and
     // without this one an engine that noted nothing at all would pass
     // both.
     assert!(
         contact::credential_answers("127.0.0.1", contact::Transport::Https, true),
-        "a token the forge accepted is what joy has for this host (D1.9)"
+        "a token the forge accepted is what joy has for this host"
     );
     assert!(
         contact::token_worked_before("127.0.0.1"),
-        "and a 404 on this host is no longer read as 'never signed in' (D1.8b)"
+        "and a 404 on this host is no longer read as 'never signed in'"
     );
 
     contact::set_gaps("");
@@ -341,7 +341,7 @@ fn one_fetch_of_a_private_remote_costs_three_requests() {
 
 /// One `ls_remote_refs` for two refs is ONE contact and two requests:
 /// the advertisement carries every ref anyway, so a poll tick that
-/// watches a branch and a chat ref asks once (D1.9).
+/// watches a branch and a chat ref asks once.
 #[test]
 fn one_poll_tick_makes_one_contact_for_two_refs() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -425,7 +425,7 @@ fn after_a_429_the_next_contact_to_that_host_waits_twice_the_gap() {
     resolver::set_state_file(None);
 }
 
-/// D1.9, no anonymous polling, on the desktop's own shape: `Auth::Local`
+/// No anonymous polling, on the desktop's own shape: `Auth::Local`
 /// says "the machine's own credentials" for every host, and on a host
 /// where the machine has none it hands over nothing at all. The engine
 /// learns that from the contact itself and polls the host once every
@@ -479,7 +479,7 @@ fn a_public_remote_nobody_is_signed_in_for_is_polled_every_fifteen_minutes() {
     assert_eq!(
         contact::poll_period("localhost", "ls-remote", contact::Transport::Https, true),
         contact::ANONYMOUS_POLL_INTERVAL,
-        "an https remote with no credential is polled once every 15 minutes (D1.9)"
+        "an https remote with no credential is polled once every 15 minutes"
     );
 
     // the door holds the next tick of the window, and the surface says why

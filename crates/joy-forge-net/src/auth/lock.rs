@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The refresh lock (D2.6a).
+//! The refresh lock.
 //!
 //! Two refreshes of one rotating refresh token at once killed Codeberg
 //! tokens for an hour on 2026-08-29, and ten thousand attempts against
 //! one dead GitHub refresh token got a whole OAuth app throttled on
 //! 2026-09-07. Both are the same shape: several processes, one entry,
-//! no lock. Because D2.6 makes the connector the only process that
+//! no lock. Because the rule makes the connector the only process that
 //! touches joy's own entry, the lock lives here and is taken by every
 //! `token`, `login`, `token-store` and `logout` call that may write.
 //!
@@ -15,7 +15,7 @@
 //! `joy_core::util::file_lock`, which landed with J4a in wave 0. No
 //! package after it carries a lock dependency of its own.
 //!
-//! The protocol, in the order D2.6a writes it:
+//! The protocol, in the order the rule writes it:
 //!
 //! 1. open or create the lock file;
 //! 2. take the exclusive lock with a bounded wait (50 ms backoff, 10 s);
@@ -44,7 +44,7 @@ pub enum Busy {
     /// Somebody else held it for the whole wait.
     Held,
     /// The lock could not be taken at all (a filesystem without
-    /// locking, an unwritable state directory). D2.6a: degrade to "do
+    /// locking, an unwritable state directory). The rule: degrade to "do
     /// not refresh, use the entry as it stands, report busy", never to
     /// "refresh anyway".
     Unavailable(String),
@@ -84,7 +84,7 @@ pub fn lock_path(
 }
 
 /// Take the refresh lock for one host and login, waiting at most the
-/// 10 s of D2.6a. `state_dir` is the person's app state directory, or
+/// 10 s. `state_dir` is the person's app state directory, or
 /// the one a test named.
 pub fn take(
     state_dir: Option<&std::path::Path>,
@@ -109,7 +109,7 @@ pub fn take_at(path: &std::path::Path) -> Result<FileLock, Busy> {
     }
 }
 
-/// The answer of D2.4 for a call that could not take the lock and found
+/// The answer for a call that could not take the lock and found
 /// nothing usable when it looked again.
 pub fn busy_answer() -> serde_json::Value {
     serde_json::json!({ "known": false, "reason": "busy" })

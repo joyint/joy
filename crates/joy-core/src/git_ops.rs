@@ -44,7 +44,7 @@ pub fn auto_git_add(root: &Path, paths: &[&str]) {
     remember_joy_paths(root, &kept);
 }
 
-/// The paths joy itself staged in this process, per project root (D3.4).
+/// The paths joy itself staged in this process, per project root.
 /// [`auto_git_post_command`] commits these and nothing else, so a commit
 /// joy writes carries joy's own writes and never a person's half staged
 /// work. Process state on purpose: it is the record of what THIS run did,
@@ -102,7 +102,7 @@ fn return_joy_paths(root: &Path, paths: Vec<String>) {
 /// [`crate::identity::Identity::log_user`] writes it: the acting member,
 /// optionally followed by `delegated-by:<human>`.
 ///
-/// The commit is signed for that acting member (D4.5), not for whatever
+/// The commit is signed for that acting member, not for whatever
 /// `git config` on this machine says: joy knows who acts, the machine
 /// setting is a prefill for the display name, and in an anonymous project
 /// the opaque member id is the only thing that may reach a commit
@@ -172,7 +172,7 @@ static CONTACT_ASIDE: OnceLock<ContactAside> = OnceLock::new();
 ///
 /// The auto-git push is a forge contact, and with `workflow.auto-git:
 /// push` it runs after nearly every joy write, so its failure has to
-/// speak the one vocabulary of D3.8 like every other contact: the state
+/// speak the one vocabulary like every other contact: the state
 /// word, the plain sentence, the one next step, and in `--json` mode one
 /// object on stderr rather than a line of prose. The words live here
 /// (`vcs::contact`), the `--json` decision and the CLI's own next steps
@@ -192,7 +192,7 @@ fn say_contact_aside(root: &Path, headline: &str, tail: &str, error: &JoyError) 
     let failure = error.failure();
     let contact = error.contact();
     // The host joy really contacted, so the sentence names no other
-    // (D1.1). Empty when there is none, and then it names none.
+    //. Empty when there is none, and then it names none.
     let host = crate::vcs::forge::remote_url(root)
         .map(|url| crate::vcs::contact::host_of(&url))
         .unwrap_or_default();
@@ -263,12 +263,12 @@ fn at_rest_identity(identity: &str, project: Option<&Project>) -> String {
     }
 }
 
-/// The item reference rule of D3.3, applied to joy's own commit.
+/// The item reference rule, applied to joy's own commit.
 ///
 /// libgit2 runs no hooks, so `.joy/hooks/commit-msg` never sees the
 /// commits joy writes for itself and the rule it enforces for a person's
 /// `git commit` would be enforced for nobody here. It WARNS and proceeds,
-/// as D3.3 decides: refusing would strand the write joy just made with
+/// as the rule decides: refusing would strand the write joy just made with
 /// uncommitted `.joy` changes and no way for the person to fix a message
 /// they never typed.
 fn warn_about_a_missing_item(message: &str, project: Option<&Project>) {

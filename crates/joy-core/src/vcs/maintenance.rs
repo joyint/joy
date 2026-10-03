@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Repository maintenance without the git binary (design D3.7).
+//! Repository maintenance without the git binary.
 //!
 //! Every joy write is a libgit2 write, and libgit2 runs no auto gc after
 //! its own commits. Nothing packed, nothing pruned, so a store only ever
@@ -10,7 +10,7 @@
 //! objects were unreachable (JOY-023C-1E). Packing alone is therefore not
 //! maintenance; what the store needs is a pack AND a sweep.
 //!
-//! The shape, straight out of D3.7:
+//! The shape, straight out:
 //!
 //! - **Trigger.** Per canonical checkout, never a process global counter.
 //!   A cheap loose object estimate (count one fanout directory, multiply
@@ -93,7 +93,7 @@ pub const KEEP_SET_BUDGET: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
     /// A loose object outside the keep set is removed only when it is at
-    /// least this old (D3.7: 14 days in a checkout joy does not own,
+    /// least this old (14 days in a checkout joy does not own,
     /// 24 hours in a store joy alone writes).
     pub grace: Duration,
     /// The estimated loose object count a run needs to see.
@@ -128,7 +128,7 @@ impl Options {
     /// DEVIATION, reported at the package level rather than written
     /// into the design, which this package does not own: no caller
     /// selects this today, so a desktop only store and the platform's
-    /// project clone both run on the 14 day window D3.7 gives a foreign
+    /// project clone both run on the 14 day window the rule gives a foreign
     /// checkout. The chat store's write path is the only caller there
     /// is and it cannot tell the two cases apart from where it stands:
     /// the same function serves a person's own checkout, where another
@@ -205,7 +205,7 @@ pub struct Outcome {
 /// passed, and no other thread is already maintaining this store.
 ///
 /// The gate is maintenance's OWN, not the per checkout gate of
-/// [`crate::vcs::forge::checkout_gate`] that D3.7 first named. Two
+/// [`crate::vcs::forge::checkout_gate`] that the rule first named. Two
 /// reasons, both load bearing.
 ///
 /// The first is that taking that gate here makes maintenance dead code
@@ -219,7 +219,7 @@ pub struct Outcome {
 /// The second is that maintenance does not need it. The checkout gate's
 /// contract is "every path that MOVES refs on a checkout takes this gate
 /// first" (JP-00DB-61), and maintenance moves no ref: it writes a pack
-/// and unlinks loose objects. D3.7's argument for why that is safe
+/// and unlinks loose objects. the argument for why that is safe
 /// beside another writer (the keep set, the grace window, class A only
 /// for objects that are in the pack joy just wrote) is an argument about
 /// concurrent writers in general and holds for a writer in this process
@@ -406,7 +406,7 @@ fn maintenance_gate(store: &Path) -> std::sync::Arc<Mutex<()>> {
 /// The key one object store is known by, for the floor and for the gate:
 /// the repository's common directory, canonicalised.
 ///
-/// Canonical because D3.7 says per canonical checkout: two handles
+/// Canonical because the rule says per canonical checkout: two handles
 /// reached through different paths (a symlinked home, a bind mount) are
 /// one store and must not get two floors. The COMMON directory rather
 /// than `repo.path()` because every linked worktree of a checkout shares
@@ -424,7 +424,7 @@ fn store_key(repo: &Repository) -> PathBuf {
 /// file joy writes inside the git directory and reads by its mtime;
 /// where it cannot be written (a read only or foreign owned `.git`) the
 /// in-process map still holds. It is the one piece of state joy leaves
-/// in a checkout it does not own. D3.7 asks for a wall clock floor per
+/// in a checkout it does not own. The rule asks for a wall clock floor per
 /// checkout and does not say where it lives; the file is this package's
 /// addition and is reported as a deviation, because the design document
 /// is the shared contract of J0..J11 and no package edits it.
@@ -488,12 +488,12 @@ const PSEUDO_REFS: &[&str] = &[
 /// pseudo refs, every reflog entry of every reference and of `HEAD`, the
 /// index, and the same two for every linked worktree.
 ///
-/// D3.7 names the reflogs of `HEAD` and `refs/heads/*`; joy reads the
+/// The rule names the reflogs of `HEAD` and `refs/heads/*`; joy reads the
 /// reflog of every reference it enumerates instead, which is a superset
 /// and costs one file open per ref. The reason is `refs/stash`: every
 /// stash entry below the top exists ONLY as a reflog entry of that ref,
 /// and a 14 day sweep that skipped it would eat a person's older
-/// stashes. The load bearing consequence of D3.7 is untouched:
+/// stashes. The load bearing consequence is untouched:
 /// `refs/joy/chats` gets no reflog at all (libgit2 logs only
 /// `refs/heads/*`, `refs/remotes/*`, `refs/notes/*` and `HEAD`), so the
 /// chat store's lost compare and swap commits are pinned by nothing.
@@ -671,7 +671,7 @@ fn closure(repo: &Repository, tips: Vec<Oid>, deadline: Option<Instant>) -> Opti
 /// the odb. Returns the object ids that went in and whether the pack
 /// landed on disk.
 ///
-/// D3.7 says `insert_commit` for the keep set commits and
+/// The rule says `insert_commit` for the keep set commits and
 /// `insert_recursive` for the rest. joy inserts the loose members of the
 /// closure one by one instead, because both of those recurse into the
 /// object's tree: a single loose commit in a large checkout would copy
@@ -833,7 +833,7 @@ fn loose_path(store_dir: &Path, oid: Oid) -> PathBuf {
 /// object.
 ///
 /// libgit2 protects an object it is about to reuse by setting its mtime
-/// (`git_odb__freshen` calls `p_utimes`), and D3.7 has the sweep skip
+/// (`git_odb__freshen` calls `p_utimes`), and the rule has the sweep skip
 /// where that call cannot succeed, because then no other process can
 /// protect the object either. The obvious probe, writing the mtime joy
 /// just read back onto the object, is the one thing this must NOT do: a
@@ -1083,7 +1083,7 @@ fn native(path: &Path) -> String {
 
 /// Say it once per store and process. Answers whether THIS call said it.
 ///
-/// On stderr, not only as a `tracing` event. The host D3.7 singles out
+/// On stderr, not only as a `tracing` event. The host the rule singles out
 /// here is the CLI ("a CLI command is one process per write"), and the
 /// `joy` binary installs no tracing subscriber at all, so an event alone
 /// is dropped on the floor exactly where the sentence is needed: the
@@ -1384,7 +1384,7 @@ mod tests {
         // …and the run SAID so. Asserting the bool on the struct alone
         // would pass just as well with the sentence going nowhere, which
         // is what it did: the CLI installs no tracing subscriber, so the
-        // warning event was dropped on the host D3.7 singles out. The
+        // warning event was dropped on the host the rule singles out. The
         // run above is the first report for this store, so a second ask
         // must answer false.
         let store = repo.commondir().to_path_buf();
@@ -1420,7 +1420,7 @@ mod tests {
         assert!(!report_log_all_ref_updates_once(store.path()));
     }
 
-    /// Both windows D3.7 names, pinned. `owned_store` has no caller yet
+    /// Both windows the rule names, pinned. `owned_store` has no caller yet
     /// (a deviation reported at the package level, not written into the
     /// design, which this package does not own), so the constant would
     /// otherwise be free to rot unnoticed.
@@ -1511,7 +1511,7 @@ mod tests {
         assert!(discard_loose_object(&repo, orphan));
     }
 
-    /// D3.7's acceptance: "a second process holding an object open does
+    /// the acceptance: "a second process holding an object open does
     /// not break the sweep". The object is in the keep set, so the sweep
     /// removes its loose copy (class A) and every reader, including this
     /// process, finds it in the pack afterwards. The child keeps its own
@@ -1665,7 +1665,7 @@ mod tests {
         assert!(repo.find_commit(tip).is_ok());
     }
 
-    /// D3.7's concurrency argument rests on another process being able to
+    /// the concurrency argument rests on another process being able to
     /// protect an object with `utimes`. The freshen probe must therefore
     /// never write on an object itself: a freshen that landed between
     /// joy's stat and joy's probe would be erased by it.

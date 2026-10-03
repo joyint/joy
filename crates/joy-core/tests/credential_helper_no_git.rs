@@ -4,7 +4,7 @@
 //! The acceptance sentence of J4a, run: on a machine with
 //! `credential.helper=manager` and NO git on PATH, joy obtains a
 //! credential, and nothing in the run is a git process (forge
-//! connection NG, design D1.3).
+//! connection NG).
 //!
 //! git2's own runner cannot do this. It builds the string
 //! `git credential-<name>` for every short helper name and hands it to
@@ -73,7 +73,7 @@ fn a_credential_arrives_on_a_machine_with_no_git_on_path() {
     assert_eq!(credential.password, "s3cret");
     assert_eq!(credential.helper, "manager");
 
-    // The other half of D1.3 that git2 never runs: the outcome goes
+    // The other half that git2 never runs: the outcome goes
     // back to the helper, so a revoked entry is erased instead of
     // replayed on the next contact.
     credential_helper::accepted("https://github.com/joyint/joy.git");

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! THE `certificate_check` closure (design D1.4a, D1.8c, D1.12).
+//! THE `certificate_check` closure.
 //!
 //! git2 0.21 holds exactly ONE such slot per contact
 //! (`certificate_check: Option<Box<CertificateCheck<'a>>>`,
@@ -30,13 +30,13 @@
 //! the host name and nothing else: no port, and no verdict. So joy
 //! carries the port and the host kind itself, taken from the remote as
 //! the person configured it, and resolves the person's ssh config for
-//! the host libgit2 really dialled (`Host` aliases included, D1.4).
+//! the host libgit2 really dialled (`Host` aliases included).
 //!
 //! **Why the refusal sentence travels in a cell.** libgit2 overwrites
 //! whatever message the callback set: on a refusal it writes
 //! "invalid or unknown remote ssh hostkey" over it and returns the
 //! callback's code (ssh_libssh2.c:759-767). The CODE survives, which is
-//! what the classifier reads (`needs_host_trust`, D1.8b), but the
+//! what the classifier reads (`needs_host_trust`), but the
 //! sentence does not, so joy keeps its own sentence in a thread local
 //! cell and the contact boundary substitutes it when the operation
 //! returns ([`take_refusal`]).
@@ -83,11 +83,11 @@ static PROMPT: Mutex<Option<Ask>> = Mutex::new(None);
 /// terminal and no window of its own, so this is the seam through
 /// which a front end lends joy-core its terminal. joy's own CLI
 /// installs one in `cli_main`, and only for an `Interactive` host
-/// (package J10, `joy-cli/src/lib.rs`); the desktop installs its own
+/// (`joy-cli/src/lib.rs`); the desktop installs its own
 /// for a foreground action. A host that installs none refuses an
 /// unknown host key instead of trusting it, whatever its host kind
 /// claims. That refusal names the file and the line to paste, so the
-/// next step exists on that path too (D1.8b).
+/// next step exists on that path too.
 pub fn set_trust_prompt(ask: impl Fn(&TrustRequest) -> bool + Send + Sync + 'static) {
     *PROMPT.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(ask));
 }
@@ -140,7 +140,7 @@ thread_local! {
     /// is exactly the scope of one contact.
     static REFUSAL: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
     /// What the x509 branch read off the certificate, for the detail
-    /// line of `tls_untrusted` (D1.8c, package J4p).
+    /// line of `tls_untrusted`.
     static X509: std::cell::RefCell<Option<X509Note>> = const { std::cell::RefCell::new(None) };
 }
 
@@ -226,7 +226,7 @@ impl Trust {
     }
 
     /// The x509 branch: read something for the detail line, decide
-    /// nothing (D1.8c).
+    /// nothing.
     fn x509(&mut self, der: &[u8]) -> Result<Status, git2::Error> {
         let (issuer, subject) = der_names(der);
         let note = X509Note { issuer, subject };
@@ -277,7 +277,7 @@ impl Trust {
             .unwrap_or(known_hosts::DEFAULT_PORT)
     }
 
-    /// The whole check of D1.4a, in Rust, answering `CertificateOk` or
+    /// The whole check, in Rust, answering `CertificateOk` or
     /// an error and never passthrough.
     fn host_key(
         &mut self,
@@ -355,7 +355,7 @@ impl Trust {
 
     /// What the pinned keys of the three public forges say about this
     /// key. Consulted only where no file holds a line for the host
-    /// (D1.4a), and only for the hosts the pin file names.
+    ///, and only for the hosts the pin file names.
     fn pin_says(&self, host: &str, key_type: &str, key: &[u8]) -> Pin {
         let Some(pin) = pins::consulted_for(host) else {
             return Pin::Published(None);
@@ -389,7 +389,7 @@ impl Trust {
     }
 
     /// A host key no file of this machine speaks about: the rule per
-    /// host kind (D1.4a).
+    /// host kind.
     fn unseen(
         &mut self,
         host: &str,
@@ -424,7 +424,7 @@ impl Trust {
             );
         }
         // Every refusal on this path ends in the same next step
-        // (D1.8b: one, and named): the line to paste and the file it
+        // (one, and named): the line to paste and the file it
         // goes in. Only the middle clause differs, because only the
         // reason differs.
         let unseen_refusal = |because: &str| {
@@ -447,7 +447,7 @@ impl Trust {
         }
         if !kind.may_prompt() {
             // `Background` and `Delegated`: never ask, never write, in
-            // every StrictHostKeyChecking mode (D1.4a). The one key
+            // every StrictHostKeyChecking mode. The one key
             // they accept without a file is the pinned one, and they
             // record nothing about it either, so a pin that is replaced
             // takes effect at once.
@@ -546,7 +546,7 @@ enum Pin {
 ///
 /// The CODE is what survives libgit2's overwrite and what the
 /// classifier reads (`GIT_ECERTIFICATE` on an ssh contact is
-/// `needs_host_trust`, D1.8b); the sentence travels in the cell and is
+/// `needs_host_trust`); the sentence travels in the cell and is
 /// substituted when the operation returns.
 fn refuse(sentence: String) -> Result<Status, git2::Error> {
     tracing::debug!(sentence, "host key refused");

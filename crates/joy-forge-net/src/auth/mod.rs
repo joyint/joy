@@ -11,21 +11,21 @@
 //! person with no forge CLI could not sign in at all. This module is
 //! the other half:
 //!
-//! - [`store`] owns the entry (D2.6). The connector binary is the ONLY
+//! - [`store`] owns the entry. The connector binary is the ONLY
 //!   process that touches it, `Entry::new` is the only addressing, and
 //!   a machine whose credential store cannot answer gets the 0600 file
 //!   joy writes itself.
-//! - [`lock`] is the refresh lock of D2.6a, taken on the one cross
+//! - [`lock`] is the refresh lock, taken on the one cross
 //!   process primitive joy has (`joy_core::util::file_lock`). Two
 //!   refreshes at once killed Codeberg tokens for an hour once; this is
 //!   why they cannot happen again.
 //! - [`oauth`] is the device grant (GitHub, GitLab) and the PKCE S256
 //!   loopback door (the Gitea family), plus the refresh that rotation
-//!   safe forges need (D2.7).
-//! - [`choose`] is the login order of D4.1c: the device local pin, the
+//!   safe forges need.
+//! - [`choose`] is the login order: the device local pin, the
 //!   transport memory, the only login, then one probe per remote.
 //! - [`verbs`] is `token`, `token-store`, `login`, `logout` and
-//!   `web-url` with the shapes of D2.4.
+//!   `web-url` with the shapes.
 //!
 //! Three rules hold in every file here:
 //!
@@ -35,7 +35,7 @@
 //!    by discipline: every type that carries a token prints its
 //!    [`fingerprint`] instead (`Record`, [`Resolved`], `oauth::Grant`),
 //!    so one `tracing::debug!(?resolved)` cannot leak one.
-//! 2. **The connector never opens a browser** (D2.4). It says where the
+//! 2. **The connector never opens a browser**. It says where the
 //!    person must go; the host decides what to do with that.
 //! 3. **A refusal is an answer, not a failure.** Every verb here exits
 //!    0 with an object that names the state.
@@ -47,8 +47,8 @@ pub mod pin;
 pub mod store;
 pub mod verbs;
 
-/// What a sign in is FOR (`--for`, D2.4). It picks the scope set of
-/// D2.7a, which is the whole reason the flag exists: a read only member
+/// What a sign in is FOR (`--for`). It picks the scope set of
+/// Which is the whole reason the flag exists: a read only member
 /// asks for less, and `joy forge login --for create` widens it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Purpose {
@@ -91,7 +91,7 @@ impl std::str::FromStr for Purpose {
     }
 }
 
-/// Which step of the login order of D4.1c chose the login this answer
+/// Which step of the login order chose the login this answer
 /// names. Every answer that names a token carries it, because "one row
 /// per host, each naming the login it holds" cannot be kept otherwise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,7 +117,7 @@ impl ChoseBy {
     }
 }
 
-/// Where a token came from (`source` in D2.4). `keychain` and `file`
+/// Where a token came from (`source`). `keychain` and `file`
 /// are the connector's own entry; the other three are read only for
 /// joy, because joy never refreshes, writes or revokes them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -144,13 +144,13 @@ impl Source {
 
     /// Whether the connector owns this credential. It owns exactly the
     /// two it wrote: a foreign CLI's token is refreshed, rewritten and
-    /// revoked by that CLI alone (D2.6).
+    /// revoked by that CLI alone.
     pub fn is_own(self) -> bool {
         matches!(self, Source::Keychain | Source::File)
     }
 }
 
-/// One token, ready to be used or reported. Every field of D2.4's
+/// One token, ready to be used or reported. Every field of the
 /// `token` answer is here, so a caller cannot report half of it.
 #[derive(Clone)]
 pub struct Resolved {
@@ -190,7 +190,7 @@ impl Resolved {
 
 /// The first twelve hex digits of a token's SHA-256: the shape the
 /// platform already uses (platform/src/auth/mod.rs:571-577) and what
-/// D2.6a compares under the refresh lock to decide whether the entry is
+/// The rule compares under the refresh lock to decide whether the entry is
 /// still the one this process read before it waited.
 ///
 /// It is a fingerprint and never the token: twelve hex digits are

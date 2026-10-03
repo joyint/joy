@@ -155,8 +155,7 @@ pub fn build_suggestion(inp: &Inputs) -> String {
     assemble("", &trailers, &comments)
 }
 
-/// A commit message that references no Joy item (D3.3 of the forge
-/// connection NG design). Carries what the ADR-015 diagnostic needs, so
+/// A commit message that references no Joy item. Carries what the ADR-015 diagnostic needs, so
 /// the text is built once and every caller prints the same thing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitMsgError {
@@ -189,7 +188,7 @@ impl std::fmt::Display for CommitMsgError {
 
 impl std::error::Error for CommitMsgError {}
 
-/// The item reference rule of `.joy/hooks/commit-msg`, in process (D3.3).
+/// The item reference rule of `.joy/hooks/commit-msg`, in process.
 ///
 /// libgit2 runs no hooks, so every commit joy writes itself passes this
 /// instead of the bash hook. The rule is the hook's, verbatim: a
@@ -212,7 +211,7 @@ pub fn validate(message: &str, acronym: &str) -> Result<(), CommitMsgError> {
     })
 }
 
-/// D3.3 for joy's OWN automatic commits: warn and proceed.
+/// The item rule for joy's OWN automatic commits: warn and proceed.
 ///
 /// A refusal here would strand the write joy has already made with
 /// uncommitted `.joy` changes and a message the person never typed and
@@ -386,7 +385,7 @@ mod tests {
         assert!(first.contains("[JOY-0006-FF]"));
     }
 
-    /// D3.3: the in-process rule answers exactly what the bash hook
+    /// The in-process rule answers exactly what the bash hook
     /// answers, for the cases the hook enumerates.
     #[test]
     fn the_item_rule_matches_the_hook() {

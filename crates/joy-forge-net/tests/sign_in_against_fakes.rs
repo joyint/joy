@@ -4,7 +4,7 @@
 //! The sign in verbs against in process fakes (JOY-029B-B0, package
 //! J3).
 //!
-//! Every OAuth and REST behaviour of D2.7 is proved here, and nothing
+//! Every OAuth and REST behaviour is proved here, and nothing
 //! in this file contacts a real forge: the device endpoints, the token
 //! endpoint, the PKCE authorize step and the REST calls are all a
 //! `FakeForge` on `127.0.0.1`, and the "browser" is a TCP connection
@@ -52,7 +52,7 @@ fn user_reply() -> Reply {
     .with_header("X-OAuth-Scopes", "repo, user:email")
 }
 
-/// J3's acceptance, on the store D2.6 calls the normal case: after a
+/// J3's acceptance, on the store the rule calls the normal case: after a
 /// successful login `token` answers `"source":"keychain"` with the
 /// granted scopes, and the 0600 file is not written at all.
 ///
@@ -107,7 +107,7 @@ fn a_login_stores_its_token_in_the_credential_store_and_token_reads_it_back() {
     assert_eq!(answer["token"], "gho_in_the_keychain");
     assert_eq!(answer["login"], "scotty");
     assert_eq!(answer["scopes"], "repo user:email");
-    // Step 3 of D4.1c: the only login the host holds, and the list it
+    // Step 3: the only login the host holds, and the list it
     // reads comes from the index entry, because `Entry::new` cannot
     // enumerate.
     assert_eq!(answer["chose_by"], "only");
@@ -123,7 +123,7 @@ fn a_login_stores_its_token_in_the_credential_store_and_token_reads_it_back() {
     assert!(vault.logins("forge.test").is_empty());
 }
 
-/// D2.4 and D2.7: the device grant, end to end. The verification event
+/// The device grant, end to end. The verification event
 /// carries the code and the URL, `slow_down` adds five seconds, the
 /// `result` names the login and the store, and the token never appears
 /// in an event.
@@ -173,12 +173,12 @@ fn a_device_login_streams_its_events_and_stores_the_token() {
     assert_eq!(verification["interval"], 5);
     assert_eq!(verification["host"], "forge.test");
     // it is the FIRST event, so a caller sees the code before anything
-    // else happens (D2.3's first event bound)
+    // else happens (the first event bound)
     assert_eq!(events[0]["event"], "verification");
 
     assert_eq!(events_of(&events, "waiting").len(), 1);
     let slow = &events_of(&events, "slow_down")[0];
-    assert_eq!(slow["interval"], 10, "slow_down adds five seconds (D2.7)");
+    assert_eq!(slow["interval"], 10, "slow_down adds five seconds");
     assert_eq!(
         clock.waits(),
         vec![
@@ -198,7 +198,7 @@ fn a_device_login_streams_its_events_and_stores_the_token() {
     assert_eq!(result["stored"], "file");
     assert!(result["expires_at"].is_string());
 
-    // The token is never printed during login (D2.4).
+    // The token is never printed during login.
     let printed = serde_json::to_string(&events).unwrap();
     assert!(
         !printed.contains("gho_from_the_fake"),
@@ -206,7 +206,7 @@ fn a_device_login_streams_its_events_and_stores_the_token() {
     );
 
     // And afterwards `token` answers with the stored credential, the
-    // granted set and the login it belongs to (D2.4, D4.1c).
+    // granted set and the login it belongs to.
     let answer = verbs::token(&forge, &Target::Host("forge.test".into()), None, &ctx);
     assert_eq!(answer["known"], true);
     assert_eq!(answer["token"], "gho_from_the_fake");
@@ -217,7 +217,7 @@ fn a_device_login_streams_its_events_and_stores_the_token() {
     assert_eq!(answer["username"], "x-access-token");
 }
 
-/// D2.7: every named OAuth error becomes one `error` event and the
+/// Every named OAuth error becomes one `error` event and the
 /// verb still exits 0, because a refusal is an answer.
 #[test]
 fn a_refused_device_login_ends_in_one_error_event() {
@@ -250,7 +250,7 @@ fn a_refused_device_login_ends_in_one_error_event() {
     assert_eq!(error["message"], "the person said no");
 }
 
-/// D2.7: device flow disabled on the registration is its own code, so
+/// Device flow disabled on the registration is its own code, so
 /// a host can say what to do about it.
 #[test]
 fn a_forge_with_the_device_flow_switched_off_says_so_by_name() {
@@ -276,7 +276,7 @@ fn a_forge_with_the_device_flow_switched_off_says_so_by_name() {
     );
 }
 
-/// D3.11, layer 3: the agent image carries `joy forge login`, so the
+/// Layer 3: the agent image carries `joy forge login`, so the
 /// connector refuses it too, instantly, and names the headless door.
 #[test]
 fn a_delegated_session_is_refused_before_anything_is_contacted() {
@@ -304,7 +304,7 @@ fn a_delegated_session_is_refused_before_anything_is_contacted() {
     assert!(fake.calls().is_empty(), "nothing is contacted at all");
 }
 
-/// D2.7: the Gitea family has no device grant in any released version,
+/// The Gitea family has no device grant in any released version,
 /// so the door is the authorization code flow with PKCE S256 on a
 /// loopback listener. The connector never opens a browser: this test IS
 /// the browser.
@@ -323,7 +323,7 @@ fn a_pkce_login_answers_the_loopback_redirect_and_exchanges_the_code() {
         match call.path.as_str() {
             // No `X-OAuth-Scopes` here: the Gitea family's token answer
             // carries no scope field and its API does not introspect
-            // one, which is the case D2.7c writes the rule for.
+            // one, which is the case the rule writes the rule for.
             "/user" => Reply::json(200, r#"{"login":"scotty","id":12345}"#),
             _ => Reply::not_found(),
         }
@@ -376,7 +376,7 @@ fn a_pkce_login_answers_the_loopback_redirect_and_exchanges_the_code() {
     assert_eq!(result["login"], "scotty");
     assert_eq!(result["stored"], "file");
     // Gitea's token answer has no scope field, so the set STORED is the
-    // set requested (D2.7c).
+    // set requested.
     assert_eq!(result["scopes"], "repo user:email");
 
     let body = seen.lock().unwrap().join("\n");
@@ -389,7 +389,7 @@ fn a_pkce_login_answers_the_loopback_redirect_and_exchanges_the_code() {
     );
 }
 
-/// D2.4: "newline delimited JSON on stdout, one object per line, each
+/// "newline delimited JSON on stdout, one object per line, each
 /// flushed", and that is why the `waiting` ticks have to leave the
 /// connector WHILE it waits. A Gitea, Forgejo or Codeberg sign in waits
 /// up to fifteen minutes for the person; a connector that collected the
@@ -544,7 +544,7 @@ fn knock(port: u16, path: &str) {
 
 // -- token-store, logout, the refresh lock and the probe -----------------------
 
-/// D2.4: `token-store` reads ONE token, validates it with `identity`
+/// `token-store` reads ONE token, validates it with `identity`
 /// and stores it, and then answers the same object as `token`. The
 /// token is never an argument in either direction: it arrives as a
 /// parameter here and on the child's stdin in the CLI.
@@ -581,7 +581,7 @@ fn token_store_validates_the_token_with_the_forge_before_it_stores_it() {
     assert_eq!(stored["source"], "file");
     // The granted set the forge reported, beside the token in the same
     // entry and SPACE separated, whatever the forge's own spelling was
-    // (D2.7c).
+    //.
     assert_eq!(stored["scopes"], "repo user:email");
     assert_eq!(stored["chose_by"], "only");
 
@@ -636,7 +636,7 @@ fn a_forge_that_cannot_be_reached_is_not_a_forge_that_refused_the_token() {
     assert_eq!(verbs::token(&forge, &host, None, &ctx)["known"], false);
 }
 
-/// D2.4: `logout` removes the entry and revokes the token at the forge
+/// `logout` removes the entry and revokes the token at the forge
 /// where the forge offers it, with `DELETE /applications/{client_id}/token`
 /// and never `.../grant`.
 #[test]
@@ -687,7 +687,7 @@ fn logout_removes_the_entry_and_revokes_the_token_at_the_forge() {
     assert_eq!(verbs::token(&forge, &host, None, &ctx)["known"], false);
 }
 
-/// D2.4, D2.6: a credential joy did not write is not joy's to remove.
+/// A credential joy did not write is not joy's to remove.
 /// `logout` names the foreign command instead.
 #[test]
 fn logout_names_the_foreign_command_for_a_foreign_credential() {
@@ -705,7 +705,7 @@ fn logout_names_the_foreign_command_for_a_foreign_credential() {
     assert_eq!(answer["command"], "gh auth logout --hostname forge.test");
 }
 
-/// D2.6a, verbatim: "the lock lives in the plugin and is taken by every
+/// Verbatim: "the lock lives in the plugin and is taken by every
 /// `token`, `login`, `token-store` and `logout` call that may write".
 ///
 /// `logout` writes: it deletes the entry. Without the lock a refresh
@@ -764,7 +764,7 @@ fn logout_takes_the_refresh_lock_and_never_deletes_beside_a_refresh() {
     assert!(path.exists(), "the lock file is never unlinked");
 }
 
-/// D2.4: `logout` on a host that holds two of joy's OWN logins removes
+/// `logout` on a host that holds two of joy's OWN logins removes
 /// nothing and names them. Naming gh's command there would be a lie
 /// twice over: joy holds these credentials, and which one to sign out
 /// is not a thing this call may guess at.
@@ -854,7 +854,7 @@ fn logout_that_could_not_write_the_file_does_not_report_success() {
     );
 }
 
-/// D2.6a: an expired token is refreshed exactly once, the whole answer
+/// An expired token is refreshed exactly once, the whole answer
 /// is written back (a forge that ROTATES its refresh token leaves no
 /// stale one behind), and the second reader sees the new token without
 /// a second refresh.
@@ -925,7 +925,7 @@ fn an_expired_token_is_refreshed_once_and_the_rotation_is_written_back() {
     );
 }
 
-/// D2.6a: while another process holds the refresh lock, this one does
+/// While another process holds the refresh lock, this one does
 /// NOT refresh. It looks again and, finding nothing usable, answers
 /// `busy`.
 #[test]
@@ -969,11 +969,7 @@ fn a_held_refresh_lock_answers_busy_and_refreshes_nothing() {
     let answer = verbs::token(&forge, &host, None, &ctx);
     assert_eq!(answer["known"], false);
     assert_eq!(answer["reason"], "busy");
-    assert_eq!(
-        refreshes.load(Ordering::SeqCst),
-        0,
-        "never refresh anyway (D2.6a)"
-    );
+    assert_eq!(refreshes.load(Ordering::SeqCst), 0, "never refresh anyway");
     drop(held);
 }
 
@@ -1260,7 +1256,7 @@ fn renew_that_cannot_be_attempted_answers_offline_and_marks_nothing() {
     assert_eq!(record.refresh_token.as_deref(), Some("rt-old"));
 }
 
-/// D4.1c: a host with two logins and a repository only the second can
+/// A host with two logins and a repository only the second can
 /// reach. One probe per candidate, the answer says `"chose_by":"probe"`,
 /// and the winner is remembered so the next call spends nothing.
 #[test]
@@ -1303,7 +1299,7 @@ fn a_repository_only_the_second_login_reaches_is_chosen_by_the_probe() {
     assert_eq!(fake.calls().len(), 2, "one request per candidate, no more");
 
     // The winner is remembered per normalised remote, so the next call
-    // spends nothing at all (D4.1c).
+    // spends nothing at all.
     let next = sandbox(dir.path()).with_remote(remote);
     let again = verbs::token(&forge, &Target::Remote(remote.into()), None, &next);
     assert_eq!(again["login"], "work");
@@ -1311,8 +1307,8 @@ fn a_repository_only_the_second_login_reaches_is_chosen_by_the_probe() {
     assert_eq!(fake.calls().len(), 2, "the memory spends no request");
 }
 
-/// D4.1c, step 4, verbatim: "the first that answers 200, and for a push
-/// direction reports write, wins".
+/// The first that answers 200, and for a push direction reports
+/// write, wins.
 ///
 /// This is the section's own "This is not academic" case: a private
 /// repository where the login the probe reaches first holds Reporter
@@ -1371,7 +1367,7 @@ fn a_push_direction_refuses_a_login_that_can_only_read() {
     assert_eq!(neither["login"], "work", "{neither}");
 }
 
-/// D4.1c is the order for a REMOTE, and `token` is not the only verb
+/// The rule is the order for a REMOTE, and `token` is not the only verb
 /// that needs one: `store`, `files`, `release`, `repositories` and
 /// `create-repository` all reach their credential through `Ctx::token`.
 /// A host with two logins, no pin and no memory is decided by the probe
@@ -1416,7 +1412,7 @@ fn every_verb_reaches_its_credential_through_the_whole_login_order() {
     );
     let spent = fake.calls().len();
     assert_eq!(spent, 2, "one request per candidate");
-    // One probe per remote, never one per contact (D4.1c): the same
+    // One probe per remote, never one per contact: the same
     // question inside the same call spends nothing.
     assert_eq!(
         ctx.token("github", "forge.test").as_deref(),
@@ -1430,7 +1426,7 @@ fn every_verb_reaches_its_credential_through_the_whole_login_order() {
     );
 }
 
-/// D4.1c, step 5, for a push: a repository every login can read and
+/// Step 5, for a push: a repository every login can read and
 /// none can push to is not "cannot reach", and the sentence says which
 /// it is.
 #[test]
@@ -1465,7 +1461,7 @@ fn a_repository_nobody_may_push_to_says_that_and_not_something_else() {
     assert!(message.contains("can push to acme/widgets"), "{message}");
 }
 
-/// D1.8a: the classifier reads the evidence, and joy does not destroy
+/// The classifier reads the evidence, and joy does not destroy
 /// it. A forge that could not be ASKED has told joy nothing about any
 /// login, so "none of your logins can reach this repository" is a claim
 /// this call has no ground for, and the login memory of the remote is
@@ -1512,7 +1508,7 @@ fn a_forge_that_cannot_be_reached_is_not_a_login_that_cannot_reach_it() {
     );
 }
 
-/// D4.1c, step 5: when no login reaches the repository, the answer says
+/// Step 5: when no login reaches the repository, the answer says
 /// so and names the logins that were tried.
 #[test]
 fn no_login_that_reaches_the_repository_is_its_own_answer() {
@@ -1545,7 +1541,7 @@ fn no_login_that_reaches_the_repository_is_its_own_answer() {
     assert!(message.contains("acme/widgets"), "{message}");
 }
 
-/// D4.1c, step 1: the device local pin wins over everything and spends
+/// Step 1: the device local pin wins over everything and spends
 /// no request.
 #[test]
 fn the_device_local_pin_decides_without_a_single_request() {
@@ -1576,7 +1572,7 @@ fn the_device_local_pin_decides_without_a_single_request() {
     assert!(fake.calls().is_empty(), "a pin costs no request");
 }
 
-/// D2.4: `web-url` is the twin source of D1.5, and only the connector
+/// `web-url` is the twin source, and only the connector
 /// knows the web base of a self hosted instance.
 #[test]
 fn web_url_answers_the_https_twin_of_a_remote() {
@@ -1593,11 +1589,11 @@ fn web_url_answers_the_https_twin_of_a_remote() {
     assert!(fake.calls().is_empty(), "the twin costs no request");
 }
 
-/// G2 and D3.8: a delegated agent inherits everything through the joy
+/// G2 and the rule: a delegated agent inherits everything through the joy
 /// CLI, so it READS the credential the person stored and it changes
 /// nothing of it. It stores nothing, it signs nothing out, and where a
 /// refresh would be needed it answers with the sentence that names who
-/// has to sign in (D1.10: a delegated host never prompts).
+/// has to sign in (a delegated host never prompts).
 ///
 /// The vault here is the person's own file with the flag `Ctx::new`
 /// sets for a `Delegated` host; the wiring from the host kind to the
@@ -1723,10 +1719,10 @@ fn a_delegated_session_reads_the_stored_credential_and_never_changes_it() {
     assert_eq!(calls.load(Ordering::SeqCst), 1);
 }
 
-// -- the organisation wall of D2.7c (JOY-02A9-48) ------------------------------
+// -- the organisation wall (JOY-02A9-48) ------------------------------
 
 /// The body GitHub writes when an OAuth application is not approved for
-/// an organisation. It is the cheap reading of D2.7c: the forge names
+/// an organisation. It is the cheap reading: the forge names
 /// the restriction itself and joy spends no second request on it.
 const RESTRICTED: &str = r#"{"message":"Although you appear to have the correct authorization credentials, the `acme` organization has enabled OAuth App access restrictions, meaning that data access to third-parties is limited."}"#;
 
@@ -1750,7 +1746,7 @@ fn two_logins(ctx: &Ctx) {
 /// the one". Telling a person to "sign in with the login that can"
 /// sends them round a door that refuses every account they have, while
 /// the one action that helps belongs to an owner of the organisation,
-/// on one page (D2.7c).
+/// on one page.
 #[test]
 fn a_403_that_names_the_restriction_answers_needs_org_approval() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
@@ -1788,7 +1784,7 @@ fn a_403_that_names_the_restriction_answers_needs_org_approval() {
     );
 }
 
-/// The second reading of D2.7c, and the one the operator's own probe
+/// The second reading, and the one the operator's own probe
 /// met: GitHub answers 404 rather than 403 for a private repository a
 /// token may not see. The 404 alone decides nothing; the OWNER's own
 /// record, refused with the restriction named, is what says the wall is
@@ -1826,7 +1822,7 @@ fn a_404_with_the_owner_record_refused_is_the_wall() {
 
 /// And joy invents no wall: where the owner's record names no
 /// restriction, a 404 is a repository that was renamed, deleted or
-/// never visible to these logins, which is D4.1c's step 5 and says so.
+/// never visible to these logins, which is the step 5 and says so.
 /// This is the mistyped `acme/widgts` of a member of `acme` too
 /// (JOY-02A9-48): belonging to the owner organisation is not evidence
 /// of a wall, and joy no longer asks who belongs to what.
@@ -1859,7 +1855,7 @@ fn a_404_with_no_restriction_named_is_still_no_login_for_repo() {
 
 /// JOY-02A9-48, finding 2, second half: whether a person is told about
 /// the wall may not depend on a memory row. The pin and the memory of
-/// D4.1c choose the LOGIN without spending a request, which is what
+/// The rule choose the LOGIN without spending a request, which is what
 /// they are for; they know nothing about the repository, and a call
 /// that skipped the question entirely answered "here is your token" for
 /// a repository the token cannot reach.
@@ -1916,7 +1912,7 @@ fn the_wall_is_answered_whether_a_pin_a_memory_or_the_probe_chose_the_login() {
 }
 
 /// A login that reaches the repository is not asked anything else: the
-/// memory keeps its promise of D4.1c and the call spends one request,
+/// memory keeps its promise and the call spends one request,
 /// not two.
 #[test]
 fn a_remembered_login_that_reaches_the_repository_still_answers_at_once() {

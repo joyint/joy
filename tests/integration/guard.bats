@@ -239,7 +239,7 @@ EOF
     setup_team_project
     # --user always beats git config, so a stranger typing their own
     # address is refused the same way whether or not this repository's
-    # git config names anyone (JOY-02AE-1A, correcting D3.9).
+    # git config names anyone (JOY-02AE-1A).
     run joy auth --user stranger@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]

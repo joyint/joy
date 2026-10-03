@@ -123,7 +123,7 @@ EOF
     joy status "$ITEM_ID" in-progress
     # Dev redeems their invitation, which enrols them. Naming dev in
     # this repository's git config is what makes the bare command below
-    # act as dev (JOY-02AE-1A, correcting D3.9).
+    # act as dev (JOY-02AE-1A).
     joy auth --otp "$DEV_OTP" --user dev@example.com --passphrase "alpha bravo charlie delta echo foxtrot"
     git config user.email dev@example.com
     joy status "$ITEM_ID" review

@@ -153,7 +153,7 @@ pub fn run(args: CryptArgs) -> Result<()> {
 /// The root, the project, and the at-rest key of the member acting here.
 /// The member comes from [`joy_core::identity::acting_human_key`] and
 /// therefore from the session, then this device's pin, then git config as
-/// a prefill (D3.9); it is a member map key, so every lookup below is by
+/// a prefill; it is a member map key, so every lookup below is by
 /// key and an anonymous project (ADR-042) needs no special case.
 ///
 /// The HUMAN, not the AI: every caller here unwraps a zone with a
@@ -179,7 +179,7 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
 /// whatever its capability list says, and a human without `manage` is
 /// refused too.
 ///
-/// Identity and rights are two questions (D3.9). J11 answered the first
+/// Identity and rights are two questions. J11 answered the first
 /// one from the session and the device pin, which is why this one has to
 /// be asked out loud here: before it, a machine with no git config
 /// refused these verbs by accident, with git2's "user.email is empty",

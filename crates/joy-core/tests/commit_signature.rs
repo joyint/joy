@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! What a commit joy writes is signed with (D4.5 of the forge connection
-//! NG design, JOY-0297-1A): the acting member decides both fields, git
+//! What a commit joy writes is signed with
+//! (JOY-0297-1A): the acting member decides both fields, git
 //! config is a prefill for the display name and nothing else, and an
 //! anonymous project never lets an address into a commit.
 

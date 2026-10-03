@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The SOCKS refusal, at the client (D1.11, applied to the connector by
-//! D2.8: "the plugin refuses a SOCKS proxy with the same sentence").
+//! The SOCKS refusal, at the client (applied to the connector by
+//! "the plugin refuses a SOCKS proxy with the same sentence").
 //!
 //! Its own test binary, because it sets an environment variable and a
 //! process has only one environment. The request is never attempted:

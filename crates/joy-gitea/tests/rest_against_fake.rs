@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The Gitea connector against an in process fake API (JOY-0298-E4,
-//! design D2.5, D2.7c and D2.8).
+//! The Gitea connector against an in process fake API (JOY-0298-E4).
 //!
 //! Gitea is the forge with no canonical host, so this file is also
 //! where `forges.yaml` earns its place: an internal instance nobody
@@ -34,7 +33,7 @@ fn remote() -> Target {
 }
 
 /// Gitea's own scheme is `Authorization: token <t>`, and the size it
-/// reports is KiB, which the protocol carries as bytes (D2.4).
+/// reports is KiB, which the protocol carries as bytes.
 #[test]
 fn store_speaks_giteas_auth_scheme_and_normalises_the_size() {
     let fake = FakeForge::start(|call| match call.path.as_str() {
@@ -52,7 +51,7 @@ fn store_speaks_giteas_auth_scheme_and_normalises_the_size() {
     );
 }
 
-/// D2.7c: the `required=` list of Gitea's own refusal is parsed into
+/// The `required=` list of Gitea's own refusal is parsed into
 /// `needed`, and the answer is never `denied`.
 #[test]
 fn a_scope_refusal_names_what_the_instance_asked_for() {

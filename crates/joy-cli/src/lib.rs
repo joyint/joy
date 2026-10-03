@@ -376,7 +376,7 @@ fn auto_sync_repo() {
 }
 
 /// Say a forge refusal joy-core met on a path that is not the command's
-/// answer, in the words of [`contact_report`] (D3.8): the state, the
+/// answer, in the words of [`contact_report`]: the state, the
 /// plain sentence and the one next step, as one JSON object on stderr in
 /// `--json` mode so that stdout stays the command's one envelope.
 fn say_a_contact_aside(
@@ -389,14 +389,14 @@ fn say_a_contact_aside(
     contact_report::Refusal::of(&host, error).say_aside(headline, tail);
 }
 
-/// Lend joy-core this terminal for the host key question of D1.4a, and
+/// Lend joy-core this terminal for the host key question, and
 /// only where there is a person at it.
 ///
 /// joy-core owns the one `certificate_check` closure and every
 /// known_hosts rule behind it; what it has no way to do is ask. A
 /// `Background` or `Delegated` host installs nothing, and a host that
 /// installs nothing refuses an unknown key with the file and the line
-/// to paste, which is what D1.4a asks of those two anyway.
+/// to paste, which is what the rule asks of those two anyway.
 fn install_host_key_question(kind: joy_core::host::HostKind) {
     if kind == joy_core::host::HostKind::Interactive {
         joy_core::vcs::certificates::set_trust_prompt(ask_about_a_host_key);
@@ -404,7 +404,7 @@ fn install_host_key_question(kind: joy_core::host::HostKind) {
 }
 
 /// What a person is shown before joy trusts a host key it has never
-/// seen (design D1.4a), and what joy would write if they say yes.
+/// seen, and what joy would write if they say yes.
 ///
 /// Everything the person needs to compare with the forge's published
 /// fingerprint is in the two first lines, in the spelling the forges
@@ -540,7 +540,7 @@ pub fn cli_main() -> anyhow::Result<()> {
     });
 
     // Who is behind this process, decided ONCE, here, before anything
-    // dispatches (D1.1). Everything downstream reads the answer through
+    // dispatches. Everything downstream reads the answer through
     // `joy_core::host::process_host()` and never looks at the environment
     // again. Two facts go into it: whether a person can be asked anything
     // at all (a terminal on both ends, and not a `--json` run, whose
@@ -566,7 +566,7 @@ pub fn cli_main() -> anyhow::Result<()> {
 
     // ...and this host's way of saying a forge refusal that is not the
     // command's answer, so joy-core's own contacts speak the one
-    // vocabulary of D3.8 too. The auto-git push is the one that needed
+    // vocabulary too. The auto-git push is the one that needed
     // it: with `workflow.auto-git: push` it runs after nearly every joy
     // write, and it said `Warning: auto-git push failed: <prose>` with
     // no state word, no next step and no object under `--json`.
@@ -760,7 +760,7 @@ mod tests {
         );
     }
 
-    /// D1.4a: the question exists where a person does, and nowhere
+    /// The question exists where a person does, and nowhere
     /// else. A `Background` or `Delegated` joy that installed one would
     /// hand an unanswerable question to a hook or an agent; joy-core
     /// then treats "nobody was asked" as its own answer and refuses by
@@ -781,7 +781,7 @@ mod tests {
     }
 
     /// What a person reads before joy appends a line to known_hosts
-    /// (D1.4a): the host with its port, the fingerprint in the spelling
+    ///: the host with its port, the fingerprint in the spelling
     /// the forges publish, the published key when a pin knows one, the
     /// fact that this host is known under other key types, and the file
     /// that would change.

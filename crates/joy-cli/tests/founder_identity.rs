@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The founding step from the command line on a machine with no git
-//! identity (D3.9 of the forge connection NG design, JOY-0297-1A).
+//! identity (JOY-0297-1A).
 //!
 //! These drive the real binary, because the question is what the CLI does
 //! at its entry point: it decides the host kind once, and everything that
@@ -148,7 +148,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     );
 }
 
-/// D3.9: with no git config and nobody at the terminal (the test harness
+/// With no git config and nobody at the terminal (the test harness
 /// is a pipe, not a terminal), `joy init` refuses with the named sentence
 /// and leaves nothing behind.
 #[test]

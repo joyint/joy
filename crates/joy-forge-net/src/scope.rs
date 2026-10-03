@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The scope sets per forge and per verb group (D2.7a), and the
-//! `scope_missing` answer (D2.7c).
+//! The scope sets per forge and per verb group, and the
+//! `scope_missing` answer.
 //!
 //! The verbs fall into seven groups. `claims`, `resolve`, `web-url` and
 //! `version` make no network call and need no scope at all, so they are
 //! not in here.
 //!
-//! The point of the module is one sentence of D2.7c: before a verb the
+//! The point of the module is one sentence: before a verb the
 //! granted set cannot carry, the connector answers locally instead of
 //! spending a request and reporting the forge's refusal as "denied".
 //! A read only member keeps every verb except push, `create-repository`
@@ -16,7 +16,7 @@
 
 use serde_json::json;
 
-/// The seven verb groups of D2.7a.
+/// The seven verb groups.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Group {
     /// A: identity, the verified addresses.
@@ -41,7 +41,7 @@ pub fn needed(forge: &str, group: Group) -> &'static [&'static str] {
     match forge {
         // One set covers A to G on github.com and on GHES alike:
         // `repo user:email`. There is no read only private scope on
-        // GitHub, which D2.7a states instead of promising otherwise.
+        // GitHub, which the rule states instead of promising otherwise.
         "github" => match group {
             Group::Identity => &["user:email", "user"],
             Group::CreateRepository => &["repo", "public_repo"],
@@ -106,7 +106,7 @@ pub fn missing(forge: &str, group: Group, granted: &[String]) -> Vec<String> {
 /// What `create-repository` needs, which on GitHub depends on the
 /// repository's visibility: "public_repo or repo scope to create a
 /// public repository, and repo scope to create a private repository"
-/// (D2.7a). Everywhere else the visibility makes no difference.
+///. Everywhere else the visibility makes no difference.
 pub fn missing_for_create(forge: &str, private: bool, granted: &[String]) -> Vec<String> {
     if forge == "github" && private {
         let has_repo = granted.iter().any(|scope| scope == "repo");
@@ -119,7 +119,7 @@ pub fn missing_for_create(forge: &str, private: bool, granted: &[String]) -> Vec
     missing(forge, Group::CreateRepository, granted)
 }
 
-/// The local answer of D2.7c, on exit code 0. It is an answer and not a
+/// The local answer, on exit code 0. It is an answer and not a
 /// failure, and the host renders it as one sentence with one button.
 pub fn scope_missing(
     host: &str,
@@ -155,7 +155,7 @@ mod tests {
         parse_granted(scopes)
     }
 
-    /// The v2 contradiction D2.7a resolves: with the read write set,
+    /// The v2 contradiction the rule resolves: with the read write set,
     /// `create-repository` is answered locally with `scope_missing`
     /// naming `api`, and `joy forge login --for create` widens it.
     #[test]
@@ -222,7 +222,7 @@ mod tests {
         );
     }
 
-    /// D2.7a names the one place where the visibility decides the
+    /// The rule names the one place where the visibility decides the
     /// scope: `public_repo` creates a PUBLIC repository and nothing
     /// else, so a private one is refused locally instead of spending
     /// the write request.

@@ -5,7 +5,7 @@
 # under their PRIMARY address keeps working when the clone's git config
 # carries GitHub's noreply alias.
 #
-# Since package J11 that git config is a PREFILL and nothing more (D3.9):
+# Since package J11 that git config is a PREFILL and nothing more:
 # it is the address joy OFFERS on a machine that has not been told who
 # acts. So every case here is a CLONE, and `forget_this_device` is what
 # makes it one: the project travels, the device's pin and sessions do
@@ -15,7 +15,7 @@
 # connector; the connector asks the forge itself over HTTP since
 # JOY-0298-E4. The forge boundary (the one thing tests cannot have for
 # real) is two MARKED STUBS: gh as a source of a TOKEN (decision 19),
-# and the fake forge API on the loopback interface (D2.8). Everything
+# and the fake forge API on the loopback interface. Everything
 # else is the real product path: real joy, real connector, real
 # project.
 
@@ -158,7 +158,7 @@ setup_project_with_alice() {
 
 # The tea STUB: the Gitea forge boundary, same shape as the gh one. tea
 # hands out a TOKEN through its credential helper (`tea login helper
-# get`, the command D2.4 names), and the fake API answers the read the
+# get`, the command the rule names), and the fake API answers the read the
 # connector makes with it.
 install_tea_stub() {
     start_fake_forge
@@ -303,7 +303,7 @@ install_glab_stub() {
     STUB_DIR="$TEST_DIR/stub-bin"
     mkdir -p "$STUB_DIR"
     # glab hands out a TOKEN through its credential helper, the command
-    # D2.4 names; `glab auth token` does not exist.
+    # The rule names; `glab auth token` does not exist.
     cat > "$STUB_DIR/glab" <<'STUB'
 #!/bin/sh
 case "$*" in
@@ -346,7 +346,7 @@ STUB
 # caller was holding (JOY-0253-8A): --user must carry through to the
 # lookup, or status reports unauthenticated right after a good login.
 # The alias in the clone's git config is the prefill `--user` overrides,
-# which is the one job git config has left since J11 (D3.9).
+# which is the one job git config has left since J11.
 @test "joy auth --user carries through to the session lookup" {
     setup_project_with_alice
     install_gh_stub

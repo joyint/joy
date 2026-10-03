@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! The real `joy-forge` binary, driven the way joy drives it
-//! (JOY-0298-E4, design D2.1, D2.2a, D2.5 and D2.8).
+//! (JOY-0298-E4).
 //!
 //! Everything here runs the shipped connector as a process, through
 //! joy-core's own runner, against an in process fake forge API. No real
@@ -58,7 +58,7 @@ fn connector_dir() -> &'static Path {
 }
 
 /// Point one host at the fake, the way an operator's workstation image
-/// does (D2.5).
+/// does.
 ///
 /// The cases run in parallel and share one environment, so the entry is
 /// APPENDED under a lock and written by rename: a case never sees half
@@ -80,7 +80,7 @@ fn spec(id: &str) -> &'static forge_plugins::ForgePluginSpec {
     forge_plugins::by_id(id).expect("the registry row")
 }
 
-/// The handshake of D2.2a: the shipped binary answers protocol 2 and
+/// The handshake: the shipped binary answers protocol 2 and
 /// names every forge it carries, and joy finds it beside itself.
 #[test]
 fn the_connector_answers_the_handshake_with_protocol_2() {
@@ -129,7 +129,7 @@ fn identity_answers_on_a_machine_without_curl() {
 }
 
 /// J2's acceptance: an internal host listed in `forges.yaml` is claimed
-/// with no forge CLI installed (D2.5). The PATH is empty, so gh, glab
+/// with no forge CLI installed. The PATH is empty, so gh, glab
 /// and tea do not exist at all.
 #[test]
 fn an_internal_host_in_forges_yaml_is_claimed_without_any_forge_cli() {
@@ -156,7 +156,7 @@ fn an_internal_host_in_forges_yaml_is_claimed_without_any_forge_cli() {
     .expect("answers"));
 }
 
-/// The store verb over REST, with the size normalised to bytes (D2.4).
+/// The store verb over REST, with the size normalised to bytes.
 #[test]
 fn store_answers_over_rest_and_carries_the_size_in_bytes() {
     let dir = setup();
@@ -241,7 +241,7 @@ fn a_release_is_published_end_to_end_over_rest() {
 /// (joy-core has no forge knowledge and therefore no variable name to
 /// pass), the PATH is empty so there is no gh to spawn either, and the
 /// token still reaches the forge in a header: the connector reads the
-/// forge's own variable (D2.4's `env` source).
+/// forge's own variable (the `env` source).
 #[test]
 fn a_release_is_published_with_only_the_forges_own_variable_set() {
     let dir = setup();
@@ -296,7 +296,7 @@ fn a_release_is_published_with_only_the_forges_own_variable_set() {
 /// Server, whose variables (`GH_ENTERPRISE_TOKEN`,
 /// `GITHUB_ENTERPRISE_TOKEN`) nothing sets, the PATH is empty, and the
 /// caller names no variable. The only credential on the machine is the
-/// connector's own entry, in the 0600 file of D2.6.
+/// connector's own entry, in the 0600 file.
 #[test]
 fn a_release_is_published_from_the_connectors_own_credential_alone() {
     let dir = setup();
@@ -341,7 +341,7 @@ fn a_release_is_published_from_the_connectors_own_credential_alone() {
 }
 
 /// The `token` verb answers from that same entry, with the login it
-/// belongs to and the step that chose it (D2.4, D4.1c).
+/// belongs to and the step that chose it.
 #[test]
 fn the_token_verb_answers_from_the_connectors_own_entry() {
     let dir = setup();
@@ -367,7 +367,7 @@ fn the_token_verb_answers_from_the_connectors_own_entry() {
     assert_eq!(answer.username.as_deref(), Some("x-access-token"));
     assert_eq!(answer.scopes.as_deref(), Some("repo user:email"));
 
-    // The same verb with a direction (D4.1c's step 4). One login holds
+    // The same verb with a direction (the step 4). One login holds
     // the host, so no probe runs and the answer is the same one; what
     // this proves is that the shipped binary takes the flag, because a
     // flag it did not know would be a usage error and no answer at all.
@@ -427,7 +427,7 @@ fn a_pasted_token_at_an_unreachable_forge_is_not_a_refused_token() {
     assert_eq!(noted.note, None, "{:?}", noted.note);
 }
 
-/// The connector's own credential file (D2.6), written the way a
+/// The connector's own credential file, written the way a
 /// finished `login` would have written it. The cases share one config
 /// directory, so the entry is merged under a lock.
 fn write_own_credential(dir: &Path, host: &str, login: &str, token: &str) {

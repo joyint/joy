@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The person's ssh config, read by joy (design D1.4).
+//! The person's ssh config, read by joy.
 //!
 //! libgit2 reads NONE of it. There is not one hit for `ssh_config`,
 //! `IdentityFile` or `SSH_AUTH_SOCK` in its sources: it takes the host
@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 use ssh2_config::{ParseRule, SshConfig};
 
 /// What `StrictHostKeyChecking` says about a host joy has never seen
-/// (design D1.4a). `ask` is ssh's own default.
+///. `ask` is ssh's own default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum StrictHostKeys {
     /// Refuse an unknown host without asking.
@@ -58,7 +58,7 @@ impl ProxyRule {
         }
     }
 
-    /// The sentence a person gets instead of a DNS error (D1.4).
+    /// The sentence a person gets instead of a DNS error.
     pub fn sentence(&self) -> String {
         format!(
             "This host uses {} in your ssh config. joy cannot run a proxy helper; \
@@ -252,7 +252,7 @@ impl<'p> Leftovers<'p> {
 /// write one into ~/.ssh/config. The per host `IdentityFile` and the
 /// `ProxyJump` rules that live in those fragments are exactly what
 /// this module exists to read, and a `ProxyJump` joy does not see is a
-/// host refused by DNS error instead of by name (design D1.4).
+/// host refused by DNS error instead of by name.
 ///
 /// Splicing the text in at the directive's own place is what ssh does:
 /// "a Host or Match directive in an included file affects the rest of
@@ -382,7 +382,7 @@ fn include_paths(args: &str, base: &Path) -> Vec<PathBuf> {
 ///
 /// would then carry a `ProxyJump` for `Host *`, and joy would refuse
 /// every ssh remote on the machine instead of the one host that
-/// carries the rule (design D1.4). `Match` blocks are ordinary:
+/// carries the rule. `Match` blocks are ordinary:
 /// 1Password writes one, corporate configs detect a VPN with
 /// `Match exec`.
 ///
@@ -588,7 +588,7 @@ pub fn for_host(host: &str) -> HostSettings {
 /// the `IdentityAgent` and the `User` the person wrote under it, would
 /// be invisible. `ssh git.example.com` would not read the `Host work`
 /// block either, but joy is not answering `ssh git.example.com`, it is
-/// answering `git fetch work` (design D1.4).
+/// answering `git fetch work`.
 ///
 /// The alias is used only when it really resolves to the host being
 /// dialled, so a remote that names a host of its own keeps its own
@@ -615,7 +615,7 @@ pub fn for_contact(dialled: &str, configured: Option<&str>) -> HostSettings {
 /// URL, so `git@work:owner/repo.git` with `Host work / HostName
 /// git.example.com / Port 2222` in the config is otherwise looked up
 /// as the literal name `work` on port 22 and fails with a DNS error,
-/// which names the wrong cause (design D1.4). The configured remote is
+/// which names the wrong cause. The configured remote is
 /// never rewritten on disk; this is the URL of ONE contact.
 ///
 /// `None` when the config changes neither, so a remote that needs no
@@ -625,7 +625,7 @@ pub fn for_contact(dialled: &str, configured: Option<&str>) -> HostSettings {
 /// bracketed form `[git@host:2222]:owner/repo.git` when a port has to
 /// go in. The two forms do not mean the same path: the scp form yields
 /// a path without a leading slash and the `ssh://` form yields one
-/// with (net.c:522-530, :661-806, design D1.5), and libgit2 sends that
+/// with (net.c:522-530, :661-806), and libgit2 sends that
 /// path to the server as it stands.
 pub fn effective_url(url: &str) -> Option<String> {
     let parsed = super::remote_url::RemoteUrl::parse(url)?;
@@ -662,7 +662,7 @@ pub fn effective_url(url: &str) -> Option<String> {
     } else {
         match port {
             // The bracketed scp form, which is how an scp-like remote
-            // carries a port at all (D1.5).
+            // carries a port at all.
             Some(port) => format!("[{user}{host}:{port}]:{}", parsed.path),
             None => format!("{user}{host}:{}", parsed.path),
         }

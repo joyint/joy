@@ -3,7 +3,7 @@
 
 //! The classifier corpora and the budget tests of JOY-0295-36.
 //!
-//! The two corpora are the point of D1.8a: libgit2 compiles `http.c`
+//! The two corpora are the point: libgit2 compiles `http.c`
 //! everywhere except Windows and `winhttp.c` only on Windows, the two
 //! producers share no sentence, and every `GIT_ERROR_OS` message carries
 //! a tail the operating system wrote in the user's own language. Each
@@ -57,7 +57,7 @@ fn https_fetch(err: git2::Error, host: &str) -> ContactEvidence {
 // ---- the vocabulary --------------------------------------------------
 
 /// Every state has its own word, and a reader that knows only the four
-/// old ones still gets a word it understands (D1.8b).
+/// old ones still gets a word it understands.
 #[test]
 fn every_state_has_a_word_and_an_old_word() {
     let all = [
@@ -100,7 +100,7 @@ fn every_state_has_a_word_and_an_old_word() {
 }
 
 /// The status number comes out of exactly the two formats libgit2
-/// prints, and out of no other digits in the sentence (D1.8a).
+/// prints, and out of no other digits in the sentence.
 #[test]
 fn the_status_number_comes_only_from_the_two_libgit2_formats() {
     assert_eq!(
@@ -297,7 +297,7 @@ fn the_openssl_corpus_reads_the_same_in_english_and_in_german() {
         ),
     ];
 
-    // the two producers share no sentence (D1.8a): a WinHTTP literal in
+    // the two producers share no sentence: a WinHTTP literal in
     // this corpus would prove nothing about this build, and one of them
     // ("failed to connect to host") is exactly what hid a whole class of
     // unreachable forges on Linux and macOS
@@ -317,7 +317,7 @@ fn the_openssl_corpus_reads_the_same_in_english_and_in_german() {
     }
 }
 
-/// The two proxy texts of D1.8c are told apart, and neither of them
+/// The two proxy texts are told apart, and neither of them
 /// names the forge: a 407 is about the machine in the middle
 /// (`ContactEvidence::proxy`), and the forge host has nothing to do with
 /// it.
@@ -351,7 +351,7 @@ fn a_proxy_407_names_the_proxy_and_the_two_texts_differ() {
     );
     assert_eq!(v.next_step.as_deref(), Some("sign in to the proxy"));
 
-    // the alternative of D1.8c rides the detail line, never the banner
+    // the alternative rides the detail line, never the banner
     assert!(
         v.guidance
             .as_deref()
@@ -362,7 +362,7 @@ fn a_proxy_407_names_the_proxy_and_the_two_texts_differ() {
 
     // the second text means, off Windows, that the proxy offered only
     // NTLM or Negotiate (auth.c:65-71), which no password joy can ask
-    // for will satisfy. The BUTTON is still D4.7's; what changes is the
+    // for will satisfy. The BUTTON stays the same; what changes is the
     // instruction behind it, which is prose and never a label.
     let integrated = through("proxy requires authentication that we do not support");
     let v = verdict(&integrated);
@@ -414,7 +414,7 @@ fn the_ssh_corpus_separates_a_host_key_from_a_login_from_a_refusal() {
     );
     assert_eq!(classify(&key), Failure::NeedsHostTrust);
 
-    // JOY's OWN refusal, which is the one D1.4a and J4h produce: the
+    // JOY's OWN refusal, which is the one joy's own check produces: the
     // `certificate_check` closure returns an error, and the class is
     // whatever the closure set - `GIT_ERROR_NET` when it set nothing of
     // its own (libgit2 supplies that itself), `Callback` when git2
@@ -609,7 +609,7 @@ fn the_winhttp_corpus_reads_the_same_in_english_and_in_german() {
 // ---- the rules that need more than the error -------------------------
 
 /// A 404 on a fetch is never "offline": either the organisation has not
-/// approved Joy, or the repository is not there for this login (D1.8b).
+/// approved Joy, or the repository is not there for this login.
 ///
 /// Which of the two it is comes from the CONNECTOR and never from "a
 /// token authenticated here once" (JOY-02A9-48). On a signed-in machine
@@ -683,7 +683,7 @@ fn a_404_is_never_offline() {
 }
 
 /// A push that is refused where a read worked is "you can read this and
-/// not write it", not "sign in" (D1.8b).
+/// not write it", not "sign in".
 #[test]
 fn a_refused_push_after_a_working_read_is_no_push_rights() {
     for status in ["403", "404"] {
@@ -705,7 +705,7 @@ fn a_refused_push_after_a_working_read_is_no_push_rights() {
 
 /// GitLab's 403 on git is the failed authentication ban: it sends no
 /// header and cannot be cleared by signing in, so the wait comes from
-/// GitLab's own documentation and the connector is never asked (D2.10).
+/// GitLab's own documentation and the connector is never asked.
 #[test]
 fn a_gitlab_403_waits_the_documented_ban_and_asks_nobody() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -758,10 +758,10 @@ impl RateLimitOracle for CountingOracle {
     }
 }
 
-/// The oracle hook of D2.10: asked on a GitHub host after a 403, asked
+/// The oracle hook: asked on a GitHub host after a 403, asked
 /// once per host per strike window, and its answer is the state - with
 /// the approval page it named, which is the action of that state
-/// (D1.8b, and the acceptance of package J4b).
+/// (and the acceptance of package J4b).
 #[test]
 fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -797,7 +797,7 @@ fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
         "and survives the way to the caller"
     );
     assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
-    // D2.10 limits the CALL, not the verdict: inside the strike window
+    // The rule limits the CALL, not the verdict: inside the strike window
     // the connector is not asked again AND its answer still stands, so a
     // poll that meets the same wall every two seconds keeps the same
     // banner and the same button instead of flipping to "GitHub answered
@@ -813,7 +813,7 @@ fn the_oracle_is_asked_once_per_host_and_decides_the_github_403() {
     assert_eq!(classify(&forbidden()), Failure::Error);
 }
 
-/// D4.7 writes the number into the sentence: "GitHub is rate limiting
+/// The rule writes the number into the sentence: "GitHub is rate limiting
 /// us, retrying in N minutes." The state alone cannot know N, the wait
 /// can, so the sentence is built where the wait is.
 #[test]
@@ -831,8 +831,8 @@ fn the_rate_limit_sentence_carries_the_wait_when_there_is_one() {
         )
     };
     // without an oracle the number comes from the strike table, which
-    // is where D1.8b sends every host but GitHub anyway: the strike
-    // window is ten minutes, so the sentence of D4.7 can name it
+    // is where the rule sends every host but GitHub anyway: the strike
+    // window is ten minutes, so the sentence can name it
     let v = verdict(&too_many());
     assert_eq!(v.failure, Failure::RateLimited);
     assert_eq!(v.wait, Some(STRIKE_LASTS));
@@ -841,7 +841,7 @@ fn the_rate_limit_sentence_carries_the_wait_when_there_is_one() {
         "GitHub is rate limiting us, retrying in 10 minutes."
     );
 
-    // and on a host the oracle is never asked on (D2.10), the same
+    // and on a host the oracle is never asked on, the same
     // table answers instead of "retrying later"
     let codeberg = verdict(&https_fetch(
         error(
@@ -879,7 +879,7 @@ fn the_rate_limit_sentence_carries_the_wait_when_there_is_one() {
     );
 }
 
-/// The connector's own answers are states too (D1.8b, first four rows).
+/// The connector's own answers are states too (first four rows).
 #[test]
 fn the_connectors_answers_are_states() {
     assert_eq!(
@@ -902,7 +902,7 @@ fn the_connectors_answers_are_states() {
     );
 }
 
-/// The detail line's grammar (D1.8b): `source: outcome` parts joined by
+/// The detail line's grammar: `source: outcome` parts joined by
 /// "; ", and it never reaches a surface.
 #[test]
 fn the_detail_line_lists_every_source_that_was_tried() {
@@ -1007,7 +1007,7 @@ fn an_unclassified_error_is_not_read_for_words() {
 }
 
 /// A local fault of libgit2 INSIDE a contact does not become the
-/// sentence a person reads (D1.8b, wording rules), and joy's own plain
+/// sentence a person reads (wording rules), and joy's own plain
 /// sentence does survive: the engine's checkouts fail for reasons the
 /// classifier never sees, and the difference between the two is the
 /// type, never the prose.
@@ -1061,8 +1061,8 @@ fn libgit2s_own_words_never_become_a_contacts_sentence() {
 }
 
 /// The connector's answers reach a surface the same way a libgit2
-/// failure does: a sentence, the button of D4.7, and for `needs_sso`
-/// the URL from the `X-GitHub-SSO` header, which D1.8b calls the action
+/// failure does: a sentence, the button, and for `needs_sso`
+/// the URL from the `X-GitHub-SSO` header, which the rule calls the action
 /// (throwing it away left the button with nothing to open).
 #[test]
 fn a_connector_answer_carries_its_sentence_and_its_action() {
@@ -1089,15 +1089,15 @@ fn a_connector_answer_carries_its_sentence_and_its_action() {
         "The GitHub connector is missing on this machine. (repair)"
     );
     // a connector that answered `scope_missing` says WHAT it does not
-    // allow, in D4.7's own words
+    // allow, in the own words
     assert_eq!(
         plugin_verdict(&PluginEvidence::ScopeMissing, "gitlab.com").sentence,
         "Your GitLab sign in does not allow creating projects."
     );
 }
 
-/// The next step is the BUTTON of D4.7 and the guidance is what is
-/// behind it (D1.8c): a surface that renders the next step as a label
+/// The next step is the BUTTON and the guidance is what is
+/// behind it: a surface that renders the next step as a label
 /// used to print "add your organisation's CA with update-ca-certificates"
 /// on a button.
 #[test]
@@ -1182,7 +1182,7 @@ fn the_host_comes_out_of_the_one_url_parser() {
     assert_eq!(host_of("git@[2001:db8::1]:o/r.git"), "2001:db8::1");
     assert_eq!(host_of("ssh://git@GitHub.com/o/r.git"), "github.com");
     // A host that was taken out of a URL already: every sentence of
-    // D4.7 is built from one, and `forge_name` reads it here.
+    // The rule is built from one, and `forge_name` reads it here.
     assert_eq!(host_of("github.com"), "github.com");
     assert_eq!(forge_name("github.com"), "GitHub");
     assert_eq!(forge_name("git.example.org"), "git.example.org");
@@ -1201,7 +1201,7 @@ fn the_host_comes_out_of_the_one_url_parser() {
 /// number fits) is still that forge's URL: the scheme is never the
 /// host, or every broken remote in the tree would share one throttle
 /// gate named `https`, and the transport is still the one the scheme
-/// names, or the D1.8a classifier reads a forge fault as a local one.
+/// names, or the classifier reads a forge fault as a local one.
 #[test]
 fn a_url_the_parser_refuses_still_names_its_host_and_its_transport() {
     assert_eq!(host_of("https://github.com:99999/o/r.git"), "github.com");
@@ -1235,7 +1235,7 @@ fn a_url_the_parser_refuses_still_names_its_host_and_its_transport() {
     );
 }
 
-/// The three words of D1.8a over the five shapes the parser knows:
+/// The three words over the five shapes the parser knows:
 /// `http` rides the https branch, and the unauthenticated git protocol
 /// rides neither authenticated branch.
 #[test]
@@ -1256,7 +1256,7 @@ fn every_parsed_shape_gets_one_of_the_three_transport_words() {
     assert_eq!(transport_of("C:\\src\\repo"), Transport::Local);
 }
 
-/// The request weights of D1.9: the first request of a connection to a
+/// The request weights: the first request of a connection to a
 /// private repository is answered 401 and replayed, so a credentialed
 /// verb costs one request more; an ssh contact makes no HTTP request and
 /// pays the anonymous column; a path on this machine costs nothing.
@@ -1278,7 +1278,7 @@ fn a_verb_costs_the_requests_the_design_counted() {
 }
 
 /// The budget table is canonical and every millisecond is derived from
-/// it: 1000 / budget, and nothing written down twice (D1.9).
+/// it: 1000 / budget, and nothing written down twice.
 #[test]
 fn every_millisecond_is_derived_from_the_budget_table() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1307,7 +1307,7 @@ fn every_millisecond_is_derived_from_the_budget_table() {
     set_gaps("");
 }
 
-/// The poll period, one rule (D1.9): requests(verb) / budget, rounded up
+/// The poll period, one rule: requests(verb) / budget, rounded up
 /// to the next whole second, times the number of open projects on the
 /// host. The requests per minute that come out stay inside the budget.
 #[test]
@@ -1347,7 +1347,7 @@ fn the_poll_period_is_the_verbs_requests_over_the_hosts_budget() {
     set_gaps("");
 }
 
-/// No anonymous polling (D1.9): a remote nobody is signed in for is
+/// No anonymous polling: a remote nobody is signed in for is
 /// checked once every fifteen minutes per host, and the surface says so.
 #[test]
 fn an_https_remote_without_a_credential_is_polled_every_fifteen_minutes() {
@@ -1411,14 +1411,14 @@ fn a_token_in_hand_keeps_a_public_repository_out_of_the_anonymous_lane() {
         .expect("the next poll is not held");
 }
 
-/// The ssh leg of D1.2 says nothing about the https twin behind it
+/// The ssh leg says nothing about the https twin behind it
 /// (JOY-02AC-C3). Horst met this on Windows on 2026-09-19: an ssh
 /// remote whose key libgit2 could not use, a connector that had a
 /// GitHub token all along, and a project that told him "GitHub is
 /// limiting our requests" and never contacted anything. The ssh
 /// refusal had taught the credential memory that nobody is signed in
 /// to github.com, and the twin, which exists for exactly this failure,
-/// was then held back by the no anonymous polling rule of D1.9.
+/// was then held back by the no anonymous polling rule.
 #[test]
 fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1436,7 +1436,7 @@ fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
         true,
         || -> anyhow::Result<()> {
             // what the classifier makes of `Class::Ssh` + `Code::Auth`
-            // (D1.8a), which is what the leg loop hands `run` back
+            //, which is what the leg loop hands `run` back
             Err(anyhow::Error::new(ContactError {
                 failure: Failure::NeedsSignIn,
                 message: "Not signed in to twinned.test.".into(),
@@ -1475,7 +1475,7 @@ fn an_ssh_refusal_does_not_hold_back_the_https_twin_of_the_same_host() {
     .expect("the twin contact goes out");
 }
 
-/// The rule bites where it was written for (D1.8b, D1.9): on the
+/// The rule bites where it was written for: on the
 /// desktop `Auth::Local` claims a credential for EVERY host, so the
 /// claim alone can never carry the gate. What carries it is what the
 /// credential callbacks really handed over, which `run` remembers per
@@ -1510,7 +1510,7 @@ fn a_host_nothing_was_ever_presented_to_is_polled_anonymously() {
     assert_eq!(
         poll_period("desktop.test", "ls-remote", Transport::Https, true),
         ANONYMOUS_POLL_INTERVAL,
-        "and polls it once every fifteen minutes (D1.9)"
+        "and polls it once every fifteen minutes"
     );
 
     // and the door holds the next poll of the window, with the sentence
@@ -1536,8 +1536,8 @@ fn a_host_nothing_was_ever_presented_to_is_polled_anonymously() {
     set_gaps("");
 }
 
-/// A poll that never reached the forge burns no window (D1.9 gives the
-/// host fifteen minutes of joy's attention, not of the network's), and
+/// A poll that never reached the forge burns no window (the
+/// host gets fifteen minutes of joy's attention, not of the network's), and
 /// a host that asked for a login teaches the memory the same way a
 /// success does.
 #[test]
@@ -1589,7 +1589,7 @@ fn a_poll_that_found_nobody_home_keeps_its_slot() {
 
 /// The rule is not a constant, it is charged: the engine's poll door
 /// holds the second anonymous poll inside the window and says why, while
-/// a person's own command goes out (D1.9, J5's acceptance).
+/// a person's own command goes out (J5's acceptance).
 #[test]
 fn the_poll_door_holds_an_anonymous_https_poll_and_says_why() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
@@ -1614,7 +1614,7 @@ fn the_poll_door_holds_an_anonymous_https_poll_and_says_why() {
     assert_eq!(contacts, 1, "the forge was contacted once");
     // a held poll is a wait joy imposes on itself, never a refusal by
     // the forge: `denied` is what `needs_sign_in` reads as for a
-    // pre-NG reader and it would have blocked writes (D1.8b)
+    // pre-NG reader and it would have blocked writes
     assert_eq!(failure_of(&held), Failure::RateLimited);
     assert_eq!(failure_of(&held).old_word(), "rate_limited");
     assert!(
@@ -1681,7 +1681,7 @@ fn rate_limited(url: &str) -> anyhow::Error {
     ))
 }
 
-/// The 429 brake of D1.9: the strike is the doubling exponent, it
+/// The 429 brake: the strike is the doubling exponent, it
 /// SURVIVES the next success, and every contact still goes out.
 #[test]
 fn a_429_doubles_the_gap_and_the_strike_survives_the_next_success() {
@@ -1792,7 +1792,7 @@ fn a_documented_ban_sets_its_own_next_try() {
         "gitlab.com bans for 15 minutes, got {waits:?}"
     );
     // but the STRIKE window is the design's 600 s and never the forge's
-    // number (D1.9): the doubling runs for ten minutes after the last
+    // number: the doubling runs for ten minutes after the last
     // strike, whether the forge asked for three seconds or an hour
     let window = limited_until("gitlab.com")
         .expect("a strike stands")
@@ -1807,12 +1807,12 @@ fn a_documented_ban_sets_its_own_next_try() {
 }
 
 /// A credentialed contact that worked is remembered per host: it is what
-/// tells a 403 on a push from a 403 on a fetch (D1.8b).
+/// tells a 403 on a push from a 403 on a fetch.
 #[test]
 fn a_credential_that_worked_is_remembered_for_the_host() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     // The fact outlives the process, so it is written to joy's own
-    // state file (D1.2, JOY-02A9-48) - and a test writes it HERE and
+    // state file (JOY-02A9-48) - and a test writes it HERE and
     // never into the person's own state directory.
     let home = tempfile::tempdir().expect("tempdir");
     crate::vcs::resolver::set_state_file(Some(home.path().join("forge-state.json")));
@@ -1845,7 +1845,7 @@ fn a_credential_that_worked_is_remembered_for_the_host() {
     crate::vcs::resolver::set_state_file(None);
 }
 
-/// D1.7's one re-ask: only a token that has already worked here and is
+/// the one re-ask: only a token that has already worked here and is
 /// now refused is worth a refresh; anything else is a sign in.
 #[test]
 fn only_a_spent_token_is_worth_one_refresh() {

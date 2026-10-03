@@ -6,8 +6,8 @@
 //! Since JOY-0256-64 the forge knowledge lives in the forge CONNECTORS:
 //! joy-core's registry names them, `claims` decides
 //! whose remote a project is, and the connector's `release` verb does
-//! the actual work (over its own HTTP client since JOY-0298-E4, design
-//! D2.8; a forge without a release backend answers `unsupported` and
+//! the actual work (over its own HTTP client since JOY-0298-E4;
+//! a forge without a release backend answers `unsupported` and
 //! publish keeps its tag-only path). Nothing in here parses a forge URL
 //! or shells a forge CLI any more.
 
@@ -49,7 +49,7 @@ impl ForgeRelease for PluginForge {
         let dir = tempfile::tempdir()?;
         let notes_file = dir.path().join("notes.md");
         std::fs::write(&notes_file, notes)?;
-        // The connector's own stderr is captured now (D2.3), so its
+        // The connector's own stderr is captured now, so its
         // message travels INSIDE the error instead of on a terminal
         // that may not exist. The state name comes along for the same
         // reason: missing, outdated, refused and timed out are four
@@ -57,7 +57,7 @@ impl ForgeRelease for PluginForge {
         let ctx = CallContext::in_project(root);
         // Which repository the release belongs to. gh used to read this
         // out of the working directory; the connector's own REST call
-        // has to be told (D2.8), and the remote is what tells it.
+        // has to be told, and the remote is what tells it.
         let target = default_remote_url(root).map(Target::remote);
         let outcome =
             forge_plugins::release(self.spec, target.as_ref(), tag, title, &notes_file, &ctx)
@@ -219,13 +219,13 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
                     .join(", ");
                 format!("configured remotes: {list}")
             };
-            // The second half of the sentence is the new door (D3.10):
+            // The second half of the sentence is the new door:
             // a host whose connector nobody is signed in to claims
             // nothing, and "add a remote" is the wrong advice for a
             // person who has the remote already.
             //
             // The host it names is the remote joy really contacts,
-            // `origin` or the first configured one (D1.1), and not
+            // `origin` or the first configured one, and not
             // `remotes[0]`: in a checkout whose first remote is not
             // `origin` the two are different hosts, and the person was
             // sent to sign in to the one joy never talks to.

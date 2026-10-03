@@ -264,7 +264,7 @@ fn an_interactive_host_is_offered_the_fingerprint_and_the_yes_is_written_once() 
     assert_eq!(request.port, 22);
     assert_eq!(request.key_type, "ssh-ed25519");
     assert_eq!(request.fingerprint, GITHUB_ED25519_FINGERPRINT);
-    // D1.4a: an `Interactive` host is still asked, and because this
+    // An `Interactive` host is still asked, and because this
     // host is pinned the question adds where the forge publishes the
     // key the person is looking at.
     let published = request
@@ -398,7 +398,7 @@ fn a_no_that_the_person_gave_is_a_refusal_and_not_a_write() {
 /// The path a person really hits today: nothing in this tree installs a
 /// question yet, because joy-cli's call sites are package J6's and its
 /// acceptance is that no ssh contact fails without a way to accept. So
-/// an `Interactive` host refuses here, and D1.8b's rule holds on that
+/// an `Interactive` host refuses here, and the rule holds on that
 /// path too: the sentence says why nobody was asked and names the one
 /// next step, the file and the line to paste.
 #[test]
@@ -535,7 +535,7 @@ fn a_certificate_host_key_is_refused_by_name() {
     );
 }
 
-/// D1.4a: the pin is consulted ONLY where no known_hosts file holds a
+/// The pin is consulted ONLY where no known_hosts file holds a
 /// line for the host. A `Background` host accepts the pinned key and
 /// writes nothing, an `Interactive` host is still asked and the
 /// question names the page, and a file that knows the host decides on
@@ -770,7 +770,7 @@ fn the_x509_branch_decides_nothing_and_names_the_issuer() {
     assert_eq!(note.issuer.as_deref(), Some("Acme Corporate Root CA"));
     assert_eq!(note.subject.as_deref(), Some("github.com"));
     // it never refuses and never writes a sentence: the verdict is
-    // libgit2's (D1.8c)
+    // libgit2's
     assert_eq!(take_refusal(), None);
     // and a certificate joy cannot read is still libgit2's business
     let mut broken = Trust::new(HostKind::Background, None);
@@ -782,7 +782,7 @@ fn the_x509_branch_decides_nothing_and_names_the_issuer() {
 }
 
 /// What package J4p writes into this branch: the state and the
-/// sentence (D1.8c). The branch decides nothing, so the state comes
+/// sentence. The branch decides nothing, so the state comes
 /// from the classifier reading the error the operation returned, and
 /// the issuer this branch stashed is what the detail line puts in
 /// front of libgit2's own text.
@@ -851,7 +851,7 @@ fn the_issuer_this_branch_stashed_reaches_the_tls_untrusted_detail_line() {
         assert_eq!(verdict.next_step.as_deref(), Some("show what to do"));
         assert!(
             verdict.guidance.is_some(),
-            "the per OS certificate instruction of D1.8c"
+            "the per OS certificate instruction"
         );
     }
     // A failure that is not the certificate keeps libgit2's line alone,

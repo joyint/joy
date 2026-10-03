@@ -85,10 +85,10 @@ pub fn run(args: InitArgs) -> Result<()> {
         return run_init_ci(ci);
     }
     let root = std::env::current_dir()?;
-    // The host kind was decided once, at the entry point (D1.1); this
+    // The host kind was decided once, at the entry point; this
     // command only reads it. A person at a terminal may be asked for the
     // founding address; a hook, a pipe, a --json run and a delegated
-    // agent are refused by name instead (D3.9).
+    // agent are refused by name instead.
     let host = joy_core::host::process_host();
     let options = InitOptions {
         name: args.name,
@@ -159,7 +159,7 @@ pub fn run(args: InitArgs) -> Result<()> {
                 // non-interactively and does not prompt a second time.
                 // The founder init just registered, not git config: an
                 // anonymous project may be founded on a machine that has
-                // no git identity at all (D3.9).
+                // no git identity at all.
                 // The pre-acquired passphrase takes the place of the
                 // global flag for the rest of this run, so run_init runs
                 // non-interactively and does not prompt a second time.
@@ -194,7 +194,7 @@ pub fn run(args: InitArgs) -> Result<()> {
             // key). Register the founder now that an identity is available
             // (JOY-01CA-AF).
             // The repair path asks the same question the fresh one does
-            // (D3.9): a person at a terminal is asked for the address
+            //: a person at a terminal is asked for the address
             // instead of being sent to `git config`.
             let mut ask = host
                 .may_ask()

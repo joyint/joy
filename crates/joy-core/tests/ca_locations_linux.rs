@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The Linux only certificate authority escape hatch of D1.12.
+//! The Linux only certificate authority escape hatch.
 //!
 //! Four things are proven here, and one is stated rather than proven.
 //!

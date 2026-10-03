@@ -119,7 +119,7 @@ pub fn run(args: ReleaseArgs) -> Result<()> {
 
 /// joy_core::releases::resolve_version with the tag fallback this CLI
 /// has always had (`git describe --tags --abbrev=0 --match v*`, on
-/// libgit2 since D3.2) and its errors mapped onto anyhow (same Display
+/// libgit2 since the rule) and its errors mapped onto anyhow (same Display
 /// output as before the move).
 fn resolve_version(
     root: &std::path::Path,
@@ -314,7 +314,7 @@ fn record(args: RecordArgs) -> Result<()> {
 
     // Git: stage + commit + local tag. No push, no forge call.
     //
-    // Only what joy wrote (D3.4): its own directory and the version
+    // Only what joy wrote: its own directory and the version
     // files `joy release bump` patched. This used to be `git add -A`
     // followed by a commit of the whole index, so a half finished
     // `git add -p` of the person's went up inside a "bump to vX"
@@ -322,7 +322,7 @@ fn record(args: RecordArgs) -> Result<()> {
     // the way of that either.
     let message = format!("bump to {version} [no-item]");
     // A person ran this command, so the item rule REFUSES here rather
-    // than warning (D3.3). Two things about that are worth saying
+    // than warning. Two things about that are worth saying
     // plainly, because the acceptance of this package leans on them.
     // This is the ONLY refusing call site in the product, and the
     // message it validates is joy's own and carries the `[no-item]`
@@ -331,7 +331,7 @@ fn record(args: RecordArgs) -> Result<()> {
     // write an unreferenced commit, and
     // `joy-core/tests/commit_msg_rule.rs` pins that it would. And no
     // joy command takes a commit message from a person, so on a machine
-    // without git this half of D3.3 has nothing else to refuse; a
+    // without git this half has nothing else to refuse; a
     // person's own `git commit` is refused by the installed hook, which
     // `tests/hooks_chain.rs` drives end to end.
     joy_core::commit_msg::validate(&message, acronym).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -387,11 +387,11 @@ fn joy_owned_paths(root: &std::path::Path) -> Vec<String> {
 /// the push it is about to make, the release it created.
 ///
 /// In `--json` mode stdout carries exactly ONE object and nothing else
-/// (D3.10), and this command's one object is the refusal envelope of
+///, and this command's one object is the refusal envelope of
 /// [`crate::contact_report::Refusal::fail`]. A progress line on stdout
 /// beside it is not slightly wrong, it is unparsable: the agent reads
 /// `Pushing to origin...{"version":1,...}`. So in that mode the
-/// progress goes to stderr, which is where D3.10 puts progress and
+/// progress goes to stderr, which is where the rule puts progress and
 /// diagnostics anyway; a person at a terminal keeps the lines they
 /// have always had.
 fn say(line: &str) {
@@ -436,7 +436,7 @@ fn publish(args: PublishArgs) -> Result<()> {
 
     let remote = git.default_remote(&ctx.root)?;
     say(&format!("Pushing to {remote}..."));
-    // The one failure vocabulary of D3.8: a refused push says the
+    // The one failure vocabulary: a refused push says the
     // state, the plain sentence and the one next step, in `--json` mode
     // as the envelope this command's caller reads.
     let host = crate::contact_report::host_of_checkout(&ctx.root);

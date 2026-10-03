@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! `joy forge`, driven as the person and the agent drive it
-//! (JOY-029D-3E, package J10 of the forge connection NG design: D3.10
-//! and D3.11).
+//! (JOY-029D-3E).
 //!
 //! Every case runs the shipped `joy` binary as a process against a FAKE
 //! connector: a shell script that answers the protocol 2 verbs, plus a
@@ -124,7 +123,7 @@ esac
 
 /// A connector from before the handshake existed: its parser rejects
 /// `version` and exits 2 with nothing on stdout, which is the detector
-/// of D2.2a. It still answers the six legacy verbs, `release` among
+///. It still answers the six legacy verbs, `release` among
 /// them.
 const LEGACY_CONNECTOR: &str = r#"#!/bin/sh
 case "$1" in
@@ -208,7 +207,7 @@ impl Machine {
         path
     }
 
-    /// An operator's instance list (D2.5), which is one of the three
+    /// An operator's instance list, which is one of the three
     /// sources of `joy forge status`'s host set.
     fn forges_yaml(&self, host: &str, kind: &str) {
         std::fs::write(
@@ -232,7 +231,7 @@ impl Machine {
             .env("XDG_CONFIG_HOME", self.path().join("config"))
             .env("XDG_STATE_HOME", self.path().join("state"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            // The documented test hook of D2.2, and the reason it
+            // The documented test hook, and the reason it
             // exists: a case has to be able to say which binary
             // answers.
             .env("JOY_PLUGIN_DIR", self.plugins());
@@ -282,7 +281,7 @@ impl Answer {
 
 /// A pty pair: what the case holds, and what the child gets as its
 /// three standard streams. Without one the host kind is `Background`
-/// whatever else is true, and the interactive half of D3.11 is never
+/// whatever else is true, and the interactive half is never
 /// entered.
 struct Terminal {
     person: std::fs::File,
@@ -371,7 +370,7 @@ fn wait_with_a_bound(child: &mut std::process::Child) -> bool {
 }
 
 // ---------------------------------------------------------------------
-// login (D3.10)
+// login
 // ---------------------------------------------------------------------
 
 /// The acceptance of J10, first sentence: `joy forge login --host
@@ -379,7 +378,7 @@ fn wait_with_a_bound(child: &mut std::process::Child) -> bool {
 /// with a stored credential.
 ///
 /// It runs on a terminal, because that is what makes this host
-/// `Interactive`; with a pipe the host is `Background` and D3.11's
+/// `Interactive`; with a pipe the host is `Background` and the
 /// refusal would answer instead, which is the case below.
 #[test]
 fn login_on_a_terminal_prints_the_url_and_the_code_and_signs_in() {
@@ -442,8 +441,8 @@ fn login_under_a_delegation_session_refuses_by_name_and_spawns_no_login() {
 /// --token-stdin --host codeberg.org < token` stores a validated token,
 /// and `ps` during the run shows no token.
 ///
-/// The token path is NOT what D3.11 refuses: it is the headless door of
-/// D2.4, written for exactly the machines that have no person at them,
+/// The token path is NOT what is refused: it is the headless door,
+/// written for exactly the machines that have no person at them,
 /// and this case runs with pipes, which is a `Background` host.
 #[test]
 #[cfg(unix)]
@@ -502,7 +501,7 @@ fn a_token_from_stdin_is_stored_and_never_in_the_process_list() {
     );
 }
 
-/// A host with no terminal is refused too (D3.11), and the sentence is
+/// A host with no terminal is refused too, and the sentence is
 /// TRUE for it: a hook or a piped run is not a delegation session, and
 /// telling it that it is sends a person looking for an agent that does
 /// not exist. Both sentences name the headless door.
@@ -572,7 +571,7 @@ fn an_empty_line_is_refused_instead_of_stored() {
 }
 
 /// EVERY answer of this command is one envelope, and that includes the
-/// ways out that have nothing to do with a forge (D3.10). Before this
+/// ways out that have nothing to do with a forge. Before this
 /// case the three below left through `bail!`: stdout stayed empty, and
 /// an agent in `--json` mode got no `state` and no `action` at all.
 #[test]
@@ -697,7 +696,7 @@ fn a_token_the_forge_refuses_exits_one_with_a_state() {
 }
 
 // ---------------------------------------------------------------------
-// status (D3.10)
+// status
 // ---------------------------------------------------------------------
 
 /// The acceptance of J10, third sentence: `joy forge status --json`
@@ -861,7 +860,7 @@ fn status_prints_what_the_connector_said_while_it_answered() {
 }
 
 // ---------------------------------------------------------------------
-// logout (D3.10, D2.6)
+// logout
 // ---------------------------------------------------------------------
 
 #[test]
@@ -880,7 +879,7 @@ fn logout_removes_joys_own_credential() {
 }
 
 /// A credential that came from gh is removed by gh and by nobody else,
-/// so joy removes nothing and names the foreign command (D2.6, D3.10).
+/// so joy removes nothing and names the foreign command.
 #[test]
 fn logout_names_the_foreign_command_for_a_foreign_credential() {
     let machine = Machine::new();
@@ -922,7 +921,7 @@ fn logout_all_answers_for_every_host_of_the_set() {
 }
 
 /// Under a delegation session the connector removes nothing and says
-/// why (G2, D3.8): a delegated process may use the credential this
+/// why (G2): a delegated process may use the credential this
 /// machine holds and may never sign it out. The CLI prints THAT
 /// sentence and the state word, in both modes. A bare `removed: false`
 /// would leave an agent with nothing to read and a call to retry for
@@ -998,7 +997,7 @@ fn logout_without_a_host_refuses_instead_of_guessing() {
 }
 
 // ---------------------------------------------------------------------
-// plugins, and the stale binary (D2.2a, D3.12)
+// plugins, and the stale binary
 // ---------------------------------------------------------------------
 
 /// `joy forge plugins` is the diagnostic: which file answered, where it
@@ -1067,7 +1066,7 @@ fn a_protocol_1_connector_refuses_login_with_the_path_and_the_rm_line() {
     );
 
     // And the verb a protocol 1 connector still answers keeps working,
-    // which is what "joy release publish still works" rests on (D2.2a).
+    // which is what "joy release publish still works" rests on.
     let notes = machine.path().join("notes.md");
     std::fs::write(&notes, "the notes").unwrap();
     joy_core::forge_plugins::set_plugin_dirs(vec![machine.plugins()]);
@@ -1236,12 +1235,12 @@ fn a_live_session(machine: &Machine) -> String {
 }
 
 // ---------------------------------------------------------------------
-// What the person sees while a sign in runs (JOY-02A9-48, D3.10)
+// What the person sees while a sign in runs (JOY-02A9-48)
 // ---------------------------------------------------------------------
 
 /// A connector whose sign in waits twice and then fails: the shape of
 /// the run that produced this item. The second wait carries the reason
-/// of D2.4, which is what a poll that is riding out a transport fault
+///, which is what a poll that is riding out a transport fault
 /// reports.
 const FAILING_LOGIN: &str = r#"#!/bin/sh
 if [ "$1" = "version" ]; then
@@ -1344,7 +1343,7 @@ fn a_login_that_fails_prints_the_error_and_stops() {
     assert!(seen.contains("Still waiting"), "{seen}");
     assert!(
         seen.contains("Temporary failure in name resolution"),
-        "the reason of D2.4 is shown, not swallowed: {seen}"
+        "the reason is shown, not swallowed: {seen}"
     );
     // And it is not standing under the refusal any more.
     let line = line_showing(&seen, "could not be finished");

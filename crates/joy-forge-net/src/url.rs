@@ -18,7 +18,7 @@
 ///
 /// The bare address is what the engine answers too
 /// (`joy_core::vcs::remote_url::RemoteUrl::host`), and NO_PROXY is
-/// compared against this answer on both sides (D1.11): read naively,
+/// compared against this answer on both sides: read naively,
 /// `https://[::1]:8443/x` splits at the FIRST colon and yields the host
 /// `[`, and `NO_PROXY="[::1]"` then excluded the host for a git contact
 /// and not for a REST call (JOY-02A3-E4).

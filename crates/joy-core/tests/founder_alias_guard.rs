@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The capture guard on the founding address (JOY-0253-8A, D4.4 of the
-//! forge connection NG design): a forge alias address must never become a
+//! The capture guard on the founding address (JOY-0253-8A):
+//! a forge alias address must never become a
 //! member key, not even when a person names it themselves.
 //!
 //! Decided here, once: `--user` and the terminal ask are explicit
 //! overrides and are refused all the same, because the split identity the
 //! alias produces is the same whoever typed it, and the person cannot see
 //! that their forge handed them an alias. The surfaces that OFFER
-//! addresses filter aliases out before showing them (D4.4), so this
+//! addresses filter aliases out before showing them, so this
 //! refusal is only ever met by someone who typed one.
 //!
 //! Its own test binary: it puts a plugin stub on the PATH, which is

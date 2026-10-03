@@ -172,7 +172,7 @@ pub fn run(args: AuthArgs) -> Result<()> {
 /// Resolve the member-selector for this invocation. `--user` always
 /// wins; otherwise this repository's own git config (local before
 /// global), then the account the forge tool for the remote's host
-/// reports (JOY-02AE-1A, correcting D3.9). Centralised here so every
+/// reports (JOY-02AE-1A). Centralised here so every
 /// auth path uses the same rule (JOY-00F3-AE), and the same rule `joy
 /// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
@@ -300,8 +300,8 @@ pub(crate) fn run_init(
     let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
     let mut project = store::read_project(&project_path)?;
 
-    // Determine who we are. The member is NAMED here (JOY-02AE-1A,
-    // correcting D3.9): `--user`, else this repository's own git config,
+    // Determine who we are. The member is NAMED here (JOY-02AE-1A):
+    // `--user`, else this repository's own git config,
     // else the forge account. The project is never guessed from, not
     // even when it has exactly one member: the project file travels
     // with every clone.
@@ -523,7 +523,7 @@ fn auth_with_passphrase(
     // an opaque `m-<hex>` id in an anonymous project (`--user` can pass
     // one directly) or a forge alias git config still carries, and
     // telling somebody they are either is not what ADR-042 or the alias
-    // resolution of D3.9 ask for. The login resolved the real address on
+    // resolution ask for. The login resolved the real address on
     // its way through members.yaml and hands it back.
     println!(
         "Authenticated as {}. Session active (24h).",
@@ -664,7 +664,7 @@ fn auth_with_token(
 }
 
 /// Where `joy auth status` got the member it just named (operator
-/// decision 2026-09-19, JOY-02AE-1A, correcting D3.9), in the words a
+/// decision 2026-09-19, JOY-02AE-1A), in the words a
 /// person can act on.
 ///
 /// The order is `resolve_identity`'s own: a delegation session names the
@@ -716,7 +716,7 @@ fn run_status() -> Result<()> {
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
     // Nothing says who acts here: no delegation session, no git config
     // naming a member, and no forge account naming one either (operator
-    // decision 2026-09-19, JOY-02AE-1A, correcting D3.9). Say the
+    // decision 2026-09-19, JOY-02AE-1A). Say the
     // sentence that names the remedy instead of printing "No active
     // session for " with an empty name in it.
     if identity.member.id().trim().is_empty() {
@@ -1026,7 +1026,7 @@ fn run_token_add(args: TokenAddArgs, user_flag: Option<&str>) -> Result<()> {
 /// `operator` names the issuing human in EITHER of the two forms a
 /// caller can hold: an address a person typed (`joy auth token add
 /// --user`), or their at-rest member key, which is what identity
-/// resolution answers with since package J11 (D3.9) and what `joy
+/// resolution answers with since package J11 and what `joy
 /// project member add --with-token` has always passed. It is not an
 /// e-mail: in an anonymous project the key is the opaque `m-<hex>` id
 /// (ADR-042). The first thing this function does is resolve it to the
@@ -1190,8 +1190,8 @@ pub(crate) fn create_delegation_token(
         // string, which resolves an ADDRESS through the member map's
         // e-mail matcher. It found the operator while the acting member
         // was still a git config address; once identity resolution
-        // started answering with an at-rest member KEY instead (D3.9,
-        // package J11), an anonymous project handed this function the
+        // started answering with an at-rest member KEY instead,
+        // an anonymous project handed this function the
         // operator's opaque `m-<hex>` id, no address matched it, and the
         // `if let` wrote NOTHING. The token was printed all the same, and
         // redeeming it then failed with "no delegation registered for
@@ -1551,7 +1551,7 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    // Who redeems is the host's answer, not git config's (D3.9). When
+    // Who redeems is the host's answer, not git config's. When
     // nothing here names a member, the OTP still does: it is an identity
     // proof of its own (JOY-0257-FC), so an unresolvable name is no reason
     // to refuse before the redemption was even tried.

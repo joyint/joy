@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! What the commits joy writes for itself carry (D4.5 and D3.4 of the
-//! forge connection NG design, JOY-0297-1A), driven through the real
+//! What the commits joy writes for itself carry
+//! (JOY-0297-1A), driven through the real
 //! binary because both rules are only true if they hold on the paths the
 //! commands actually take.
 //!
@@ -50,11 +50,11 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
 }
 
 /// Give the checkout a git identity naming `email`: since the operator's
-/// 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) resolve_identity
+/// 2026-09-19 correction (JOY-02AE-1A) resolve_identity
 /// reads git config again, so every one of joy's own commit paths below
 /// needs a real one to know who is acting, exactly as a working checkout
-/// would have. The tests here are about what joy's commits carry (D3.4,
-/// D4.5), not about identity resolution itself, so this is the same
+/// would have. The tests here are about what joy's commits carry,
+/// not about identity resolution itself, so this is the same
 /// fixture, applied uniformly, rather than a pin nobody can see any more.
 fn git_config_names(root: &Path, email: &str) {
     let repo = git2::Repository::open(root).unwrap();
@@ -86,7 +86,7 @@ fn head_fields(root: &Path) -> [String; 4] {
     fields
 }
 
-/// D4.5 through a command that holds the person's ADDRESS: `joy auth
+/// A command that holds the person's ADDRESS: `joy auth
 /// passphrase` names the member by address, and in an anonymous project
 /// the commit it writes must still carry the opaque id in all four
 /// signature fields. Deciding by the shape of that string signed the
@@ -152,7 +152,7 @@ fn an_auth_command_in_an_anonymous_project_commits_under_the_opaque_id() {
     assert!(!message.contains("scotty@example.com"), "{message}");
 }
 
-/// D3.4: a commit joy writes carries the paths joy wrote and nothing
+/// A commit joy writes carries the paths joy wrote and nothing
 /// else. The person's half staged work stays theirs, and it does not
 /// defeat the "nothing to commit" answer either.
 #[test]
@@ -262,7 +262,7 @@ fn removing_user_email_takes_the_acting_member_with_it() {
         "the session names the member without any address in the config"
     );
 
-    // Signed out, `user.name` alone names nobody: D4.5's display name
+    // Signed out, `user.name` alone names nobody: the display name
     // check is a question about a member ALREADY resolved, and with no
     // address in the config (and no forge account, no remote here)
     // nothing resolves one any more.
@@ -282,10 +282,10 @@ fn removing_user_email_takes_the_acting_member_with_it() {
     );
 }
 
-/// D3.4 on the release path. `joy release record` ran `git add -A` and
+/// The release path. `joy release record` ran `git add -A` and
 /// then committed the whole index, so a person's half staged work went
 /// up inside a "bump to vX" commit; with no pre-commit hook left to
-/// stand in the way (D3.2) that is now the commit path's own job. It
+/// stand in the way that is now the commit path's own job. It
 /// stages joy's own directory and the version files
 /// `release.version-files` names, and nothing else.
 #[test]
@@ -357,14 +357,14 @@ fn a_release_commit_carries_joys_own_paths_only() {
     );
 
     // The annotated tag is on that commit, written by libgit2 and
-    // signed for the acting member (D4.5), not by `git tag -a`.
+    // signed for the acting member, not by `git tag -a`.
     let tag = repo.revparse_single("v0.0.1").unwrap();
     let tag = tag.as_tag().expect("an annotated tag object");
     assert_eq!(tag.target_id(), head.id());
     assert_eq!(tag.tagger().unwrap().email().unwrap(), "scotty@example.com");
 }
 
-/// D3.3: libgit2 runs no hooks, so the item rule of
+/// Libgit2 runs no hooks, so the item rule of
 /// `.joy/hooks/commit-msg` would be enforced for nobody on the commits
 /// joy writes for itself. The in-process validator enforces it instead,
 /// and for an AUTOMATIC commit it warns and proceeds: refusing would
@@ -417,7 +417,7 @@ fn an_automatic_commit_without_an_item_warns_and_still_happens() {
     );
 }
 
-/// D3.8 on the last contact that sat outside the one vocabulary. With
+/// The last contact that sat outside the one vocabulary. With
 /// `workflow.auto-git: push` a forge contact runs after nearly every
 /// joy write, and a refused one said `Warning: auto-git push failed:
 /// <prose>`: no state word, no next step, and no object under `--json`,

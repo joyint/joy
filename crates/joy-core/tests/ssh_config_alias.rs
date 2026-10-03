@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! An ssh config alias is honoured, all the way to the address joy
-//! dials (forge connection NG, design D1.4 and D1.5).
+//! dials (forge connection NG).
 //!
 //! libgit2 reads no ssh config at all and opens the socket itself from
 //! the URL, so `git@work:owner/repo.git` with `Host work / HostName
@@ -50,7 +50,7 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
 
     // The scp-like remote keeps its form, because the two forms do not
     // mean the same path: the bracketed form is the only scp-like
-    // shape that carries a port (D1.5).
+    // shape that carries a port.
     let dialled = ssh_config::effective_url("git@work:owner/repo.git")
         .expect("the alias names another address");
     assert_eq!(dialled, "[git@git.example.com:2222]:owner/repo.git");
@@ -124,7 +124,7 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
     );
 
     // The Include is read, so a ProxyJump inside a config.d fragment
-    // is refused by name instead of being invisible (D1.4).
+    // is refused by name instead of being invisible.
     assert!(
         ssh_config::refusal_for_url("git@inside.corp.invalid:o/r.git")
             .expect("the fragment's rule counts")

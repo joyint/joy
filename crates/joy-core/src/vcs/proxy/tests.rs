@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The proxy decision of D1.11 and the trust store hatch of D1.12.
+//! The proxy decision and the trust store hatch.
 //!
 //! The decision is a function of its inputs here, never of the process
 //! environment: [`super::decide`] takes the environment and the
@@ -113,11 +113,11 @@ fn a_port_that_is_not_a_port_matches_nothing() {
 /// corpus is the grammar's corners plus the port that is not a port,
 /// which is where the two had drifted apart.
 ///
-/// Every row carries the answer D1.11 requires, because an identity
+/// Every row carries the answer the rule requires, because an identity
 /// would hold just as well if both sides were wrong together. The
 /// identity itself is asserted on the connector's side, in
 /// `joy_forge_net::proxy`'s own corpus, because this crate may not name
-/// that one: the shared network layer depends on the engine (D2.6a's
+/// that one: the shared network layer depends on the engine (the
 /// refresh lock), and a second edge back would be a cycle.
 #[test]
 fn the_engine_and_the_connector_share_one_matcher() {
@@ -222,7 +222,7 @@ fn a_known_proxy_is_always_specified() {
         &env_with(Some("http://proxy.acme.example:8080"), None),
     )
     .expect("no refusal");
-    // `GIT_PROXY_SPECIFIED` whenever a proxy is known (D1.11): under
+    // `GIT_PROXY_SPECIFIED` whenever a proxy is known: under
     // AUTO, WinHTTP hands a NULL URL to `acquire_credentials` on the
     // 407 path (winhttp.c:1255-1270).
     assert_eq!(proxy.outcome(), Outcome::Specified);
@@ -440,7 +440,7 @@ fn a_helper_credential_rides_in_the_url_and_never_in_the_name() {
 }
 
 /// The helper is asked with `protocol=http` for an `https://` proxy
-/// too (D1.11). It is one login, to one machine in the middle: a person
+/// too. It is one login, to one machine in the middle: a person
 /// who stored it once must not have to store it a second time because
 /// the proxy URL gained an `s`.
 #[test]
@@ -518,7 +518,7 @@ fn a_user_name_without_a_password_asks_the_helper_for_that_user() {
 
 /// No helper answered: the proxy is still used, without a credential,
 /// and the 407 that follows becomes `proxy_auth` with the proxy's own
-/// name (D1.8c).
+/// name.
 #[test]
 fn a_proxy_without_a_credential_is_still_the_proxy() {
     let proxy = decide_with(
@@ -582,7 +582,7 @@ fn a_libgit2_message_that_echoes_the_proxy_url_loses_the_credential() {
     );
 }
 
-// ---- the Linux only CA escape hatch (D1.12) ----------------------------
+// ---- the Linux only CA escape hatch ----------------------------
 
 fn bundle(key: &str, source: &str, value: &str) -> CaEntry {
     CaEntry {
@@ -694,7 +694,7 @@ fn a_missing_or_unreadable_forges_yaml_is_not_a_failure() {
     assert!(forges_yaml_ca(&broken).is_empty());
 }
 
-/// The one named exception of D1.12: libgit2 reads neither key (no hit
+/// The one named exception: libgit2 reads neither key (no hit
 /// for either in the whole 1.9.6 tree), so joy reads them for it, on
 /// Linux.
 #[test]

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! ONE failure vocabulary for every CLI command that contacts a forge
-//! (design D3.8).
+//!.
 //!
 //! Before this, each command classified its own failure from the text a
 //! git process had printed: `joy chat` had `classify_sync_error` with
@@ -10,7 +10,7 @@
 //! therefore gave a person two different names for the same refusal, and
 //! an agent had nothing stable to read.
 //!
-//! Now the engine classifies (`vcs::contact`, D1.8a) and this module
+//! Now the engine classifies (`vcs::contact`) and this module
 //! says the verdict. The shape is the CLI's own and does not change with
 //! the command:
 //!
@@ -35,7 +35,7 @@
 //! answer is the envelope says its own progress on stderr in that mode,
 //! because one line in front of the object makes the object unparsable:
 //! `Pushing to origin...{"version":1,...}` is not an answer an agent can
-//! read (D3.10; `joy release publish` does it through its own `say`).
+//! read (`joy release publish` does it through its own `say`).
 
 use serde::Serialize;
 
@@ -50,7 +50,7 @@ use crate::output;
 pub struct Refusal {
     /// The forge host joy really contacted.
     pub host: String,
-    /// The state word of D1.8a: `needs_sign_in`, `offline`, ...
+    /// The state word: `needs_sign_in`, `offline`, ...
     pub state: &'static str,
     /// The one plain sentence for that state. Never libgit2's text.
     pub message: String,
@@ -69,7 +69,7 @@ impl Refusal {
     /// `host` is the forge joy contacted, which the caller reads off the
     /// checkout's own remote: the classifier's sentence names it, and a
     /// sentence that names the wrong host sends the person to sign in
-    /// somewhere joy never talks to (D1.1).
+    /// somewhere joy never talks to.
     pub fn of(host: &str, error: &JoyError) -> Self {
         let failure = error.failure();
         let contact = error.contact();
@@ -137,7 +137,7 @@ impl Refusal {
 }
 
 /// The forge host of this checkout: the remote joy really contacts,
-/// `origin` or else the first one (D1.1). Empty when there is none, and
+/// `origin` or else the first one. Empty when there is none, and
 /// the sentences then name no host rather than the wrong one.
 pub fn host_of_checkout(root: &std::path::Path) -> String {
     joy_core::vcs::forge::remote_url(root)

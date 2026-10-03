@@ -51,8 +51,8 @@ add_member_capture_otp() {
 # Act as `email` from here on: name this repository's git config as
 # them AND authenticate as them, opening their session.
 #
-# Since the operator's 2026-09-19 correction (JOY-02AE-1A, correcting
-# D3.9) `resolve_identity` reads `git config user.email` again, and the
+# Since the operator's 2026-09-19 correction (JOY-02AE-1A)
+# `resolve_identity` reads `git config user.email` again, and the
 # device pin it used to read instead is gone: a bare `joy` command after
 # this acts as `email` because THIS repository's git config names them.
 become_member() {
@@ -65,7 +65,7 @@ become_member() {
 # An invited member's first act in their own checkout: redeem the
 # invitation, which sets their passphrase and enrols them, then name
 # them in this repository's git config so the bare commands that follow
-# act as them (JOY-02AE-1A, correcting D3.9). The OTP proves the
+# act as them (JOY-02AE-1A). The OTP proves the
 # invitation; `--user` is the address the invitee types.
 enroll_member() {
     local email="$1"

@@ -2,7 +2,7 @@
 """A fake GitHub REST API for the bats integration tests.
 
 The forge connectors speak HTTP themselves since JOY-0298-E4 (design
-D2.8), so the marked stub at the forge boundary is no longer a `curl`
+the rule), so the marked stub at the forge boundary is no longer a `curl`
 or a `gh` on the PATH: it is this, one small server on the loopback
 interface that the connector reaches through `forges.yaml`'s
 `api_base`. No test ever touches the network.

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The known_hosts files, read by joy itself (design D1.4a).
+//! The known_hosts files, read by joy itself.
 //!
 //! libgit2 reads ONE file and matches it with `strcmp`: `~/.ssh/known_hosts`
 //! (`SSH_DIR ".ssh"`, `KNOWN_HOSTS_FILE "known_hosts"`,
@@ -51,7 +51,7 @@ pub enum Marker {
     /// whatever the host kind and whatever else the files say.
     Revoked,
     /// `@cert-authority`: a CA that signs host certificates. Out of
-    /// scope for this version (D1.4a), and therefore never a match.
+    /// scope for this version, and therefore never a match.
     CertAuthority,
 }
 
@@ -143,7 +143,7 @@ pub enum Verdict {
     /// to say which types are already there.
     UnknownKeyType { known_types: Vec<String> },
     /// No file holds any line for this host. The only state in which a
-    /// pin may be consulted (D1.4a).
+    /// pin may be consulted.
     Unknown,
 }
 
@@ -307,7 +307,7 @@ pub fn key_type_in_blob(key: &[u8]) -> Option<String> {
 /// Whether a key type is an OpenSSH host CERTIFICATE rather than a key.
 /// joy refuses those by name: `@cert-authority` is out of scope for
 /// this version, and a certificate arrives with no usable type from
-/// git2 at all (D1.4a).
+/// git2 at all.
 pub fn is_certificate_type(key_type: &str) -> bool {
     key_type.ends_with("-cert-v01@openssh.com")
 }
@@ -360,7 +360,7 @@ pub fn line_for(
 /// missing, which is what ssh requires of them. An existing line is
 /// never rewritten and the file is never truncated: joy only ever adds.
 ///
-/// The lock is [`crate::util::file_lock`] (design D2.6a, landed by
+/// The lock is [`crate::util::file_lock`] (landed by
 /// J4a), held on a lock file of joy's own under the state directory
 /// rather than on `known_hosts` itself: on Windows the lock is
 /// MANDATORY for the locked range, so locking the file a concurrent

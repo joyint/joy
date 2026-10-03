@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 //! `resolve_identity`'s order after the operator's 2026-09-19 correction
-//! (JOY-02AE-1A, correcting D3.9 of the forge connection NG design) and
+//! (JOY-02AE-1A of the forge connection NG design) and
 //! the operator's addition of 2026-09-27: a delegation session first,
 //! then the person who signed in at this terminal, then git config
 //! (repository before global), then the forge account, and nothing
-//! else. The device pin of D3.9 is retired from this order for good; no
+//! else. The device pin is retired from this order for good; no
 //! case here depends on it.
 //!
 //! ONE test in its own binary, on purpose (the same reason as
@@ -436,7 +436,7 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
     // Step 5: neither local nor global names a member; the forge account
     // for the remote's host does. The stub plays the connector and
     // shadows whatever real gh/glab/tea backed plugin this machine may
-    // have installed: `set_plugin_dirs` is searched before PATH (D2.2),
+    // have installed: `set_plugin_dirs` is searched before PATH,
     // so the stub answers even where a real one exists.
     let repo = git2::Repository::open(root).unwrap();
     repo.remote("origin", "git@github.example.com:o/r.git")

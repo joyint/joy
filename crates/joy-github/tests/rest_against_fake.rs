@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The GitHub connector against an in process fake API (JOY-0298-E4,
-//! design D2.8).
+//! The GitHub connector against an in process fake API (JOY-0298-E4).
 //!
 //! No real network is touched: the fake listens on 127.0.0.1 and the
 //! connector is pointed at it through `forges.yaml`'s `api_base`, which
@@ -73,7 +72,7 @@ fn identity_reads_the_instances_own_addresses() {
     );
 }
 
-/// The hardcoded base of D2.8, seen from the other side: without a
+/// The hardcoded base, seen from the other side: without a
 /// configured instance a GHES host still asks ITS OWN domain.
 #[test]
 fn a_ghes_host_never_asks_api_github_com() {
@@ -160,7 +159,7 @@ fn repositories_pages_and_filters_by_the_query() {
     assert_eq!(answer["truncated"], false);
 }
 
-/// D2.4's paging, with nothing lost in between: the cursor names the
+/// the paging, with nothing lost in between: the cursor names the
 /// page that was NOT read, so two answers hold the forge's rows in
 /// order, without a gap and without a repetition.
 #[test]
@@ -320,7 +319,7 @@ fn create_repository_posts_and_answers_with_the_clone_urls() {
     assert_eq!(post.json().unwrap()["private"], true);
 }
 
-/// D2.7c's local pre check: a token whose granted set cannot create a
+/// the local pre check: a token whose granted set cannot create a
 /// repository is answered without spending the write request.
 #[test]
 fn create_repository_answers_scope_missing_before_it_spends_a_request() {
@@ -471,7 +470,7 @@ fn release_reports_a_refusal_instead_of_degrading() {
     assert!(!text.contains(TOKEN), "no token in an error text: {text}");
 }
 
-/// D2.7c, the cheap half: the set the forge granted is stored beside
+/// The cheap half: the set the forge granted is stored beside
 /// the token (J3), so a verb that set cannot carry is refused locally,
 /// without a single request, and never reported as `denied`.
 #[test]
@@ -521,7 +520,7 @@ fn a_stored_public_only_set_refuses_a_private_repository_without_a_request() {
     );
 }
 
-/// D2.7c and JOY-02A9-48: the GitHub connector tells the ORGANISATION's
+/// The rule and JOY-02A9-48: the GitHub connector tells the ORGANISATION's
 /// wall from "this login is not the one", and it does it on the forge's
 /// own evidence.
 ///

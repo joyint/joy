@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! A host that is only reachable through a jump is refused BY NAME
-//! (forge connection NG, design D1.4).
+//! (forge connection NG).
 //!
 //! libssh2 never opens a socket - the string "proxy" does not occur
 //! anywhere in its sources - and libgit2 opens a plain TCP connection
@@ -51,7 +51,7 @@ fn a_jump_host_is_refused_by_name_and_never_looked_up() {
     // ProxyJump, and ssh2-config does not know the `Match` keyword, so
     // without joy's own scoping that rule would belong to the `Host *`
     // block above it and joy would refuse EVERY ssh remote on this
-    // machine (design D1.4: refused by name, for the host that carries
+    // machine (refused by name, for the host that carries
     // the rule).
     assert!(ssh_config::refusal_for_url("git@github.com:o/r.git").is_none());
     assert!(ssh_config::refusal_for_url("git@plain.example.invalid:o/r.git").is_none());
@@ -60,7 +60,7 @@ fn a_jump_host_is_refused_by_name_and_never_looked_up() {
     // sentence, not a name resolution failure. A refusal that opens no
     // socket also spends no turn of the host's gap, so two of them in
     // a row do not sit out a throttle wait for a contact that never
-    // happened (design D1.4).
+    // happened.
     contact::set_gaps("jump.example.invalid=5000,default=0");
     let dest = tempfile::tempdir().unwrap();
     let started = std::time::Instant::now();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
-# The chat store maintains itself, with git2 and no git process (design
-# D3.7). Every chat write is a commit through libgit2, which never runs
+# The chat store maintains itself, with git2 and no git process.
+# Every chat write is a commit through libgit2, which never runs
 # the auto-gc the git binary runs after its own commits, so a project only
 # grew: an operator sandbox reached 39 MB of .git for 0.7 MiB of content,
 # in 6140 loose objects, 72 percent of them unreachable, and not a single
@@ -81,8 +81,8 @@ packs() {
     # NOTHING on the chat write path spawns git any more: not the store,
     # not the maintenance, not the delivery push. J7 had to leave the
     # push behind because a transport needs joy-core's `forge-net`
-    # feature and joy-cli did not enable it; J6 enables it (D3.1) and
-    # moves the transfer onto the engine (D3.2), so the count this case
+    # feature and joy-cli did not enable it; J6 enables it and
+    # moves the transfer onto the engine, so the count this case
     # pins is ZERO. The `remote get-url` probe that stood beside it is
     # git2 too.
     [ ! -s "$GIT_CALLS" ]

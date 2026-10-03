@@ -10,7 +10,7 @@ description = "Shared network layer of the Joy forge connectors: HTTP client, pr
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
-# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# Not a cargo-dist App: only joy-cli is. Why every
 # publishable crate beside it carries this key is written once, in the
 # "Check the release shape" step of .github/workflows/release.yml, which
 # is also what fails when a crate loses it.
@@ -19,7 +19,7 @@ dist = false
 
 [dependencies]
 joy-process = { workspace = true }
-# The cross process advisory file lock of D2.6a. It landed ONCE, with
+# The cross process advisory file lock. It landed ONCE, with
 # J4a, as `joy_core::util::file_lock`, and the design says so: "no
 # package after J4a carries a lock dependency of its own for locking".
 # The refresh lock of `auth::lock` takes that primitive, and
@@ -28,7 +28,7 @@ joy-process = { workspace = true }
 # The version pin is inherited too, so a bump cannot leave it
 # asking crates.io for a joy-core that no longer exists there.
 joy-core = { workspace = true }
-# The operating system credential store (D2.6). The feature set is the
+# The operating system credential store. The feature set is the
 # corrected one: `linux-native` alone is the kernel keyutils store,
 # which is in memory and "will not persist across reboots", so the
 # persistent Secret Service collection is asked for beside it.
@@ -50,7 +50,7 @@ keyring = { version = "3.6", default-features = false, features = [
     # Linux, where no dbus dependency exists.
     "vendored",
 ] }
-# PKCE S256, the token fingerprint of D2.6a and the lock file name are
+# PKCE S256, the token fingerprint and the lock file name are
 # all SHA-256; the challenge and the verifier are base64url without
 # padding, and the verifier and the CSRF state come from the OS random
 # source.
@@ -64,12 +64,12 @@ clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
-# The connector's own HTTP client (D2.8). Blocking, because a connector
+# The connector's own HTTP client. Blocking, because a connector
 # is one short lived process that asks a handful of questions and exits;
 # an async runtime would be the larger half of the binary. rustls with
-# the platform verifier is the OS trust store of D1.12, and no proxy is
+# the platform verifier is the OS trust store, and no proxy is
 # read from the environment by ureq itself: joy decides the proxy in
-# `proxy.rs` so that the rules of D1.11 (NO_PROXY with trimmed entries,
+# `proxy.rs` so that the rules (NO_PROXY with trimmed entries,
 # ALL_PROXY, git config, the SOCKS refusal) hold here exactly as they
 # hold in the engine.
 ureq = { version = "3.4", default-features = false, features = [
