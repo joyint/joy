@@ -126,8 +126,8 @@ fn activation_takes_its_attester_from_the_acting_member() {
     );
 
     // The same checkout on a device that knows nobody: activation
-    // refuses, with the sentence D4.5 writes for a host that has a member
-    // picker, and it registers nothing.
+    // refuses with the one-line sentence (operator, 2026-09-27), and it
+    // registers nothing.
     forget_the_device_state(root);
     let err = joy_ai::ai_setup::init_tool(root, "qwen", PASSPHRASE, &mut |_| {}).unwrap_err();
     assert!(
@@ -135,14 +135,8 @@ fn activation_takes_its_attester_from_the_acting_member() {
         "{err}"
     );
     assert!(
-        err.to_string()
-            .starts_with("this project does not know who you are, pick your member"),
-        "the first line is the app's own remedy: {err}"
-    );
-    assert!(
-        err.to_string()
-            .contains("In the app that is the member picker"),
-        "and the command line's remedies are named as the command line's: {err}"
+        err.to_string().starts_with("not signed in"),
+        "the refusal is the one line: {err}"
     );
     let project = joy_core::store::load_project(root).unwrap();
     assert!(

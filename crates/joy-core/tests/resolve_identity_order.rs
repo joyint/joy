@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 //! `resolve_identity`'s order after the operator's 2026-09-19 correction
-//! (JOY-02AE-1A, correcting D3.9 of the forge connection NG design): a
-//! delegation session first, then git config (repository before
-//! global), then the forge account, and nothing else. The device pin of
-//! D3.9 is retired from this order for good; no case here depends on it.
+//! (JOY-02AE-1A, correcting D3.9 of the forge connection NG design) and
+//! the operator's addition of 2026-09-27: a delegation session first,
+//! then the person who signed in at this terminal, then git config
+//! (repository before global), then the forge account, and nothing
+//! else. The device pin of D3.9 is retired from this order for good; no
+//! case here depends on it.
 //!
 //! ONE test in its own binary, on purpose (the same reason as
 //! acting_member.rs and git_config_nosystem.rs): HOME, libgit2's config
@@ -102,6 +104,33 @@ fn add_member(root: &Path, address: &str) {
         .register_member(address, Member::new(MemberCapabilities::All))
         .unwrap();
     joy_core::store::write_yaml(&path, &project).unwrap();
+}
+
+/// Sign `member` in at this terminal: give them a verify key and save the
+/// session `joy auth --user <member>` would leave behind, signed with
+/// the matching identity key. The seed is the member's own, so two
+/// members never share a key.
+fn a_human_session(root: &Path, member: &str) {
+    let mut seed = [21u8; 32];
+    for (at, byte) in member.bytes().enumerate().take(32) {
+        seed[at] ^= byte;
+    }
+    let keypair = IdentityKeypair::from_seed(&seed);
+    let path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let mut project = joy_core::store::load_project(root).unwrap();
+    project
+        .member_by_key_mut(member)
+        .expect("the member is registered")
+        .verify_key = Some(keypair.public_key().to_hex());
+    joy_core::store::write_yaml(&path, &project).unwrap();
+    let project_id = session::project_id(root).unwrap();
+    let token = session::create_session(&keypair, member, &project_id, None);
+    session::save_session(&project_id, &token).unwrap();
+}
+
+fn sign_out(root: &Path, member: &str) {
+    let project_id = session::project_id(root).unwrap();
+    session::remove_session(&project_id, member).unwrap();
 }
 
 fn found(root: &Path, founder: &str) {
@@ -236,28 +265,152 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "no git config and no forge account yet: nobody answers, pin or not"
     );
 
+    // Step 2 on its own (operator, 2026-09-27): with no git identity
+    // anywhere, the person who signed in at this terminal is the
+    // member, authenticated. This is what "name yourself once" means on
+    // a machine with no git config: `joy auth --user <address>` leaves
+    // exactly this session behind.
+    a_human_session(root, "bea@example.com");
+    let signed_in = resolve_identity(root).unwrap();
+    assert_eq!(
+        signed_in.member.id(),
+        "bea@example.com",
+        "a session names the member with no git config at all"
+    );
+    assert!(signed_in.authenticated);
+    assert_eq!(signed_in.delegated_by, None);
+
     // Step 1: a delegation session outranks everything, even a git
-    // config that already names a different, human member. Unchanged by
-    // this correction, and checked here because the member key it used
-    // to compare against (the pin) is gone.
+    // config that already names a different, human member, and even the
+    // human session that just answered. Unchanged by either correction,
+    // and checked here because the member key it used to compare
+    // against (the pin) is gone.
     git_config_says_locally(root, "a@b.c");
     let session_env = a_delegation_session(root, "a@b.c", "ai:claude@joy");
     std::env::set_var("JOY_SESSION", &session_env);
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
         "ai:claude@joy",
-        "a live delegation session outranks git config"
+        "a live delegation session outranks git config and a human session"
     );
+
+    // A delegation that no longer stands never turns the agent into the
+    // person who signed in here. Bea's session is live at this very
+    // terminal, and the process still carries JOY_SESSION: it goes on as
+    // unproven as git config, and never as bea.
+    let project_file = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
+    let with_delegation = std::fs::read_to_string(&project_file).unwrap();
+    let mut project = joy_core::store::load_project(root).unwrap();
+    project
+        .member_by_key_mut("a@b.c")
+        .unwrap()
+        .ai_delegations
+        .clear();
+    joy_core::store::write_yaml(&project_file, &project).unwrap();
+    let cut_off = resolve_identity(root).unwrap();
+    assert_eq!(
+        cut_off.member.id(),
+        "a@b.c",
+        "a removed delegation leaves the agent with what git config says"
+    );
+    assert!(
+        !cut_off.authenticated,
+        "and never with the session a person made here"
+    );
+    std::fs::write(&project_file, with_delegation).unwrap();
+    // the same for a value that names no session at all
+    std::env::set_var("JOY_SESSION", "joy_s_not-a-session");
+    let nobody = resolve_identity(root).unwrap();
+    assert_ne!(nobody.member.id(), "bea@example.com");
+    assert!(!nobody.authenticated);
     std::env::remove_var("JOY_SESSION");
 
-    // Step 2: the repository's own git config, once no session answers.
+    // Step 2 before step 3: git config names a@b.c, bea's session names
+    // bea, and bea it is. This is how a second person acts at a checkout
+    // whose config names the first, without touching that config.
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "bea@example.com",
+        "the session of this terminal outranks git config"
+    );
+
+    // A second sign-in replaces the first: `save_session` keeps one
+    // person per project and device (operator, 2026-09-27), so carol's
+    // session is the only one left and the one that answers.
+    a_human_session(root, "carol@example.com");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "carol@example.com",
+        "the latest sign-in is the one that stands"
+    );
+    let project_id = session::project_id(root).unwrap();
+    assert!(
+        session::load_session(&project_id, "bea@example.com")
+            .unwrap()
+            .is_none(),
+        "bea's session went when carol signed in"
+    );
+
+    // Step 0: a name on the call itself (`--user`, carried as JOY_USER)
+    // outranks every session and is never remembered: unauthenticated,
+    // like git config, and gone with the variable.
+    std::env::set_var("JOY_USER", "a@b.c");
+    let named = resolve_identity(root).unwrap();
+    assert_eq!(named.member.id(), "a@b.c", "the name on the call wins");
+    assert!(!named.authenticated, "a name proves nothing by itself");
+    std::env::remove_var("JOY_USER");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "carol@example.com",
+        "nothing of the name remains"
+    );
+
+    // A session that ran out is not honoured, and it is cleared away the
+    // first time it is met, so its end is said once and not on every
+    // command after it.
+    {
+        let keypair = IdentityKeypair::from_seed(&[33u8; 32]);
+        let project_id = session::project_id(root).unwrap();
+        let ended = session::create_session(
+            &keypair,
+            "bea@example.com",
+            &project_id,
+            Some(chrono::Duration::hours(-1)),
+        );
+        // saving it replaces carol's, as every sign-in does
+        session::save_session(&project_id, &ended).unwrap();
+        assert!(session::load_session(&project_id, "bea@example.com")
+            .unwrap()
+            .is_some());
+        let after = resolve_identity(root).unwrap();
+        assert_eq!(after.member.id(), "a@b.c", "an ended session names nobody");
+        assert!(!after.authenticated);
+        assert!(
+            session::load_session(&project_id, "bea@example.com")
+                .unwrap()
+                .is_none(),
+            "and it is removed once it was met"
+        );
+    }
+
+    // Signing out gives git config its turn again.
+    sign_out(root, "carol@example.com");
+    sign_out(root, "bea@example.com");
+    assert_eq!(
+        resolve_identity(root).unwrap().member.id(),
+        "a@b.c",
+        "with the sessions gone, git config answers"
+    );
+    assert!(!resolve_identity(root).unwrap().authenticated);
+
+    // Step 3: the repository's own git config, once no session answers.
     git_config_says_locally(root, "bea@example.com");
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
         "bea@example.com"
     );
 
-    // Step 3: no local config; the person's global one answers instead.
+    // Step 4: no local config; the person's global one answers instead.
     forget_the_local_git_config(root);
     git_config_says_globally(home.path(), "carol@example.com");
     assert_eq!(
@@ -268,7 +421,7 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
     );
 
     // Local shadows global when both are set and disagree: git2's own
-    // config precedence, which is the whole reason steps 2 and 3 are one
+    // config precedence, which is the whole reason steps 3 and 4 are one
     // function rather than two. Guards against a future change
     // accidentally reading the global file first.
     git_config_says_locally(root, "bea@example.com");
@@ -280,7 +433,7 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
     forget_the_local_git_config(root);
     forget_the_global_git_config(home.path());
 
-    // Step 4: neither local nor global names a member; the forge account
+    // Step 5: neither local nor global names a member; the forge account
     // for the remote's host does. The stub plays the connector and
     // shadows whatever real gh/glab/tea backed plugin this machine may
     // have installed: `set_plugin_dirs` is searched before PATH (D2.2),
@@ -326,7 +479,7 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
         "{err}"
     );
     assert!(
-        err.to_string().contains("git config user.email"),
+        err.to_string().contains("--user <address>"),
         "the refusal names the remedy: {err}"
     );
 }

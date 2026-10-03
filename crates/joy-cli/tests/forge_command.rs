@@ -22,7 +22,6 @@
 
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
@@ -143,6 +142,42 @@ case "$1" in
 esac
 "#;
 
+/// Write one executable script through a child process, so that THIS
+/// process never holds a write handle on it.
+///
+/// The tests of this binary run in threads and every one of them starts
+/// children. A script written with `std::fs::write` is open for writing
+/// for a moment, and a thread that forks in that moment hands the handle
+/// to its child until that child's `exec`. joy, started right after the
+/// write, then cannot run the script: "Text file busy", which reads as
+/// `plugin_failed` (seen in CI on 2026-09-29). joy runs in a process of
+/// its own here, so the test cannot retry the spawn; it keeps the handle
+/// out of reach instead.
+fn write_script(path: &std::path::Path, body: &str) {
+    use std::io::Write as _;
+    use std::os::unix::fs::PermissionsExt;
+    let mut writer = joy_process::command("/bin/sh")
+        .arg("-c")
+        .arg("cat > \"$0\"")
+        .arg(path)
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .expect("start the writer of the script");
+    writer
+        .stdin
+        .take()
+        .expect("the writer's stdin")
+        .write_all(body.as_bytes())
+        .expect("hand the script to its writer");
+    assert!(
+        writer.wait().expect("the writer ends").success(),
+        "the script {} could not be written",
+        path.display()
+    );
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755))
+        .expect("make the script executable");
+}
+
 /// One machine per case: its own HOME, its own configuration and state
 /// directories, and its own connector directory.
 struct Machine {
@@ -169,9 +204,7 @@ impl Machine {
     /// Put one connector script in this machine's plugin directory.
     fn connector(&self, name: &str, body: &str) -> PathBuf {
         let path = self.plugins().join(name);
-        std::fs::write(&path, body).expect("write the connector");
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
-            .expect("make the connector executable");
+        write_script(&path, body);
         path
     }
 

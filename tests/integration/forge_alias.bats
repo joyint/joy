@@ -101,7 +101,7 @@ setup_project_with_alice() {
     # keeps a regression in that sentence from passing as a refusal.
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
+    [[ "$output" == *"not signed in"* ]]
 }
 
 @test "joy init refuses a forge alias as founder identity" {
@@ -129,7 +129,7 @@ setup_project_with_alice() {
     # caller to name themselves, in those words
     run joy add idea "stranger writes"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
+    [[ "$output" == *"not signed in"* ]]
 }
 
 @test "a legacy alias member key resolves back to the actor (direction two)" {
@@ -292,7 +292,7 @@ STUB
     # words: the lookalike host placed nobody, so nobody acts here
     run joy add idea "should be refused"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"this project does not know who you are, pick your member"* ]]
+    [[ "$output" == *"not signed in"* ]]
 }
 
 # The glab STUB: the GitLab forge boundary, same shape as the gh twin.

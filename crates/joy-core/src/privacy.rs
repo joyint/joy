@@ -571,13 +571,11 @@ mod tests {
 
     fn no_email_anywhere(root: &Path) -> bool {
         let joy = store::joy_dir(root);
-        for sub in [store::PROJECT_FILE] {
-            if std::fs::read_to_string(joy.join(sub))
-                .unwrap()
-                .contains(EMAIL)
-            {
-                return false;
-            }
+        if std::fs::read_to_string(joy.join(store::PROJECT_FILE))
+            .unwrap()
+            .contains(EMAIL)
+        {
+            return false;
         }
         for dir in [store::ITEMS_DIR, store::LOG_DIR] {
             for entry in std::fs::read_dir(joy.join(dir)).unwrap() {

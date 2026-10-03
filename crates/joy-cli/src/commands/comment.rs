@@ -98,9 +98,9 @@ fn run_add(id: String, text: Option<String>, editor: Option<&str>) -> Result<()>
         },
     };
 
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
     let mut item = items::load_item(&ctx.root, &id)?;
-    ctx.enforce(&Action::AddComment, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::AddComment, &item.id)?;
 
     let comment = Comment {
         author: ctx.log_user().into(),
@@ -134,9 +134,9 @@ fn run_add(id: String, text: Option<String>, editor: Option<&str>) -> Result<()>
 }
 
 fn run_edit(args: EditArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
     let mut item = items::load_item(&ctx.root, &args.id)?;
-    ctx.enforce(&Action::AddComment, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::AddComment, &item.id)?;
 
     let pos = resolve_index(&item.comments, args.index)?;
     let old_text = item.comments[pos].text.clone();
@@ -193,9 +193,9 @@ fn run_edit(args: EditArgs) -> Result<()> {
 }
 
 fn run_rm(args: RmArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
     let mut item = items::load_item(&ctx.root, &args.id)?;
-    ctx.enforce(&Action::AddComment, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::AddComment, &item.id)?;
 
     let pos = resolve_index(&item.comments, args.index)?;
     let preview = preview_text(&item.comments[pos].text);

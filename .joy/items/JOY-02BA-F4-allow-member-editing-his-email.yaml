@@ -1,0 +1,12 @@
+id: JOY-02BA-F4
+title: Allow member editing his email
+type: idea
+status: new
+priority: medium
+tags:
+- validation
+created_by: horst.schwarz@joydev.com
+created: 2026-10-03T13:26:59.231123160Z
+updated: 2026-10-03T13:26:59.231123160Z
+updated_by: horst.schwarz@joydev.com
+description: The member shall be able to change his email address via 'joy project member edit' or 'joy auth email'. All affected parts like verification keys, sessions, etc. must be updated automatically. This command shall request the passphrase again, if the member is already authenticated.

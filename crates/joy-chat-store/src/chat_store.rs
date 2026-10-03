@@ -179,9 +179,12 @@ pub fn snapshot_all(root: &std::path::Path) -> Result<Vec<(String, Sealed)>, Joy
 /// coverage. Idempotent: re-saving an unchanged chat writes no new
 /// objects.
 pub fn save(root: &std::path::Path, chat: &Chat, seed: &[u8; 32]) -> Result<(), JoyError> {
-    // Read tip, build, move ref — and if another writer moved it first,
-    // do the whole thing again on the new tip (JOY-023B-7E). Folding onto
-    // the winner is the only way the loser's messages survive.
+    // Under the store's write lock (JOY-02AB-F3): read tip, build, move
+    // ref, with no neighbour in between. The loop is the safety net for
+    // a writer that did not take the lock: if the ref moved anyway, do
+    // the whole thing again on the new tip (JOY-023B-7E), because folding
+    // onto the winner is the only way the loser's messages survive.
+    let _lock = chat_ref::write_lock(&chat_ref::open_repo(root)?)?;
     for _ in 0..chat_ref::REF_MOVE_ATTEMPTS {
         if save_once(root, chat, seed)? {
             return Ok(());
@@ -248,6 +251,7 @@ pub fn commit(root: &std::path::Path, cid: &str, write: &sealed::Write) -> Resul
     if write.is_empty() {
         return Ok(());
     }
+    let _lock = chat_ref::write_lock(&chat_ref::open_repo(root)?)?;
     for _ in 0..chat_ref::REF_MOVE_ATTEMPTS {
         if commit_once(root, cid, write)? {
             return Ok(());
@@ -412,6 +416,14 @@ fn write_tree(
         .insert(cid, chat_oid, i32::from(FileMode::Tree))
         .map_err(git)?;
     let root_oid = root_b.write().map_err(git)?;
+    // Nothing changed: the tree is the parent's, so there is nothing to
+    // commit (JOY-02AB-F3). A commit over the identical tree was what
+    // every loser of a creation race built on its retry, byte for byte
+    // the same across writers, and the twins' discard and publish then
+    // raced each other.
+    if root_tree.map(|t| t.id()) == Some(root_oid) {
+        return Ok(true);
+    }
     let new_root = repo.find_tree(root_oid).map_err(git)?;
     let moved = chat_ref::commit_root(repo, parent, &new_root, &format!("chat {cid} [no-item]"))?;
     Ok(moved.is_some())
@@ -438,6 +450,27 @@ pub fn load(root: &std::path::Path, id: &str, seed: &[u8; 32]) -> Result<Option<
 }
 
 /// Every new-format chat the reader can open, folded (unsorted).
+/// Whether the store holds any sealed chat at all, asked WITHOUT a key:
+/// a listing uses it to decide whether there is anything a passphrase
+/// could open before it asks a person for one.
+pub fn any_sealed(root: &std::path::Path) -> bool {
+    let Ok(repo) = chat_ref::open_repo(root) else {
+        return false;
+    };
+    let Ok(Some(commit)) = chat_ref::ref_commit(&repo) else {
+        return false;
+    };
+    let Ok(root_tree) = commit.tree() else {
+        return false;
+    };
+    let found = root_tree.iter().any(|e| {
+        e.to_object(&repo)
+            .and_then(|o| o.peel_to_tree())
+            .is_ok_and(|chat_tree| is_new_format(&repo, &chat_tree))
+    });
+    found
+}
+
 pub fn load_all(root: &std::path::Path, seed: &[u8; 32]) -> Result<Vec<Chat>, JoyError> {
     let repo = chat_ref::open_repo(root)?;
     let Some(commit) = chat_ref::ref_commit(&repo)? else {
@@ -614,6 +647,46 @@ mod tests {
         let tip2 = repo.refname_to_id(chat_ref::CHATS_REF).unwrap();
         let tree2 = repo.find_commit(tip2).unwrap().tree().unwrap().id();
         assert_eq!(tree1, tree2, "idempotent: identical tree");
+        assert_eq!(tip1, tip2, "and no commit for it (JOY-02AB-F3)");
+    }
+
+    /// JOY-02AB-F3: writers on one store queue behind the write lock
+    /// instead of racing the ref, so every one of them lands and none is
+    /// told to try again. In-process handles contend exactly like
+    /// processes do (flock keys on the open file description).
+    #[test]
+    fn parallel_writers_all_land_and_none_is_refused() {
+        let (dir, horst, _a) = project();
+        let mut chat = Chat::new("eeee4444eeee4444eeee4444eeee4444", vec![], ts(0));
+        chat.participants = vec![MemberRef::new("horst@example.com")];
+        save(dir.path(), &chat, &horst).unwrap();
+
+        const WRITERS: u32 = 8;
+        const EACH: u32 = 5;
+        let root = dir.path().to_path_buf();
+        let handles: Vec<_> = (0..WRITERS)
+            .map(|w| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    for n in 0..EACH {
+                        let mut mine = load(&root, "eeee4444eeee4444eeee4444eeee4444", &horst)
+                            .unwrap()
+                            .unwrap();
+                        let id = format!("w{w}-m{n}");
+                        mine.messages
+                            .push(msg(&id, 10 + w * EACH + n, "horst@example.com", &id));
+                        save(&root, &mine, &horst).unwrap();
+                    }
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+        let all = load(dir.path(), "eeee4444eeee4444eeee4444eeee4444", &horst)
+            .unwrap()
+            .unwrap();
+        assert_eq!(all.messages.len() as u32, WRITERS * EACH);
     }
 
     #[test]

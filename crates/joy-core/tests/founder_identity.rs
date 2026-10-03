@@ -141,31 +141,40 @@ fn an_explicit_user_founds_and_enrols_without_a_git_config() {
     .expect("the enrolment resolves its member without git config");
     assert_eq!(outcome.member_key, "mate@example.com");
 
-    // Operator decision 2026-09-19 (JOY-02AE-1A, correcting D3.9): the
-    // device pin the redemption used to write is not read by
-    // resolve_identity any more, so a passphrase session on its own,
-    // with no git config and no forge account naming the member, is not
-    // enough to say who is acting. This is the opposite of what this
-    // test asserted before the correction, and it is deliberate: "who
-    // acts" now comes from git config or the forge account, full stop,
-    // and a session only turns THAT answer into an authenticated one.
+    // The redemption opened her session at this terminal, and that
+    // session names her by itself, with no git config and no forge
+    // account (operator, 2026-09-27; the 2026-09-19 correction had this
+    // the other way round, when only git config and the forge account
+    // were sources and a session merely authenticated their answer). Not
+    // the retired device pin: the session is her own signature.
     let identity = joy_core::identity::resolve_identity(root).unwrap();
     assert_eq!(
         identity.member.id(),
-        "",
-        "a live session names nobody by itself once the pin is out of the order"
+        "mate@example.com",
+        "the session of this terminal names the member by itself"
     );
+    assert!(identity.authenticated);
 
-    // Once git config names her, the very session the redemption just
-    // opened makes the answer an authenticated one: the two mechanisms
-    // are independent, and this is where they meet.
+    // A git config that names her changes nothing about the answer; one
+    // that names somebody else does not either, while her session stands.
     joy_core::vcs::forge::local_config_set(root, "user.email", "mate@example.com").unwrap();
     let identity = joy_core::identity::resolve_identity(root).unwrap();
     assert_eq!(identity.member.id(), "mate@example.com");
-    assert!(
-        identity.authenticated,
-        "git config named her, and her own redemption session is still live"
+    assert!(identity.authenticated);
+    joy_core::vcs::forge::local_config_set(root, "user.email", "a@b.c").unwrap();
+    let identity = joy_core::identity::resolve_identity(root).unwrap();
+    assert_eq!(
+        identity.member.id(),
+        "mate@example.com",
+        "her session outranks a config naming the founder"
     );
+
+    // Signed out, the config is what answers, unauthenticated.
+    let project_id = joy_core::auth::session::project_id(root).unwrap();
+    joy_core::auth::session::remove_session(&project_id, "mate@example.com").unwrap();
+    let identity = joy_core::identity::resolve_identity(root).unwrap();
+    assert_eq!(identity.member.id(), "a@b.c");
+    assert!(!identity.authenticated);
 }
 
 /// The named member wins over everything else, which is what the desktop

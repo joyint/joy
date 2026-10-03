@@ -15,24 +15,14 @@
 use anyhow::Result;
 use joy_core::context::Context;
 
-use crate::commands::auth::read_passphrase;
-
 /// Load the project [`Context`] and install zone keys before returning,
 /// so any subsequent read or write of items in a Crypt zone succeeds
 /// without each command having to remember to call
 /// [`ensure_zone_keys`]. Plaintext-only projects skip the prompt via
 /// the [`ensure_zone_keys`] pre-check (JOY-0173-B3).
-pub fn load_context(passphrase: Option<&str>) -> Result<Context> {
-    load_context_with_stdin(passphrase, false)
-}
-
-/// Same as [`load_context`] but also forwards a `--passphrase-stdin`
-/// signal to the prompt helper (JOY-018E-21). The plain `load_context`
-/// wrapper covers the many callers that have no passphrase flag at
-/// all and therefore can never use stdin either.
-pub fn load_context_with_stdin(passphrase: Option<&str>, from_stdin: bool) -> Result<Context> {
+pub fn load_context() -> Result<Context> {
     let ctx = Context::load()?;
-    ensure_zone_keys_with_stdin(passphrase, from_stdin)?;
+    ensure_zone_keys()?;
     Ok(ctx)
 }
 
@@ -47,14 +37,7 @@ pub fn load_context_with_stdin(passphrase: Option<&str>, from_stdin: bool) -> Re
 ///   .delegations[ai-member][operator]` using the delegation private key
 ///   embedded in `JOY_SESSION` (no passphrase prompt for the AI; the
 ///   operator already typed it at token issuance).
-pub fn ensure_zone_keys(passphrase_flag: Option<&str>) -> Result<()> {
-    ensure_zone_keys_with_stdin(passphrase_flag, false)
-}
-
-/// Variant of [`ensure_zone_keys`] that accepts a `--passphrase-stdin`
-/// signal forwarded by callers that surface that flag on their clap
-/// args (JOY-018E-21).
-pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bool) -> Result<()> {
+pub fn ensure_zone_keys() -> Result<()> {
     if joy_core::crypt::has_active_zone_keys() {
         return Ok(());
     }
@@ -131,15 +114,10 @@ pub fn ensure_zone_keys_with_stdin(passphrase_flag: Option<&str>, from_stdin: bo
         return Ok(());
     }
 
-    // Allow non-interactive callers (CI, scripts, tests) to supply
-    // the passphrase via JOY_PASSPHRASE when no --passphrase flag was
-    // passed on the command line. Visible to the same process tree as
-    // a CLI flag, but does not require every command to expose its
-    // own --passphrase argument.
-    let env_passphrase = std::env::var("JOY_PASSPHRASE").ok();
-    let effective_flag = passphrase_flag.or(env_passphrase.as_deref());
-    let passphrase = read_passphrase(effective_flag, from_stdin, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+    // The auth gate: this terminal's session brings the seed without a
+    // question, else the passphrase (flag, stdin, or asked), which then
+    // makes the session (operator, 2026-09-27).
+    let unlocked = crate::auth_gate::unlock(&root, &project, &member_key)?;
     let mut keys = std::collections::BTreeMap::new();
     for (zone, wrap_hex) in &member.crypt_wraps {
         if let Ok(zk) = joy_crypt::zone::unwrap_for_member(wrap_hex, zone, &unlocked.seed) {

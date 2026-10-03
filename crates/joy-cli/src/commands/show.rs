@@ -20,10 +20,6 @@ pub struct ShowArgs {
     /// Compact output: emoji-only or abbreviations
     #[arg(short = 'S', long)]
     pub short: bool,
-
-    /// Passphrase for encrypted items.
-    #[arg(long)]
-    passphrase: Option<String>,
 }
 
 /// Cents to a display amount: 123 -> "1.23 EUR".
@@ -37,7 +33,7 @@ pub fn run(args: ShowArgs) -> Result<()> {
 
     // ADR-040: install zone keys upfront if the active member has any
     // Crypt wraps. No-op for plain projects.
-    crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
+    crate::crypt_session::ensure_zone_keys()?;
 
     let item = items::load_item(&root, &args.id)?;
     let all_items = items::load_items(&root)?;

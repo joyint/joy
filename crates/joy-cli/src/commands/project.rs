@@ -99,13 +99,6 @@ struct SetArgs {
     /// $VISUAL / $EDITOR). Mirrors `joy comment`.
     #[arg(long)]
     editor: Option<String>,
-    /// Passphrase for a `privacy` mode switch (non-interactive). Falls back to
-    /// JOY_PASSPHRASE or an interactive prompt.
-    #[arg(long)]
-    passphrase: Option<String>,
-    /// Read the passphrase from a single line on stdin (for `privacy` switch).
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -133,14 +126,6 @@ enum MemberCommand {
 struct MemberEraseArgs {
     /// Member to erase (e-mail or opaque id).
     id: String,
-
-    /// Passphrase of the acting manage member (non-interactive).
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -162,16 +147,6 @@ struct MemberAddArgs {
     #[arg(short = 'c', long)]
     capabilities: Option<String>,
 
-    /// Passphrase of the acting manage member (non-interactive, for
-    /// scripts and tests). The acting member's identity key signs the
-    /// attestation placed on the new member's entry.
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
-
     /// After registering an AI member, immediately issue a delegation
     /// token. Combines `joy project member add` and `joy auth token add`
     /// so the operator unlocks their identity once. Ignored for human
@@ -185,16 +160,6 @@ struct MemberRmArgs {
     /// Member ID (email or ai:tool@joy)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
-
-    /// Passphrase of the acting manage member (non-interactive, for
-    /// scripts and tests). Required when the removed member attested
-    /// others, so re-attestation can be signed by the remover.
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
 }
 
 #[derive(clap::Args)]
@@ -228,20 +193,10 @@ struct MemberEditArgs {
     /// proposing|confirmed|autonomous.
     #[arg(long = "max-interaction-level", value_name = "CAP=LEVEL")]
     max_interaction_level: Vec<String>,
-
-    /// Passphrase of the acting manage member (non-interactive, for
-    /// scripts and tests). Any capability or interaction change invalidates the
-    /// member's attestation, so the acting member re-signs it.
-    #[arg(long)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin.
-    #[arg(long = "passphrase-stdin")]
-    passphrase_stdin: bool,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
-    let ctx = Context::load()?;
+    let mut ctx = Context::load()?;
 
     let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
     let mut project: Project = store::read_yaml(&project_path)?;
@@ -251,11 +206,11 @@ pub fn run(args: ProjectArgs) -> Result<()> {
             return get_value(&ctx.root, &project, &a.key, a.describe);
         }
         Some(ProjectCommand::Set(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
+            crate::auth_gate::enforce(&mut ctx, &Action::ManageProject, "project")?;
             return set_command(&ctx, &project_path, &mut project, a);
         }
         Some(ProjectCommand::Member(a)) => {
-            return run_member(a, &mut project, &project_path, &ctx);
+            return run_member(a, &mut project, &project_path, &mut ctx);
         }
         None => {}
     }
@@ -264,7 +219,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
     let is_edit = args.name.is_some() || args.description.is_some() || args.language.is_some();
 
     if is_edit {
-        ctx.enforce(&Action::ManageProject, "project")?;
+        crate::auth_gate::enforce(&mut ctx, &Action::ManageProject, "project")?;
         if let Some(name) = args.name {
             project.name = name;
         }
@@ -606,24 +561,7 @@ fn set_privacy(
     }
 
     // A real switch: unlock the acting member's seed (auth), then migrate.
-    let member_key = joy_core::identity::acting_human_key(&ctx.root)?;
-    let member = project
-        .member_by_key(&member_key)
-        .ok_or_else(|| anyhow::anyhow!("{member_key} is not a member of this project"))?;
-    if member.verify_key.is_none() {
-        bail!("{member_key} has no identity. Run `joy auth init` first.");
-    }
-    let passphrase = match args.passphrase.clone().or_else(|| {
-        std::env::var("JOY_PASSPHRASE")
-            .ok()
-            .filter(|s| !s.is_empty())
-    }) {
-        Some(p) => p,
-        None => {
-            crate::commands::auth::read_passphrase(None, args.passphrase_stdin, "Passphrase: ")?
-        }
-    };
-    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+    let unlocked = crate::auth_gate::unlock_acting(&ctx.root, project)?;
 
     let renamed = if want_anon {
         joy_core::privacy::switch_to_anonymous(&ctx.root, project, &unlocked.seed)?
@@ -893,7 +831,7 @@ fn run_member(
     args: MemberArgs,
     project: &mut Project,
     project_path: &std::path::Path,
-    ctx: &Context,
+    ctx: &mut Context,
 ) -> Result<()> {
     match args.command {
         None => {
@@ -1033,7 +971,7 @@ fn run_member(
             println!("{}", color::label(&"-".repeat(w)));
         }
         Some(MemberCommand::Add(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
+            crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
             if project.has_member_key(&a.id) {
                 bail!("member {} already exists", a.id);
             }
@@ -1074,28 +1012,11 @@ fn run_member(
             let attester_key = joy_core::identity::acting_human_key(&ctx.root)?;
             let is_ai = a.id.starts_with("ai:");
 
-            // When `--with-token` is set for an AI member, the same
-            // passphrase signs the attestation *and* the delegation
-            // token. Read it once here so the operator is prompted a
-            // single time across both steps (JOY-0185-66).
-            let captured_passphrase: Option<String> = if is_ai && a.with_token {
-                Some(match a.passphrase.clone() {
-                    Some(p) => p,
-                    None => crate::commands::auth::read_passphrase(
-                        None,
-                        a.passphrase_stdin,
-                        "Passphrase: ",
-                    )?,
-                })
-            } else {
-                a.passphrase.clone()
-            };
-            let attester_kp = derive_acting_keypair(
-                project,
-                &attester_key,
-                captured_passphrase.as_deref(),
-                a.passphrase_stdin,
-            )?;
+            // One unlock serves the attestation and, with `--with-token`,
+            // the delegation token too (JOY-0185-66): the gate answers
+            // from the session or asks once.
+            let attester = crate::auth_gate::unlock(&ctx.root, project, &attester_key)?;
+            let attester_kp = &attester.keypair;
 
             // AI members do not enrol via passphrase; they get a delegation
             // token issued by an existing operator (`joy auth token add`).
@@ -1122,7 +1043,7 @@ fn run_member(
             // cleartext address.
             let attestation = joy_core::auth::attestation::sign_attestation(
                 &attester_key,
-                &attester_kp,
+                attester_kp,
                 signed_fields,
             );
 
@@ -1136,18 +1057,11 @@ fn run_member(
             joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
 
             // Optional immediate token issuance for AI members
-            // (JOY-0185-66). Reuses the captured passphrase so the
-            // operator is not prompted a second time.
+            // (JOY-0185-66): the same unlocked operator signs it, so
+            // nothing is asked a second time.
             let token_result: Option<(String, i64)> = if is_ai && a.with_token {
-                let passphrase = captured_passphrase
-                    .as_deref()
-                    .expect("captured when is_ai && with_token");
                 Some(crate::commands::auth::create_delegation_token(
-                    &ctx.root,
-                    &attester_key,
-                    passphrase,
-                    &a.id,
-                    None,
+                    &ctx.root, &attester, &a.id, None,
                 )?)
             } else {
                 None
@@ -1208,7 +1122,7 @@ fn run_member(
             );
         }
         Some(MemberCommand::Edit(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
+            crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
 
             if a.capabilities.is_none()
                 && a.add_capability.is_empty()
@@ -1339,12 +1253,7 @@ fn run_member(
             //    the stored attestation (it covers `capabilities`), so the
             //    acting manage member re-signs over the new fields.
             let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
-            let acting_kp = derive_acting_keypair(
-                project,
-                &acting_key,
-                a.passphrase.as_deref(),
-                a.passphrase_stdin,
-            )?;
+            let acting_kp = derive_acting_keypair(&ctx.root, project, &acting_key)?;
             let signed_fields = joy_core::auth::attestation::signed_fields_for(
                 &key,
                 &member.capabilities,
@@ -1381,7 +1290,7 @@ fn run_member(
             );
         }
         Some(MemberCommand::Rm(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
+            crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
 
             // JOY-00FE-F6: self-remove is blocked and directs the user to
             // another manage member.
@@ -1437,12 +1346,7 @@ fn run_member(
             let acting_kp = if orphans.is_empty() {
                 None
             } else {
-                Some(derive_acting_keypair(
-                    project,
-                    &acting_key,
-                    a.passphrase.as_deref(),
-                    a.passphrase_stdin,
-                )?)
+                Some(derive_acting_keypair(&ctx.root, project, &acting_key)?)
             };
 
             if project.remove_member(&a.id).is_none() {
@@ -1494,26 +1398,13 @@ fn run_member(
             );
         }
         Some(MemberCommand::Erase(a)) => {
-            ctx.enforce(&Action::ManageProject, "project")?;
+            crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
             if project.privacy_mode() != PrivacyMode::Anonymous {
                 bail!("erasure applies only to anonymous projects (privacy: anonymous)");
             }
             // Unlock the acting manage member's seed; it grants members.yaml access.
             let operator_key = joy_core::identity::acting_human_key(&ctx.root)?;
-            let operator = project
-                .member_by_key(&operator_key)
-                .ok_or_else(|| anyhow::anyhow!("{operator_key} is not a member of this project"))?;
-            let passphrase = a.passphrase.clone().or_else(|| {
-                std::env::var("JOY_PASSPHRASE")
-                    .ok()
-                    .filter(|s| !s.is_empty())
-            });
-            let passphrase = crate::commands::auth::read_passphrase(
-                passphrase.as_deref(),
-                a.passphrase_stdin,
-                "Passphrase: ",
-            )?;
-            let unlocked = joy_core::auth::unlock_identity(operator, &passphrase)?;
+            let unlocked = crate::auth_gate::unlock(&ctx.root, project, &operator_key)?;
 
             // The target is an opaque id already in members.yaml, or an e-mail
             // resolved to its id via the email_match verifier.
@@ -1575,31 +1466,19 @@ fn default_member_capabilities() -> MemberCapabilities {
     MemberCapabilities::Specific(map)
 }
 
-/// Derive and verify the acting member's identity keypair from their
-/// passphrase. Used to sign attestations on `joy project member add`.
+/// The acting member's identity keypair, through the auth gate: the
+/// session of this terminal, else the passphrase (which then makes the
+/// session). Used to sign attestations on `joy project member add`.
 ///
 /// `member_key` is an at-rest member map key, the shape
 /// [`joy_core::identity::acting_human_key`] answers with, so an anonymous
 /// project (ADR-042) needs no second lookup path.
 pub(crate) fn derive_acting_keypair(
+    root: &std::path::Path,
     project: &Project,
     member_key: &str,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
 ) -> Result<IdentityKeypair> {
-    let member = project
-        .member_by_key(member_key)
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member", member_key))?;
-    if member.verify_key.is_none() {
-        anyhow::bail!(
-            "{} has no registered public key. Run `joy auth init` first.",
-            member_key
-        );
-    }
-    let passphrase =
-        crate::commands::auth::read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
-    let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
-    Ok(unlocked.keypair)
+    Ok(crate::auth_gate::unlock(root, project, member_key)?.keypair)
 }
 
 fn print_members_table(project: &Project, root: &std::path::Path) {

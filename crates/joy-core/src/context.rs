@@ -29,6 +29,12 @@ impl Context {
         let cwd =
             std::env::current_dir().map_err(|e| JoyError::Other(format!("current dir: {e}")))?;
         let root = store::find_project_root(&cwd).ok_or(JoyError::NotInitialized)?;
+        Self::load_at(&root)
+    }
+
+    /// Load the context of the project at `root`.
+    pub fn load_at(root: &std::path::Path) -> Result<Self, JoyError> {
+        let root = root.to_path_buf();
         let identity = identity::resolve_identity(&root).unwrap_or(Identity {
             member: "unknown".into(),
             delegated_by: None,
@@ -40,6 +46,12 @@ impl Context {
             identity,
             guard,
         })
+    }
+
+    /// The guard this context enforces with, for a host that wants to
+    /// ask a question of it (whether proof is needed) before enforcing.
+    pub fn guard(&self) -> &Guard {
+        &self.guard
     }
 
     /// Check and enforce a guard action. Logs events on deny/warn.

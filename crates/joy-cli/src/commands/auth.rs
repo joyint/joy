@@ -20,18 +20,6 @@ pub struct AuthArgs {
     #[command(subcommand)]
     command: Option<AuthCommand>,
 
-    /// Passphrase (non-interactive).
-    #[arg(long, global = true)]
-    passphrase: Option<String>,
-
-    /// Read the passphrase from a single line on stdin. Useful for
-    /// GUI frontends and CI pipelines that collect the secret elsewhere
-    /// and want to avoid exposing it in the process listing the way
-    /// `--passphrase <value>` would. Mutually exclusive with
-    /// `--passphrase`.
-    #[arg(long = "passphrase-stdin", global = true)]
-    passphrase_stdin: bool,
-
     /// Delegation token for AI auth (or set JOY_TOKEN).
     #[arg(long, global = true)]
     token: Option<String>,
@@ -39,10 +27,6 @@ pub struct AuthArgs {
     /// One-time password for first-time member setup.
     #[arg(long, global = true)]
     otp: Option<String>,
-
-    /// Authenticate as this member ID.
-    #[arg(long, global = true)]
-    user: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -159,42 +143,27 @@ struct TokenAddArgs {
 }
 
 pub fn run(args: AuthArgs) -> Result<()> {
-    let stdin = args.passphrase_stdin;
+    // The global `--user` (JOY_USER): here it names who signs in, and
+    // the session is made for them. On every other command it is a name
+    // for that one call. The passphrase comes from the global flags the
+    // same way (see `read_passphrase`).
+    let user = joy_core::identity::named_user();
     match args.command {
-        Some(AuthCommand::Init) => run_init(
-            args.passphrase.as_deref(),
-            stdin,
-            args.user.as_deref(),
-            false,
-        )
-        .map(|_| ()),
+        Some(AuthCommand::Init) => run_init(user.as_deref(), false, true).map(|_| ()),
         Some(AuthCommand::Status) => run_status(),
-        Some(AuthCommand::Reset(a)) => run_reset(a, args.passphrase.as_deref(), stdin),
-        Some(AuthCommand::Token(a)) => {
-            run_token(a, args.passphrase.as_deref(), stdin, args.user.as_deref())
-        }
+        Some(AuthCommand::Reset(a)) => run_reset(a),
+        Some(AuthCommand::Token(a)) => run_token(a, user.as_deref()),
         Some(AuthCommand::Delegation(a)) => match a.command {
-            DelegationCommand::Rotate(args_) => {
-                run_ai_rotate(&args_.member, args.passphrase.as_deref(), stdin)
-            }
+            DelegationCommand::Rotate(args_) => run_ai_rotate(&args_.member),
             DelegationCommand::Ls(args_) => run_delegation_ls(args_.member.as_deref()),
         },
-        Some(AuthCommand::Passphrase(a)) => run_passphrase(
-            args.passphrase.as_deref(),
-            stdin,
-            a.new_passphrase.as_deref(),
-        ),
-        Some(AuthCommand::Recover(a)) => run_recover(a, args.passphrase.as_deref(), stdin),
+        Some(AuthCommand::Passphrase(a)) => run_passphrase(a.new_passphrase.as_deref()),
+        Some(AuthCommand::Recover(a)) => run_recover(a),
         None => {
             if let Some(otp) = args.otp.as_deref() {
-                run_auth_otp(otp, args.passphrase.as_deref(), stdin, args.user.as_deref())
+                run_auth_otp(otp, user.as_deref())
             } else {
-                run_auth(
-                    args.passphrase.as_deref(),
-                    stdin,
-                    args.token.as_deref(),
-                    args.user.as_deref(),
-                )
+                run_auth(args.token.as_deref(), user.as_deref())
             }
         }
     }
@@ -208,9 +177,29 @@ pub fn run(args: AuthArgs) -> Result<()> {
 /// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
     let project = store::load_project(root)?;
-    Ok(joy_core::identity::acting_member(
-        root, &project, user_flag,
-    )?)
+    name_the_member(root, &project, user_flag)
+}
+
+/// The member this auth command is for, and the question a person is
+/// asked when nothing names one. `joy auth` is the command that signs
+/// in, so it may not answer "run `joy auth`": at a terminal it asks for
+/// the address, and where nobody can be asked it names the one way left.
+fn name_the_member(
+    root: &Path,
+    project: &joy_core::model::project::Project,
+    user_flag: Option<&str>,
+) -> Result<String> {
+    match joy_core::identity::acting_member(root, project, user_flag) {
+        Ok(member) => Ok(member),
+        Err(joy_core::error::JoyError::UnknownActingMember) => {
+            if crate::prompt::is_interactive() {
+                Ok(crate::prompt::ask_text("Your member address:", None)?)
+            } else {
+                anyhow::bail!("not signed in: pass `--user <address>`")
+            }
+        }
+        Err(other) => Err(other.into()),
+    }
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -228,25 +217,17 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 /// other test harnesses redirected stdin but cannot intercept the
 /// controlling TTY.
 ///
-/// `pub(crate)` so other commands (e.g. `derive_acting_keypair` in the
-/// project module) share the same non-interactive-detection rule.
-///
-/// `from_stdin` selects the `--passphrase-stdin` path: read a single
-/// line from stdin (without echoing) and strip its trailing newline.
-/// Designed for GUI frontends and CI pipelines that pipe a secret in
-/// without exposing it in the process listing the way `--passphrase
-/// <value>` would (JOY-018E-21).
-pub(crate) fn read_passphrase(
-    flag: Option<&str>,
-    from_stdin: bool,
-    prompt: &str,
-) -> Result<String> {
+/// `pub(crate)` so every command shares the same rule. The passphrase
+/// comes from the global `--passphrase`, else `--passphrase-stdin` (one
+/// line, no echo, trailing newline stripped; for GUI frontends and CI
+/// pipelines that keep the secret out of the process listing,
+/// JOY-018E-21), else the terminal.
+pub(crate) fn read_passphrase(prompt: &str) -> Result<String> {
     use std::io::{BufRead, IsTerminal};
+    let flag = crate::auth_gate::passphrase_flag();
+    let from_stdin = crate::auth_gate::passphrase_from_stdin();
     if let Some(p) = flag {
-        if from_stdin {
-            anyhow::bail!("--passphrase and --passphrase-stdin are mutually exclusive");
-        }
-        return Ok(p.to_string());
+        return Ok(p);
     }
     if from_stdin {
         let stdin = std::io::stdin();
@@ -268,8 +249,8 @@ pub(crate) fn read_passphrase(
     }
     if !std::io::stdin().is_terminal() {
         anyhow::bail!(
-            "passphrase required: stdin is not a terminal. \
-             Pass --passphrase <value> or --passphrase-stdin for non-interactive use."
+            "passphrase required and no terminal to ask: run `joy auth`, \
+             or pass --passphrase <value> or --passphrase-stdin"
         );
     }
     let passphrase = rpassword::prompt_password(prompt)?;
@@ -286,16 +267,32 @@ pub(crate) fn read_passphrase(
     Ok(passphrase)
 }
 
+/// A NEW passphrase (`joy auth passphrase`, `joy auth recover`): the
+/// `--new-passphrase` flag, else asked at the terminal. Never the global
+/// `--passphrase`, which is the current one.
+fn read_new_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
+    use std::io::IsTerminal;
+    if let Some(p) = flag {
+        return Ok(p.to_string());
+    }
+    if !std::io::stdin().is_terminal() {
+        anyhow::bail!("new passphrase required: pass --new-passphrase <value> or use a terminal");
+    }
+    Ok(rpassword::prompt_password(prompt)?)
+}
+
 /// `joy auth init` — first-time setup for the current member.
 ///
 /// Returns the validated passphrase so callers that bootstrap auth as part
 /// of a larger flow (e.g. `joy ai init`) can pass it forward to subsequent
 /// operations in the same invocation without re-prompting the user.
+///
+/// `persist_session` is false for exactly those callers: only `joy auth`
+/// and `joy auth init` leave a session behind (operator, 2026-09-27).
 pub(crate) fn run_init(
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
     user_flag: Option<&str>,
     anonymous: bool,
+    persist_session: bool,
 ) -> Result<String> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
@@ -308,7 +305,7 @@ pub(crate) fn run_init(
     // else the forge account. The project is never guessed from, not
     // even when it has exactly one member: the project file travels
     // with every clone.
-    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
+    let email = name_the_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -326,12 +323,12 @@ pub(crate) fn run_init(
     }
 
     // Get passphrase
-    let interactive = passphrase_flag.is_none() && !passphrase_stdin;
+    let interactive = !crate::auth_gate::passphrase_given();
     if interactive {
         eprintln!("Setting up authentication for {}.", color::id(&email));
         eprintln!("Choose a passphrase (minimum 3 words, e.g. Diceware):");
     }
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "  Passphrase: ")?;
+    let passphrase = read_passphrase("  Passphrase: ")?;
     validate_passphrase(&passphrase)?;
 
     // Confirm (only in interactive mode)
@@ -401,23 +398,31 @@ pub(crate) fn run_init(
     };
 
     // Create initial session
-    let project_id = session::project_id(&root)?;
-    let mut session_token = session::create_session(&keypair, &session_member, &project_id, None);
-    // Anonymous mode (ADR-042): cache the members.yaml zone key so later commands
-    // resolve opaque ids without re-entering the passphrase.
-    session_token.members_zone_key =
-        cached_members_zone_key(&project, &session_member, seed.as_bytes());
-    session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
-    session::save_session(&project_id, &session_token)?;
+    if persist_session {
+        let project_id = session::project_id(&root)?;
+        let mut session_token =
+            session::create_session(&keypair, &session_member, &project_id, None);
+        // Anonymous mode (ADR-042): cache the members.yaml zone key so later commands
+        // resolve opaque ids without re-entering the passphrase.
+        session_token.members_zone_key =
+            cached_members_zone_key(&project, &session_member, seed.as_bytes());
+        session_token.chat_seed = Some(hex::encode(seed.as_bytes()));
+        session::save_session(&project_id, &session_token)?;
+    }
 
+    let session_line = if persist_session {
+        " Session active (24h)."
+    } else {
+        ""
+    };
     if anonymous {
         println!("Authentication initialized for {email} (anonymous mode).");
         println!(
-            "Your e-mail is kept out of the committed files. Public key registered. Session active (24h)."
+            "Your e-mail is kept out of the committed files. Public key registered.{session_line}"
         );
     } else {
         println!("Authentication initialized for {email}.");
-        println!("Public key registered. Session active (24h).");
+        println!("Public key registered.{session_line}");
     }
     println!();
     println!("RECOVERY KEY (write this down now, it is shown only once):");
@@ -441,12 +446,7 @@ pub(crate) fn run_init(
 }
 
 /// `joy auth` — authenticate by passphrase (human) or delegation token (AI).
-fn run_auth(
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-    token_flag: Option<&str>,
-    user_flag: Option<&str>,
-) -> Result<()> {
+fn run_auth(token_flag: Option<&str>, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -460,24 +460,16 @@ fn run_auth(
 
     // Human authentication via passphrase
     let email = resolve_user(&root, user_flag)?;
-    auth_with_passphrase(
-        &root,
-        &project,
-        &project_id,
-        &email,
-        passphrase_flag,
-        passphrase_stdin,
-    )
+    auth_with_passphrase(&root, &project, &email)
 }
 
-/// Authenticate a human member via passphrase.
+/// Authenticate a human member via passphrase: the session this leaves
+/// behind is THE session of this project on this device; whoever was
+/// signed in before is not any more (`session::save_session`).
 fn auth_with_passphrase(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
-    _project_id: &str,
     email: &str,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
 ) -> Result<()> {
     // In anonymous mode the member map is keyed by the opaque id, not the git
     // e-mail (ADR-042); resolve it so the lookup, session and audit actor share
@@ -508,7 +500,7 @@ fn auth_with_passphrase(
     let public_key = PublicKey::from_hex(public_key_hex)?;
     let salt = Salt::from_hex(salt_hex)?;
 
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+    let passphrase = read_passphrase("Passphrase: ")?;
 
     // ADR-039: legacy entries (no seed_wrap_*) migrate here first, with
     // the interactive recovery-key printout; the shared core login below
@@ -676,13 +668,14 @@ fn auth_with_token(
 /// person can act on.
 ///
 /// The order is `resolve_identity`'s own: a delegation session names the
-/// AI and the operator behind it; failing that, git config (the
-/// repository's own file or the person's global one, read as one merged
-/// value, so this does not try to say which of the two it was); failing
-/// that, the forge account for the remote's host. The device pin is not
-/// in this list any more: `run_status` already refused before calling
-/// this function when nothing named a member, so a non-empty member here
-/// is always one of the three, checked in the same order.
+/// AI and the operator behind it; failing that, the person's own session
+/// at this terminal (operator, 2026-09-27); failing that, git config
+/// (the repository's own file or the person's global one, read as one
+/// merged value, so this does not try to say which of the two it was);
+/// failing that, the forge account for the remote's host. The device pin
+/// is not in this list any more: `run_status` already refused before
+/// calling this function when nothing named a member, so a non-empty
+/// member here is always one of the four, checked in the same order.
 fn identity_source(
     root: &std::path::Path,
     project: &joy_core::model::project::Project,
@@ -690,6 +683,15 @@ fn identity_source(
 ) -> String {
     if identity.delegated_by.is_some() {
         return "delegation session in JOY_SESSION".to_string();
+    }
+    if joy_core::identity::named_user().is_some() {
+        return "--user on this call".to_string();
+    }
+    // A human who is authenticated was found through their own session
+    // (the second step of the order, before git config), whatever the
+    // config says: that is the one that names them here.
+    if identity.authenticated {
+        return "your session in this terminal".to_string();
     }
     let member = identity.member.id();
     let (_, config_email) = joy_core::vcs::forge::user_identity(root);
@@ -899,7 +901,7 @@ struct DelegatedSession {
 }
 
 /// `joy auth reset [member]` — reset authentication for yourself or another member.
-fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: bool) -> Result<()> {
+fn run_reset(args: ResetArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -927,12 +929,12 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
     }
 
     // Authenticate the acting user
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+    let passphrase = read_passphrase("Passphrase: ")?;
     let _ = joy_core::auth::unlock_identity(acting_member, &passphrase)?;
 
     // If resetting another member, check manage capability
     if resetting_other {
-        joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+        crate::auth_gate::enforce_at(&root, &joy_core::guard::Action::ManageProject, "project")?;
     }
 
     // Verify target member exists. `target` is consumed throughout this
@@ -973,31 +975,27 @@ fn run_reset(args: ResetArgs, passphrase_flag: Option<&str>, passphrase_stdin: b
 }
 
 /// `joy auth token` — manage delegation tokens.
-fn run_token(
-    args: TokenArgs,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-    user_flag: Option<&str>,
-) -> Result<()> {
+fn run_token(args: TokenArgs, user_flag: Option<&str>) -> Result<()> {
     match args.command {
-        TokenCommand::Add(a) => run_token_add(a, passphrase_flag, passphrase_stdin, user_flag),
+        TokenCommand::Add(a) => run_token_add(a, user_flag),
     }
 }
 
 /// `joy auth token add <ai-member>` — create a delegation token.
-fn run_token_add(
-    args: TokenAddArgs,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-    user_flag: Option<&str>,
-) -> Result<()> {
+fn run_token_add(args: TokenAddArgs, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let email = resolve_user(&root, user_flag)?;
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+    // The operator's at-rest key (the address in open mode, the opaque id
+    // in anonymous mode, ADR-042), then the auth gate: the session of
+    // this terminal, else the passphrase asked once.
+    let project = store::load_project(&root)?;
+    let operator_key =
+        joy_core::privacy::member_key_for_email_or_forge(&project, &root, &email, None)
+            .unwrap_or_else(|| email.clone());
+    let unlocked = crate::auth_gate::unlock(&root, &project, &operator_key)?;
 
-    let (encoded, hours) =
-        create_delegation_token(&root, &email, &passphrase, &args.member, args.ttl)?;
+    let (encoded, hours) = create_delegation_token(&root, &unlocked, &args.member, args.ttl)?;
 
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
@@ -1040,8 +1038,7 @@ fn run_token_add(
 /// caller is responsible for any user-facing output.
 pub(crate) fn create_delegation_token(
     root: &Path,
-    operator: &str,
-    operator_passphrase: &str,
+    operator: &crate::auth_gate::Unlocked,
     ai_member: &str,
     ttl_hours_override: Option<i64>,
 ) -> Result<(String, i64)> {
@@ -1060,48 +1057,17 @@ pub(crate) fn create_delegation_token(
         );
     }
 
-    // Authenticate the acting human first. We do this before the guard
-    // check so that a cold-start (no active session) does not require
-    // running `joy auth` separately: the passphrase entered here covers
-    // both signing the delegation and bootstrapping the session
-    // (JOY-00EF-E5).
-    // Resolve the operator's at-rest map key (the e-mail in open mode, the
-    // opaque id in anonymous mode, ADR-042). Sessions, the guard identity and
-    // the attestation are all keyed by this id, never by the cleartext
-    // e-mail. The caller holds either an address a person typed (`--user`)
-    // or an at-rest member key (`joy_core::identity::acting_human_key`,
-    // which is resolve_identity's own answer); both must find the same
-    // member.
-    let member_key = project
-        .member_key_for_email(operator)
-        .or_else(|| {
-            project
-                .has_member_key(operator)
-                .then(|| operator.to_string())
-        })
-        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", operator))?;
+    // The operator came through the auth gate already: their at-rest
+    // member key (the opaque id in anonymous mode, ADR-042, which is what
+    // sessions, the guard identity and the attestation are keyed by), the
+    // key that signs, and the seed the delegation derives from.
+    let member_key = operator.member_key.clone();
     let member = project
         .member_by_key(&member_key)
-        .expect("member_key came from the member map");
-    if member.verify_key.is_none() {
-        anyhow::bail!(
-            "Authentication not initialized for {}. Run `joy auth init`.",
-            operator
-        );
-    }
-
-    let unlocked = joy_core::auth::unlock_identity(member, operator_passphrase)?;
-    let keypair = unlocked.keypair;
-    let identity_seed = unlocked.seed;
-
-    // If no session exists, create one from the keypair we just derived.
-    // The guard check below then succeeds in the same invocation, so the
-    // user does not have to run `joy auth` separately.
+        .ok_or_else(|| anyhow::anyhow!("{} is not a registered project member.", member_key))?;
+    let keypair = &operator.keypair;
+    let identity_seed = operator.seed;
     let project_id = session::project_id(root)?;
-    if session::load_session(&project_id, &member_key)?.is_none() {
-        let session_token = session::create_session(&keypair, &member_key, &project_id, None);
-        session::save_session(&project_id, &session_token)?;
-    }
 
     // Guard: requires manage capability. We construct an explicit
     // Identity from the resolved member id so that --user takes effect
@@ -1188,7 +1154,7 @@ pub(crate) fn create_delegation_token(
     );
     let token_obj = token::create_token(
         token::TokenSigningKeys {
-            delegator: &keypair,
+            delegator: keypair,
             delegation: &delegation_keypair,
             delegation_seed: &delegation_seed,
         },
@@ -1365,11 +1331,7 @@ fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
 /// writes the new public_key and salt, and invalidates any active
 /// session for this member. Attestations on this member remain valid
 /// because `public_key` is not in the signed_fields set (JOY-00FB-58).
-fn run_passphrase(
-    current_flag: Option<&str>,
-    passphrase_stdin: bool,
-    new_flag: Option<&str>,
-) -> Result<()> {
+fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -1393,7 +1355,7 @@ fn run_passphrase(
     let current_pub = PublicKey::from_hex(current_pub_hex)?;
     let current_salt = Salt::from_hex(current_salt_hex)?;
 
-    let current_pass = read_passphrase(current_flag, passphrase_stdin, "Current passphrase: ")?;
+    let current_pass = read_passphrase("Current passphrase: ")?;
 
     // ADR-039: in the wrapped-seed model the seed and keypair are stable
     // across passphrase rotation; we only re-wrap seed_wrap_passphrase.
@@ -1433,7 +1395,7 @@ fn run_passphrase(
     // present) refers to the *current* passphrase only -- a single stdin
     // line carries one secret, not two. Use --new-passphrase or the
     // interactive prompt for the new one.
-    let new_pass = read_passphrase(new_flag, false, "New passphrase:     ")?;
+    let new_pass = read_new_passphrase(new_flag, "New passphrase:     ")?;
     if new_pass == current_pass {
         anyhow::bail!("new passphrase must differ from the current one");
     }
@@ -1479,11 +1441,7 @@ fn run_passphrase(
 /// the current passphrase. Joy unwraps the seed, generates a new
 /// recovery key, re-wraps the seed under the new recovery KEK, leaves
 /// the passphrase wrap untouched. Old recovery key becomes useless.
-fn run_recover(
-    args: RecoverArgs,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-) -> Result<()> {
+fn run_recover(args: RecoverArgs) -> Result<()> {
     if !args.recovery_key && !args.regenerate_key {
         anyhow::bail!(
             "specify --recovery-key (passphrase loss) or --regenerate-key (rotate recovery key)"
@@ -1521,11 +1479,7 @@ fn run_recover(
         let recovery = seed_mod::RecoveryKey::from_user_input(&recovery_str)?;
         let seed = seed_mod::unwrap_seed_with_recovery(wrap_recovery_hex, &recovery, &salt)?;
 
-        let new_pass = read_passphrase(
-            args.new_passphrase.as_deref(),
-            passphrase_stdin,
-            "New passphrase: ",
-        )?;
+        let new_pass = read_new_passphrase(args.new_passphrase.as_deref(), "New passphrase: ")?;
         validate_passphrase(&new_pass)?;
         if args.new_passphrase.is_none() {
             let confirm = rpassword::prompt_password("Confirm:        ")?;
@@ -1561,7 +1515,7 @@ fn run_recover(
             )
         })?;
 
-        let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+        let passphrase = read_passphrase("Passphrase: ")?;
         let seed = seed_mod::unwrap_seed_with_passphrase(wrap_passphrase_hex, &passphrase, &salt)?;
 
         let new_recovery = seed_mod::RecoveryKey::generate();
@@ -1593,12 +1547,7 @@ fn run_recover(
 /// currently has no attestation, reverse-attests the founder with the
 /// redeemer's fresh identity key (JOY-00FD-93). Closes the attestation
 /// chain implicitly, without CLI output.
-fn run_auth_otp(
-    otp: &str,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-    user_flag: Option<&str>,
-) -> Result<()> {
+fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
@@ -1613,7 +1562,7 @@ fn run_auth_otp(
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Choose passphrase: ")?;
+    let passphrase = read_passphrase("Choose passphrase: ")?;
     let outcome =
         joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 
@@ -1645,11 +1594,7 @@ fn run_auth_otp(
 /// Precondition: a delegation entry exists in `project.yaml` for
 /// `(acting human, member)`. For the initial delegation use
 /// `joy auth token add`, not rotate.
-pub fn run_ai_rotate(
-    member: &str,
-    passphrase_flag: Option<&str>,
-    passphrase_stdin: bool,
-) -> Result<()> {
+pub fn run_ai_rotate(member: &str) -> Result<()> {
     use joy_core::model::project::is_ai_member;
 
     let cwd = std::env::current_dir()?;
@@ -1665,7 +1610,7 @@ pub fn run_ai_rotate(
         anyhow::bail!("{} is not a registered project member.", member);
     }
 
-    joy_core::guard::enforce(&root, &joy_core::guard::Action::ManageProject, "project")?;
+    crate::auth_gate::enforce_at(&root, &joy_core::guard::Action::ManageProject, "project")?;
 
     let human = project
         .member_by_key(&acting)
@@ -1689,7 +1634,7 @@ pub fn run_ai_rotate(
         );
     }
 
-    let passphrase = read_passphrase(passphrase_flag, passphrase_stdin, "Passphrase: ")?;
+    let passphrase = read_passphrase("Passphrase: ")?;
     let unlocked = joy_core::auth::unlock_identity(human, &passphrase)?;
     let identity_seed = unlocked.seed;
 

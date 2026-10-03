@@ -98,6 +98,13 @@ After onboarding, set up AI tool integration if you use one:
 joy ai init
 ```
 
+Joy knows who you are from your session, else from `git config user.email`. `joy auth` makes the session (one per project and device; a new `joy auth` replaces it), and `--user` works on every command: with `joy auth` it says who signs in, on any other command it names the member for that one call and remembers nothing:
+
+```sh
+joy auth --user you@example.com          # sign in as you, whatever git config says
+joy ai init --user you@example.com       # this one call as you, no session
+```
+
 ---
 
 ## 2. Creating Items
@@ -598,6 +605,8 @@ The same workflow works at every scale - you only opt into more controls.
 
 Joy uses passphrase-derived Ed25519 identity keys. You authenticate once per 24-hour session and every significant action is cryptographically signed.
 
+Every command that needs proof behaves the same way: with a session, nothing is asked; without one, the command asks for your passphrase (or takes `--passphrase`) and then makes the session itself, exactly as `joy auth` would, so the next command asks nothing. A passphrase you pass explicitly is always checked, session or not. Only under `--user` does a passphrase prove that one call and leave no session behind. Without a terminal and without a passphrase, the command stops with `run `joy auth`, or pass --passphrase`.
+
 **First time setup (solo):**
 
 ```sh
@@ -664,12 +673,13 @@ no re-onboarding.
 
 **Non-interactive passphrase entry:**
 
-Two flags let you supply the passphrase without typing it at the
-prompt:
+Two global flags let you supply the passphrase without typing it at
+the prompt, on any command:
 
 ```sh
 joy auth --passphrase 'correct horse battery staple'   # value on the command line
 echo 'correct horse battery staple' | joy auth --passphrase-stdin
+joy add task "First thing" --passphrase '...'          # any command: proves, and signs you in
 ```
 
 Use `--passphrase` for ad-hoc scripts and tests. Prefer
@@ -677,9 +687,7 @@ Use `--passphrase` for ad-hoc scripts and tests. Prefer
 secret elsewhere: the value is read from a single stdin line and
 never appears in the process listing the way `--passphrase <value>`
 would. The flag is rejected together with `--passphrase`; pick one.
-Both work on every command that takes a passphrase (`joy auth init`,
-`joy auth`, `joy auth token add`, `joy auth recover`,
-`joy project member add`, `joy crypt …`, etc.).
+`JOY_PASSPHRASE` in the environment is the same as `--passphrase`.
 
 To rotate the recovery key from an authenticated session:
 
@@ -901,15 +909,16 @@ joy crypt add --all                            # every existing item under the z
 **Read encrypted items:**
 
 ```sh
-joy show JOY-0123 --passphrase "..."           # decrypts transparently
-joy ls --passphrase "..."                      # list, with one prompt at the start
+joy show JOY-0123                              # decrypts transparently
+joy ls                                         # list; asks once without a session
 ```
 
-Once unlocked, every command in the same `joy` invocation uses the
-zone keys without re-prompting. Write commands (`joy edit`, `joy
-comment`, `joy start`, `joy close`, `joy assign`, `joy deps`,
-`joy rm`, `joy milestone link`) prompt for the passphrase the same
-way and then go straight through.
+Your session carries the identity seed, so while it stands nothing is
+asked. Without one, the first command asks for the passphrase (or
+takes `--passphrase`), makes the session, and every command after it,
+reads and writes alike (`joy edit`, `joy comment`, `joy start`,
+`joy close`, `joy assign`, `joy deps`, `joy rm`, `joy milestone
+link`), goes straight through.
 
 `joy ls` always lists every item in the project. Items in a zone you
 cannot decrypt appear as a locked row: `***` in the typed columns and
@@ -918,10 +927,11 @@ soon as at least one item carries a zone, showing the zone name on
 both unlocked and locked rows. `joy show` on an item without zone
 access prints `no access to zone <name>`.
 
-For non-interactive use (CI, scripts, hooks), set the passphrase via
-the `JOY_PASSPHRASE` environment variable; it is consulted whenever
-no `--passphrase` flag is on the command line. Treat the variable as
-sensitive: it lives only in the shell that exports it.
+For non-interactive use (CI, scripts, hooks), pass `--passphrase`,
+`--passphrase-stdin`, or set the `JOY_PASSPHRASE` environment
+variable, which is consulted whenever no flag is on the command line.
+Treat the variable as sensitive: it lives only in the shell that
+exports it.
 
 **Read or edit encrypted free files:**
 

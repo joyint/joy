@@ -75,15 +75,15 @@ load setup
     # config (set by setup() to $FOUNDER_EMAIL); `forget_this_device`
     # clears that too now (JOY-02AE-1A, correcting D3.9), or it would
     # still answer for who acts. What is left is the machine that
-    # answers nobody, which is a fresh clone or a second one. `joy ai
-    # init` takes no `--user`, so it cannot be told here either; it has
-    # to refuse, and the refusal has to say how to settle it.
+    # answers nobody, which is a fresh clone or a second one. Nobody is
+    # named on this call either (`--user` is how one would be), so it
+    # has to refuse, and the refusal has to say how to settle it.
     forget_this_device
     PATH_OVERRIDE="$(dirname "$JOY_BIN"):/usr/bin:/bin"
     run env PATH="$PATH_OVERRIDE" joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
     [ "$status" -ne 0 ]
-    [[ "$output" == *"does not know who you are"* ]]
-    [[ "$output" == *"joy auth --user <address>"* ]]
+    [[ "$output" == *"not signed in"* ]]
+    [[ "$output" == *"--user <address>"* ]]
     # And it refused BEFORE registering anything: no AI member was
     # written by a command that could not name its attester.
     ! grep -q "ai:" .joy/project.yaml

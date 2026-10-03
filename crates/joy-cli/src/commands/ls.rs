@@ -41,10 +41,6 @@ pub struct LsArgs {
     /// Compact output: emoji-only or abbreviations
     #[arg(short = 'S', long)]
     pub short: bool,
-
-    /// Passphrase (non-interactive); without it, encrypted items are skipped.
-    #[arg(long)]
-    pub passphrase: Option<String>,
 }
 
 impl LsArgs {
@@ -57,7 +53,6 @@ impl LsArgs {
             group: "milestone".to_string(),
             reverse: false,
             short: false,
-            passphrase: None,
         }
     }
 }
@@ -113,7 +108,7 @@ pub fn run(args: LsArgs) -> Result<()> {
 
     // ADR-040: install zone keys upfront so encrypted items decrypt
     // transparently. No-op when the project has no Crypt activity.
-    crate::crypt_session::ensure_zone_keys(args.passphrase.as_deref())?;
+    crate::crypt_session::ensure_zone_keys()?;
 
     // -J / --jobs: list only jobs; they never appear in the default listing.
     if args.filter.jobs {

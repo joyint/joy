@@ -1,0 +1,18 @@
+id: JOY-02B1-45
+title: Sign in by name works without git config, and joy ai init takes --user
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-27T08:34:16.356537075Z
+updated: 2026-09-28T19:50:54.716819394Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator decision 2026-09-27: a person must always be able to work without a git identity, and to act as a member other than the one git config names. resolve_identity and acting_member read the newest live human session of this terminal right after the delegation session and before git config; the session joy auth --user leaves behind therefore names the member for every later command. joy ai init takes --user <address> and signs that member in when needed. The UnknownActingMember text names remedies that work. Tests that asserted the opposite (nothing answers without git config after enrolling) are inverted.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-09-27T19:03:36.136319881Z
+  text: 'Operator decisions 2026-09-27, second round, built on top of the first commit: (1) --user <address> is a global flag on every command; on joy auth it names who signs in, on every other command it names the member this one call acts as, unproven like git config, nothing remembered (JOY_USER, step 0 of resolve_identity and acting_member). (2) joy auth, with or without --user, makes THE session of this project on this device: save_session removes every other person''s session of the project; a bare joy auth signs in the person git config names and never reads the session it replaces. (3) joy ai init --user leaves no session, not even when it enrols the member on the way (run_init persist_session=false). (4) The refusal is one line: not signed in: run joy auth, or pass --user <address>. Not done here and left to JOY-02B2-65: guard-protected commands (joy add etc.) do not yet take the passphrase at the guard, so --user alone is refused there when the project has AI members.'

@@ -30,7 +30,7 @@ pub struct AssignArgs {
 }
 
 pub fn run(args: AssignArgs) -> Result<()> {
-    let ctx = crate::crypt_session::load_context(None)?;
+    let mut ctx = crate::crypt_session::load_context()?;
 
     let mut item = items::load_item(&ctx.root, &args.id)?;
 
@@ -39,7 +39,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
         None => ctx.identity.member.id().to_string(),
     };
 
-    ctx.enforce(&Action::AssignItem, &item.id)?;
+    crate::auth_gate::enforce(&mut ctx, &Action::AssignItem, &item.id)?;
 
     // Validate format. In anonymous mode the acting member resolves to an opaque
     // id (e.g. self-assign), so accept that shape too alongside e-mail / ai: ids.

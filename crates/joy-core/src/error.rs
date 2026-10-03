@@ -14,30 +14,16 @@ pub enum JoyError {
     #[error("this project does not know who you are; run joy init --user <address>")]
     NoFounderIdentity,
 
-    /// A write needs an acting member and none is known: no delegation
-    /// session, no git config naming a member, and no forge account
-    /// naming one either (operator decision 2026-09-19, JOY-02AE-1A,
-    /// correcting D3.9 of package J11). A checkout whose `user.email`
-    /// names a member is answered by that address now; this error is for
-    /// the one that answers nothing at all.
-    ///
-    /// The first line is the sentence D4.5 writes, and it is the whole
-    /// remedy in the app, whose host has a member picker. The rest is
-    /// marked as the command line's own, because this error reaches the
-    /// command line too, and from commands that take no `--user` of their
-    /// own (`joy crypt`, `joy deauth`, `joy auth passphrase`). Setting
-    /// `git config user.email` to a registered member's address is the
-    /// remedy that needs no further command; authenticating once
-    /// (`joy auth --user <address>`) works on a checkout with no git
-    /// config at all.
-    #[error(
-        "this project does not know who you are, pick your member\n\
-         In the app that is the member picker. On the command line, set \
-         git config user.email to a registered member's address \
-         (git config user.email <address>), or name yourself once: joy \
-         auth --user <address>, or joy auth init --user <address> when \
-         this member has no passphrase here yet."
-    )]
+    /// A write needs an acting member and none is known: no `--user` on
+    /// this call, no delegation session, no session of this terminal,
+    /// no git config naming a member, and no forge account naming one
+    /// either (operator decisions 2026-09-19, JOY-02AE-1A, and
+    /// 2026-09-27). The app has a member picker for this; the command
+    /// line has the two remedies the sentence names, both of which every
+    /// command understands: `--user` is a global flag, and `joy auth`
+    /// makes the session; the passphrase is asked where it is needed
+    /// (operator, 2026-09-27: one line, no more).
+    #[error("not signed in: run `joy auth`, or pass `--user <address>`")]
     UnknownActingMember,
 
     #[error(
