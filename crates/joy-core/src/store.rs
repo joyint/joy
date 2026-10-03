@@ -430,6 +430,15 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
         path: path.to_path_buf(),
         source: e,
     })?;
+    yaml_from_bytes(path, bytes)
+}
+
+/// The second half of [`read_yaml`], for a caller that already holds the
+/// file's bytes: `path` only names the file in an error.
+pub(crate) fn yaml_from_bytes<T: DeserializeOwned>(
+    path: &Path,
+    bytes: Vec<u8>,
+) -> Result<T, JoyError> {
     // ADR-040: item / file content can be a JOYCRYPT blob on disk.
     // The active session's zone keys live in a thread-local context
     // populated by joy-cli after passphrase verification. If the

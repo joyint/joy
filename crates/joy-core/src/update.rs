@@ -94,9 +94,14 @@ pub fn cmp_version(a: &str, b: &str) -> std::cmp::Ordering {
 /// downgrade guard in `main.rs` and by [`VersionMarkerItem`] to refuse
 /// rolling repo state back to an older binary's templates.
 pub fn marker_ahead_of(root: &std::path::Path, current_version: &str) -> Option<String> {
-    let marker = init::last_sync_version(root)?;
-    if cmp_version(&marker, current_version) == std::cmp::Ordering::Greater {
-        Some(marker)
+    marker_ahead(init::last_sync_version(root).as_deref(), current_version)
+}
+
+/// [`marker_ahead_of`] for a caller that already read the marker.
+pub fn marker_ahead(marker: Option<&str>, current_version: &str) -> Option<String> {
+    let marker = marker?;
+    if cmp_version(marker, current_version) == std::cmp::Ordering::Greater {
+        Some(marker.to_string())
     } else {
         None
     }

@@ -143,12 +143,12 @@ fn an_auth_command_in_an_anonymous_project_commits_under_the_opaque_id() {
         assert!(!field.contains("Scotty"), "no person's name in {fields:?}");
     }
 
-    // The message is part of the same committed object, and the
-    // `Co-Authored-By` trailer is written from the same acting member.
+    // The message must not leak the anonymous member's address or
+    // manufacture a co-author for a human commit.
     let repo = git2::Repository::open(&root).unwrap();
     let head = repo.head().unwrap().peel_to_commit().unwrap();
     let message = head.message().unwrap_or_default().to_string();
-    assert!(message.contains("Co-Authored-By: m-"), "{message}");
+    assert!(!message.contains("Co-Authored-By:"), "{message}");
     assert!(!message.contains("scotty@example.com"), "{message}");
 }
 

@@ -95,14 +95,14 @@ load setup
     [[ "$last_msg" == *"Auto committed"* ]]
 }
 
-@test "auto-git commit: commit message contains Co-Authored-By" {
+@test "auto-git commit: human commit has no AI attribution" {
     joy init --name "Auto Git Test"
     git add -A && git commit -m "init [no-item]" --quiet
     joy config set workflow.auto-git commit
     joy add task "With trailer"
     last_body=$(git log -1 --format=%b)
-    [[ "$last_body" == *"Co-Authored-By:"* ]]
-    [[ "$last_body" == *"test@example.com"* ]]
+    [[ "$last_body" != *"Co-Authored-By:"* ]]
+    [[ "$last_body" != *"Delegated-By:"* ]]
 }
 
 @test "auto-git commit: status change creates commit with details" {
@@ -116,14 +116,15 @@ load setup
     [[ "$last_msg" == *"-> in-progress"* ]]
 }
 
-@test "auto-git commit: AI identity in Co-Authored-By" {
+@test "auto-git commit: AI delegation is attributed" {
     setup_human_auth
     git add -A && git commit -m "init [no-item]" --quiet
     joy config set workflow.auto-git commit
     setup_ai_session ai:test@joy
     joy add task "AI commit"
     last_body=$(git log -1 --format=%b)
-    [[ "$last_body" == *"Co-Authored-By: ai:test@joy"* ]]
+    [[ "$last_body" == *"Delegated-By: test@example.com"* ]]
+    [[ "$last_body" != *"Co-Authored-By:"* ]]
 }
 
 @test "auto-git commit: no commit when nothing changed" {

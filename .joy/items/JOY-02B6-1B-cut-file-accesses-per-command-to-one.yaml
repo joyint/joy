@@ -1,0 +1,75 @@
+id: JOY-02B6-1B
+title: Cut file accesses per command to one pass over the items
+type: rework
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-02T19:20:25.641742130Z
+updated: 2026-10-02T19:48:59.248160195Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Every joy command touches the filesystem far more often than its job requires. On a local SSD this is invisible; on a slow filesystem (a network mount, or a host drive shared into a virtual machine) each access costs a fraction of a millisecond and a single command takes seconds.
+
+  Measured with joy 0.21.0 in a test project with 160 items, counting file accesses on project and home (strace, each access attributed to its cause by stack trace):
+
+  | command | total | item files | staging scans | repository opens |
+  |---|---|---|---|---|
+  | joy ls | 2281 | 1766 | 0 | 324 |
+  | joy show <ID> | 4138 | 3608 | 0 | 324 |
+  | joy add | 3841 | 1800 | 1152 | 504 |
+  | joy rm | 5572 | 3608 | 1074 | 504 |
+
+  Reading one file costs about 5 accesses, so listing 160 items needs about 800. Everything above that is avoidable. Four causes, one task each:
+
+  1. Every pass over the items reads each file twice (once to detect the crypt zone, once to parse).
+  2. Loading a single item loads all items.
+  3. Staging one file scans the whole working tree twice; a write command stages at least two files.
+  4. The git repository is opened 9 times per read command and 14 times per write command, 36 accesses each.
+
+  Goal: a command reads the item files at most once (about 5 accesses per item), and a command on a single item reads only what it touches. At 0.35 ms per access that puts joy ls for 1600 items at about 3 s on a slow filesystem, which is the accepted bar.
+
+  Targets for the 160 item test project (estimates): ls and show about 1050, status/comment/assign about 600, add and rm about 1300.
+
+  Constraints: the public interface of joy-core stays unchanged (desktop app, platform and jyn build against it). No cache or index over the items; the bar above does not need one.
+
+  Proof: the same count before and after, reported as a table on this item, plus regression tests in the tasks.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-02T19:48:59.176676619Z
+  text: |-
+    Result, measured the same way as the numbers in the description (test project with 160 items, file accesses on project and home, attributed by stack trace).
+
+    Total accesses per command:
+
+    | command | before | after |
+    |---|---|---|
+    | joy ls | 2281 | 1018 |
+    | joy show <ID> | 4072 | 1038 |
+    | joy status <ID> open | 3840 | 646 |
+    | joy comment | 3838 | 646 |
+    | joy add | 3810 | 1454 |
+    | joy rm | 5520 | 1391 |
+
+    By cause, after (before in brackets):
+
+    | cause | ls | show | status | add | rm |
+    |---|---|---|---|---|---|
+    | item files | 805 (1766) | 815 (3542) | 22 (1787) | 818 (1778) | 832 (3564) |
+    | staging scans | 0 | 0 | 0 (1169) | 0 (1143) | 0 (1066) |
+    | repository opens | 72 (324) | 72 (324) | 180 (504) | 180 (504) | 180 (504) |
+    | other git | 35 (85) | 35 (85) | 287 (212) | 288 (212) | 216 (212) |
+    | other joy | 106 (106) | 116 (121) | 157 (168) | 168 (173) | 163 (174) |
+
+    Item files are opened once per pass (160 for ls, 2 for status). The repository is opened 2 times by a read command and 5 times by a write command (9 and 14 before). joy add in a repository with 60000 tracked files: 264941 stat calls and 307 ms before, 510 and 90 ms after.
+
+    Other git went up for write commands: staging a file by its own path writes the blob and reads the attributes for that one path, which the walk used to cover. That is the work of staging itself.
+
+    Checks: just check green (1477 cargo tests, smoke tests), just test-int green (592 cases).
+
+    What is left per command is one pass over the items where the command needs the set (ls, show, add for the duplicate title check, rm for the references), and a base of about 200 to 600 accesses.

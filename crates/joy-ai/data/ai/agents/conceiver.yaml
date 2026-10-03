@@ -14,4 +14,4 @@ constraints:
   - "May create items only with the create capability"
   - "May change status to approve items from new to open"
 
-applicable_tools: [claude, copilot, vibe]
+applicable_tools: [claude, copilot, vibe, agy]

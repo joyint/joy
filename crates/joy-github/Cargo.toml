@@ -1,6 +1,6 @@
 [package]
 name = "joy-github"
-version = "0.21.0"
+version = "0.21.1"
 edition = "2021"
 license = "MIT"
 description = "Joy forge connector for GitHub: claims, identity, store, files, releases over the REST API"
