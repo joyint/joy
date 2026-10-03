@@ -24,7 +24,7 @@
 
 **Terminal-native product management that lives in your Git repo.**
 
-Joy is a single Rust binary that keeps your backlog next to your code: epics, stories, tasks, bugs, milestones and decisions are YAML files in `.joy/`, versioned with Git. No server, no account, no browser tab. Your AI coding tools work the same backlog, under an identity of their own and with a log of who did what.
+Joy is a small Rust CLI that keeps your backlog next to your code: epics, stories, tasks, bugs, milestones and decisions are YAML files in `.joy/`, versioned with Git. No server, no account, no browser tab. Your AI coding tools work the same backlog, under an identity of their own and with a log of who did what.
 
 <p align="center">
   <picture>
@@ -68,7 +68,7 @@ cargo install joy-cli
 irm get.joyint.com/joy.ps1 | iex
 ```
 
-The script installers drop the binary into `~/.local/bin`. The Windows script also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc). A winget install is managed by winget and updates with `winget upgrade`; a script install updates with `joy update`.
+The script installers drop `joy` and its forge connector `joy-forge` into `~/.local/bin`. The Windows script also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc). A winget install is managed by winget and updates with `winget upgrade`; a script install updates with `joy update`.
 
 </details>
 
