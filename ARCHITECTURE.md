@@ -88,6 +88,14 @@ Architecture decisions are Joy **decision items in this repository**, each title
 - `JOY-01CD-DA - ADR: E-mail as user identity with OAuth authentication`
 - `JOY-01E3-6B - ADR: Pseudonymized member identity for GDPR erasure`
 
+Jobs, chats and schema changes:
+
+- `JOY-01EA-2C - ADR: git-native AI job and agent data model`
+- `JOY-01FE-37 - ADR: job as a first-class item type (multi-item scope, attempts, jobs capability)`
+- `JOY-01F1-B0 - ADR: chat record schema and persistence cadence`
+- `JOY-01F5-78 - ADR: shared vs personal chat state split`
+- `JOY-0244-9E - ADR: Transitional schema compatibility lives only in src/migrations`
+
 Ecosystem-wide decisions (naming, open-core licensing, terminology, AI governance taxonomy, documentation and source-of-truth conventions) live in the Joyint umbrella project and also apply.
 
 ## Performance Targets
