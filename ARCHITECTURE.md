@@ -102,4 +102,3 @@ Ecosystem-wide decisions (naming, open-core licensing, terminology, AI governanc
 - [VISION.md](./VISION.md), [CONTRIBUTING.md](./CONTRIBUTING.md), [SECURITY.md](./SECURITY.md)
 - [Joyint umbrella project](https://github.com/joyint/project) - cross-cutting decisions and ecosystem docs
 - [Jyn](https://github.com/joyint/jyn) - consumer of `joy-core`; [crypt](https://github.com/joyint/crypt), [platform](https://github.com/joyint/platform), [app](https://github.com/joyint/app)
-- ForgeSync (Joy CLI sync concept): a public `docs/` document is being reconciled to the current sync model (tracked as `JI-013C-AC`).
