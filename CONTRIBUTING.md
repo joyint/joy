@@ -100,12 +100,13 @@ Conventional commits: `type(scope): description`. Types: `feat`, `fix`, `refacto
 
 Every commit subject references at least one Joy item id (for example `JOY-0042-AB`), or `[no-item]` for infrastructure commits with no logical backlog item. A `commit-msg` hook enforces this. No emoji.
 
-AI members end every commit with two trailers:
+AI members end delegated commits with this trailer:
 
 ```
-Co-Authored-By: <Tool> <tool-email>
 Delegated-By: <operator email from the token redemption>
 ```
+
+The acting Joy identity is `data.member` from token redemption; `data.session_env` authorizes writes. `Co-Authored-By` is optional and may be supplied by the AI tool itself.
 
 Examples:
 
