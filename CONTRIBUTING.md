@@ -98,6 +98,8 @@ Every push and pull request runs the same checks in CI (format check, lint, full
 
 Releases are cut locally with the `justfile`, not from CI. `just release [patch|minor|major]` bumps the version, refreshes `Cargo.lock`, runs `just check` (and rolls the bump back if it fails), records the release, and tags the commit locally; `just publish` then publishes the crates to crates.io (idempotent, safe to re-run) and creates the forge release. Pushing the tag triggers the CI release build for the target binaries. Secrets such as `CARGO_REGISTRY_TOKEN` come from the environment, never from vendor-locked CI logic.
 
+Between releases, `.github/workflows/nightly.yml` builds the current `main` for the same targets every night (and on demand) and replaces the archives of one rolling prerelease with the tag `nightly`. It is for a machine that needs the current state and cannot build it. `joy update`, winget and the installer scripts never install a nightly: it is a prerelease, its tag carries no version, and it holds no installer script; the workflow checks all three after every run.
+
 ## Commit Messages
 
 Conventional commits: `type(scope): description`. Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Scopes: `core`, `cli`, `tui`, `ai`, `docs`.

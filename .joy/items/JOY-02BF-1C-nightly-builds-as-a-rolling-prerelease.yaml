@@ -1,0 +1,32 @@
+id: JOY-02BF-1C
+title: Nightly builds as a rolling prerelease that joy update never installs
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T14:31:28.595490556Z
+updated: 2026-10-04T14:31:28.595490556Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  A fix on main reaches a machine only through a release, and a release is slow on purpose: version bump, crates.io, winget review. A person who needs the current state on a machine where they cannot build has no way to get it.
+
+  Change: a workflow of its own, .github/workflows/nightly.yml, beside the hand-maintained release.yml and not inside it.
+
+  - Runs every night and on demand (workflow_dispatch). The nightly run builds only when main moved since the last nightly.
+  - Builds the targets dist-workspace.toml names, through dist plan, as a release does. No second list of targets.
+  - The Windows binaries are signed as in a release (operator decision 2026-10-04): an unsigned joy.exe is likely to be blocked on a managed machine. The macOS binaries are not Developer ID signed in a nightly.
+  - Publishes to one rolling GitHub prerelease with the fixed tag nightly, moved to the built commit, its assets replaced. Archives and checksums only.
+  - No winget, no crates.io, no version bump. The tag carries no version, so release.yml does not start.
+  - A pull request that touches the workflow builds everything and publishes nothing, so the workflow can be tried before it is on main.
+
+  joy update must never install a nightly (operator, 2026-10-04). Four things keep it out, each on its own: GitHub's latest release is never a prerelease; the updater's fallback list filters prereleases; a tag without a version cannot be parsed by the updater and is dropped; a release without an installer asset is not installable to it. The workflow keeps all four true and checks them after every run: the nightly release is a prerelease, carries no installer, and the latest release still names a version tag.
+
+  Not in scope: nightlies of the desktop app (its runners are not always on); a version string that marks a nightly binary.
+
+  Done when:
+  - A pull request run builds all targets and uploads them as workflow artifacts.
+  - A dispatched run on main creates the prerelease nightly with the archives, and a second run replaces them.
+  - The guard fails a run whose release would be visible to joy update.

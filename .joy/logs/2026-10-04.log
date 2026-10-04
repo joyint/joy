@@ -5,3 +5,5 @@
 2026-10-04T00:54:26.546Z JOY-02BC-3E item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-10-04T00:54:26.617Z JOY-02BD-68 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-10-04T00:54:26.696Z JOY-02BE-58 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-04T14:31:20.672Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-04T14:31:28.597Z JOY-02BF-1C item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
