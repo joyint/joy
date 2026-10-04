@@ -675,6 +675,15 @@ pub fn effective_url(url: &str) -> Option<String> {
     Some(dialled)
 }
 
+/// The remote as joy dials it: [`effective_url`] where the ssh config
+/// renames the host or sets a port, and the string as written
+/// everywhere else. For every place that names a HOST to a person or to
+/// a connector, so the alias, a name on this machine alone, never
+/// stands in for the forge behind it.
+pub fn dialled_url(url: &str) -> String {
+    effective_url(url).unwrap_or_else(|| url.to_string())
+}
+
 /// The sentence for a remote joy refuses to contact over ssh, `None`
 /// when there is nothing in the way. Read before the socket opens, so
 /// that a jump host fails by name instead of by DNS.

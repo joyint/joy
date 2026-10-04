@@ -230,7 +230,7 @@ fn auto_detect(root: &Path) -> Result<Resolution> {
             // `origin` the two are different hosts, and the person was
             // sent to sign in to the one joy never talks to.
             let host = vcs::forge::remote_url(root)
-                .map(|url| vcs::contact::host_of(&url))
+                .map(|url| vcs::contact::host_of(&vcs::ssh_config::dialled_url(&url)))
                 .unwrap_or_default();
             bail!(
                 "no supported forge detected from git remotes ({remote_summary})\n  \

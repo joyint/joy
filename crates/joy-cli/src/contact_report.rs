@@ -140,7 +140,7 @@ impl Refusal {
 /// the sentences then name no host rather than the wrong one.
 pub fn host_of_checkout(root: &std::path::Path) -> String {
     joy_core::vcs::forge::remote_url(root)
-        .map(|url| contact::host_of(&url))
+        .map(|url| contact::host_of(&joy_core::vcs::ssh_config::dialled_url(&url)))
         .unwrap_or_default()
 }
 
