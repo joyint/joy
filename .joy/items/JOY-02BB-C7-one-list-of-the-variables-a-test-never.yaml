@@ -1,7 +1,7 @@
 id: JOY-02BB-C7
 title: One list of the variables a test never inherits from the person's shell
 type: rework
-status: review
+status: closed
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-03T23:07:42.332147791Z
-updated: 2026-10-04T00:01:21.924749760Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-04T15:57:02.968162835Z
+updated_by: horst.schwarz@joydev.com
 description: 'Measured 2026-10-03: with JOY_SESSION, JOY_USER and JOY_PASSPHRASE set in the shell, cargo test --workspace fails 47 tests in 10 test binaries (joy-ai init_tool_identity; joy-cli act_as_named_member, founder_identity, founder_terminal, identity_call_sites, joy_commits, without_git; joy-core acting_member, founder_identity, resolve_identity_order). A stale JOY_SESSION alone fails joy-core acting_member. Cause: every test binary keeps its own hand-written list of env_remove calls and the lists drifted; most remove JOY_SESSION only. Expected: one place says what a test never inherits (every JOY_ variable and the git identity variables GIT_AUTHOR_EMAIL, GIT_COMMITTER_EMAIL, EMAIL), every test goes through it, and a guard in the gate refuses a test that starts joy past it. Shape (operator decision 2026-10-04): an internal crate, publish = false, a dev-dependency of joy-cli, joy-core and joy-ai, because three crates need the same list and tests/common would be three copies.'
 comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
