@@ -1,7 +1,7 @@
 id: JOY-02B4-46
 title: 'Flaky test: a connector script written by a test can be busy when joy starts it'
 type: bug
-status: review
+status: closed
 priority: high
 tags:
 - tests
@@ -12,8 +12,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-29T19:58:27.931041101Z
-updated: 2026-09-29T19:58:28.018650331Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-04T16:01:20.192696760Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Seen in CI on 2026-09-29 on the umbrella's main: a_token_the_forge_refuses_exits_one_with_a_state (joy-cli, tests/forge_command.rs) answered plugin_failed where needs_sign_in was expected. The run before it was green on the same joy commit, so no code change caused it.
 
