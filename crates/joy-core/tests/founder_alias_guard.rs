@@ -17,6 +17,10 @@
 //! it proves is platform independent and the other cases cover it.
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 use std::sync::OnceLock;
 

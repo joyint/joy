@@ -10,6 +10,10 @@
 //! CONNECT to it, so the engine refuses by name rather than failing
 //! obscurely, and the connector says the same sentence.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_forge_net::gitconfig::GitConfig;
 use joy_forge_net::http::{Http, HttpError};
 use joy_forge_net::trust::Trust;

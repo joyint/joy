@@ -19,6 +19,9 @@ serde = { workspace = true }
 ts-rs = { version = "12", features = ["serde-compat"], optional = true }
 
 [dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 serde_json = { workspace = true }
 
 [features]

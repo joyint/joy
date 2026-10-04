@@ -20,6 +20,10 @@
 
 #![cfg(feature = "acp")]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_ai::acp_lane::{list_models, LaneConfig};
 use joy_ai::adapters;
 

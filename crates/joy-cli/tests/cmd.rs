@@ -1,6 +1,10 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 #[test]
 fn cli_tests() {
     trycmd::TestCases::new().case("tests/cmd/*.toml");
@@ -8,7 +12,7 @@ fn cli_tests() {
 
 #[test]
 fn version_matches_cargo_toml() {
-    let output = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    let output = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .arg("--version")
         .output()
         .expect("failed to run joy --version");

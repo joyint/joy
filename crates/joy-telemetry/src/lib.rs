@@ -16,6 +16,11 @@
 //! telemetry switch says. Exporting them is the frontend's job on the
 //! desktop; a CLI has no platform session to export with.
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};

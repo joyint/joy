@@ -26,6 +26,10 @@
 //! These tests drive the real binary, because the question is what a
 //! command does on a machine, and the machine is what they take away.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::PathBuf;
 use std::process::Output;
 
@@ -65,23 +69,20 @@ impl Machine {
     /// session, and it asks who acts here to know whose seed to derive.
     fn joy_with_a_passphrase_in_the_environment(&self, args: &[&str]) -> Output {
         let mut command = self.base_command(args);
-        command.env_remove("JOY_SESSION");
         command.env("JOY_PASSPHRASE", PASSPHRASE);
         command.output().expect("joy runs")
     }
 
     fn joy_with_session(&self, args: &[&str], session: Option<&str>) -> Output {
         let mut command = self.base_command(args);
-        command.env_remove("JOY_PASSPHRASE");
-        match session {
-            Some(value) => command.env("JOY_SESSION", value),
-            None => command.env_remove("JOY_SESSION"),
-        };
+        if let Some(value) = session {
+            command.env("JOY_SESSION", value);
+        }
         command.output().expect("joy runs")
     }
 
     fn base_command(&self, args: &[&str]) -> std::process::Command {
-        let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+        let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
         command
             .args(args)
             .current_dir(&self.root)
@@ -96,10 +97,7 @@ impl Machine {
             .env("HOMEPATH", "")
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("GIT_AUTHOR_EMAIL")
-            .env_remove("GIT_COMMITTER_EMAIL")
-            .env_remove("EMAIL");
+            .env("GIT_CONFIG_NOSYSTEM", "1");
         command
     }
 

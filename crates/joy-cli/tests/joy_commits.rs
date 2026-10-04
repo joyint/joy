@@ -12,6 +12,10 @@
 //! an anonymous project if the signature gate decided by the shape of the
 //! string it was handed instead of by the project.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 use std::process::Output;
 
@@ -20,14 +24,13 @@ const PASSPHRASE: &str = "correct horse battery staple";
 /// Run `joy` in `root` with an isolated home, so no git identity of this
 /// machine can answer for the person under test.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
-    joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
         .output()
         .expect("joy runs")
 }

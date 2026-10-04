@@ -8,6 +8,10 @@
 //! at its entry point: it decides the host kind once, and everything that
 //! follows hangs off that decision.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 use std::process::Output;
 
@@ -21,7 +25,7 @@ use std::process::Output;
 /// still found the machine's own `.gitconfig` - and the windows-latest
 /// CI job writes an identity into it on purpose.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
-    joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
@@ -31,10 +35,6 @@ fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
-        .env_remove("GIT_AUTHOR_EMAIL")
-        .env_remove("GIT_COMMITTER_EMAIL")
-        .env_remove("EMAIL")
         .output()
         .expect("joy runs")
 }
@@ -177,7 +177,7 @@ fn init_without_an_identity_and_without_a_person_refuses_by_name() {
 #[test]
 fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     let (_dir, root, home) = machine();
-    let init = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    let init = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(["init", "--name", "Delegated"])
         .current_dir(&root)
         .env("HOME", &home)

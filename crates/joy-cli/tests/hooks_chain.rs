@@ -14,20 +14,23 @@
 //! process validator instead, which
 //! `joy-core/tests/commit_msg_rule.rs` covers.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 use std::process::Output;
 
 /// Run `joy` in `root` with an isolated home, so nothing of this
 /// machine answers for the project under test.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
-    joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
         .output()
         .expect("joy runs")
 }
@@ -44,7 +47,7 @@ fn bash() -> Option<&'static str> {
     ["/bin/bash", "/usr/bin/bash", "bash"]
         .into_iter()
         .find(|c| {
-            joy_process::command(c)
+            joy_test_env::command(c)
                 .arg("-c")
                 .arg("exit 0")
                 .status()
@@ -67,7 +70,7 @@ fn make_executable(_path: &Path) {}
 fn commit_msg_hook(shell: &str, root: &Path, message: &str) -> Output {
     let msg_file = root.join(".git/COMMIT_EDITMSG");
     std::fs::write(&msg_file, message).unwrap();
-    joy_process::command(shell)
+    joy_test_env::command(shell)
         .arg(".joy/hooks/commit-msg")
         .arg(&msg_file)
         .current_dir(root)

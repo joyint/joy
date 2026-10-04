@@ -15,6 +15,10 @@
 //! bash half; the validator half runs everywhere, which is the point of
 //! In the first place.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 
 const ACRONYM: &str = "JOY";
@@ -46,7 +50,7 @@ fn shell() -> Option<&'static str> {
     ["/bin/bash", "/usr/bin/bash", "bash"]
         .into_iter()
         .find(|candidate| {
-            joy_process::command(candidate)
+            joy_test_env::command(candidate)
                 .arg("-c")
                 .arg("exit 0")
                 .status()
@@ -61,7 +65,7 @@ fn hook_accepts(shell: &str, dir: &Path, message: &str) -> bool {
     let msg_file = dir.join("COMMIT_EDITMSG");
     std::fs::write(&msg_file, message).unwrap();
     let hook = dir.join("commit-msg");
-    joy_process::command(shell)
+    joy_test_env::command(shell)
         .arg(&hook)
         .arg(&msg_file)
         .current_dir(dir)

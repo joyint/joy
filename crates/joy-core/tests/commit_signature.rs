@@ -6,6 +6,10 @@
 //! config is a prefill for the display name and nothing else, and an
 //! anonymous project never lets an address into a commit.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 
 use joy_core::auth::{generate_salt, seed as seed_mod, IdentityKeypair};

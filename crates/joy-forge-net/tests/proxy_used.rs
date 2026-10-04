@@ -14,6 +14,10 @@
 //! libgit2 does it for the engine (it "always speaks HTTP CONNECT",
 //! httpclient.c:686-700), so both halves of joy behave alike.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_forge_net::fake::{FakeForge, Reply};
 use joy_forge_net::gitconfig::GitConfig;
 use joy_forge_net::http::Http;

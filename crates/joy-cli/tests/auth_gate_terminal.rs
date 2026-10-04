@@ -11,6 +11,10 @@
 
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::Path;
@@ -60,7 +64,7 @@ impl Terminal {
 }
 
 fn base_command(root: &Path, home: &Path, args: &[&str]) -> std::process::Command {
-    let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+    let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
     command
         .args(args)
         .current_dir(root)
@@ -68,11 +72,7 @@ fn base_command(root: &Path, home: &Path, args: &[&str]) -> std::process::Comman
         .env("USERPROFILE", home)
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
-        .env_remove("JOY_PASSPHRASE")
-        .env_remove("JOY_PASSPHRASE_STDIN")
-        .env_remove("JOY_USER");
+        .env("GIT_CONFIG_NOSYSTEM", "1");
     command
 }
 

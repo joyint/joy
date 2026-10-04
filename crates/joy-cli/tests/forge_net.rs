@@ -15,6 +15,10 @@
 //! it is asserted where it is felt. Reading the manifest instead would
 //! pass on a machine where cargo resolved the feature away.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 /// joy's own binary is built from this crate, so the libgit2 a test
 /// binary links is the one `joy` links: same workspace, same unified
 /// feature set for git2.

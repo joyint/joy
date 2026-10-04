@@ -14,6 +14,11 @@
 //! Gitea has no release backend in joy yet: `release` answers
 //! `unsupported`, and `joy release publish` keeps its tag-only path.
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 pub mod gitea;
 
 use joy_forge_net::auth::oauth::OAuth;

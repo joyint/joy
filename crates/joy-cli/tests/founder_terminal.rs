@@ -17,6 +17,10 @@
 //! joy-core's own cases.
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::Path;
@@ -76,7 +80,7 @@ fn joy_on_a_terminal(
 ) -> (bool, String) {
     let terminal = Terminal::open();
     let [stdin, stdout, stderr] = terminal.stdio();
-    let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+    let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
     command
         .args(args)
         .current_dir(root)
@@ -87,10 +91,9 @@ fn joy_on_a_terminal(
         .stdin(stdin)
         .stdout(stdout)
         .stderr(stderr);
-    match session {
-        Some(value) => command.env("JOY_SESSION", value),
-        None => command.env_remove("JOY_SESSION"),
-    };
+    if let Some(value) = session {
+        command.env("JOY_SESSION", value);
+    }
     let mut child = command.spawn().expect("joy runs");
     // The child holds its own copies now, and every copy on this side has
     // to go: the three the `Command` still owns and the one the pair was
@@ -217,14 +220,13 @@ fn a_live_session(home: &Path) -> String {
     let root = home.join("delegator");
     std::fs::create_dir_all(&root).unwrap();
     let joy = |args: &[&str]| -> (bool, String) {
-        let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        let out = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&root)
             .env("HOME", home)
             .env("XDG_STATE_HOME", home.join(".state"))
             .env("XDG_CONFIG_HOME", home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_SESSION")
             .output()
             .expect("joy runs");
         (

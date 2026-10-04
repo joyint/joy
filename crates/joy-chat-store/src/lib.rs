@@ -11,6 +11,11 @@
 
 #![deny(clippy::all)]
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 pub mod chat_ref;
 pub mod chat_state;
 pub mod chat_store;

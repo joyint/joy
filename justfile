@@ -106,7 +106,7 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive guard-test-env test-unit test-cmd test-smoke
 
 # ZERO git processes (JOY-01FD-ED). Not "git lives in one
 # place" any more: joy runs on git2 alone, because the operator's reason
@@ -167,6 +167,54 @@ guard-vcs:
             fi
         done
     done
+    exit $bad
+
+# A test inherits nothing of the developer's shell and session
+# (JOY-02BB-C7 - One list of the variables a test never inherits from the
+# person's shell). A developer's shell carries JOY_SESSION, sometimes
+# JOY_USER or JOY_PASSPHRASE, git's identity variables, a forge CLI that
+# is signed in, and a session bus with their keychain behind it. Every
+# test binary used to keep its own list of what to remove, the lists
+# drifted, and under a shell that had the three variables set 47 cases
+# failed while others asked the developer's keychain and their gh.
+# crates/joy-test-env says the rule once, and this guard holds its two
+# halves:
+#
+#   1. Every test binary sweeps its process when it loads:
+#      `joy_test_env::isolate!();` stands in each file directly under a
+#      tests directory and, under #[cfg(test)], in the root of every
+#      crate. Which case reaches the outside cannot be read off its
+#      source, so the only crates left out are the two below the rule:
+#      joy-test-env itself, whose own cases are about the sweep, and
+#      joy-process, which joy-test-env is built on. A crate does not
+#      depend on what depends on it, and the cases of joy-process start
+#      nothing but their own test binary, which they hand a JOY_
+#      variable of their own that the sweep would take away.
+#   2. A test starts a process with joy_test_env::command and no other
+#      way. A mention in a comment is prose, not a spawn.
+#
+# Measured, not assumed: with stray variables in the shell, a canary gh,
+# glab and tea first on PATH and dbus-monitor on the session bus, a run
+# of the unit and bats suites is green, reaches no canary and makes no
+# call to org.freedesktop.Secret.Service.
+guard-test-env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    bad=0
+    for f in crates/*/tests/*.rs crates/*/src/lib.rs crates/*/src/main.rs crates/*/src/bin/*.rs; do
+        [ -f "$f" ] || continue
+        case "$f" in crates/joy-test-env/*|crates/joy-process/*) continue ;; esac
+        if ! grep -qE '^joy_test_env::isolate!\(\);$' "$f"; then
+            echo "guard-test-env: $f is the root of a test binary and does not say joy_test_env::isolate!();"
+            bad=1
+        fi
+    done
+    spawn='(joy_process::command|Command::new)\('
+    while IFS=: read -r file line _; do
+        echo "guard-test-env: $file:$line starts a process past joy_test_env::command"
+        bad=1
+    done < <(grep -rnE "$spawn" crates/*/tests --include='*.rs' | grep -vE '^[^:]+:[0-9]+: *(//|\*|/\*)' || true)
     exit $bad
 
 # The ONE `certificate_check` closure. git2 0.21 holds

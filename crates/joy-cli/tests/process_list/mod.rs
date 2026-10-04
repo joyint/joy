@@ -39,7 +39,7 @@ pub fn argv_of(pid: u32) -> Option<String> {
         // cases empty PATH for the whole test binary. A pid that is
         // already gone exits non-zero with nothing, which is `None`
         // here and one more turn of the caller's poll.
-        let out = joy_process::command("/bin/ps")
+        let out = joy_test_env::command("/bin/ps")
             .args(["-o", "args=", "-p", &pid.to_string()])
             .output()
             .ok()?;
@@ -57,7 +57,7 @@ pub fn argv_of(pid: u32) -> Option<String> {
         // yields an empty answer, which is `None` here.
         let root = std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string());
         let shell = format!("{root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe");
-        let out = joy_process::command(&shell)
+        let out = joy_test_env::command(&shell)
             .args([
                 "-NoProfile",
                 "-NonInteractive",

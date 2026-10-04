@@ -165,6 +165,9 @@ forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 interactive = []
 
 [dev-dependencies]
+# What a test never inherits from the person's shell, said once
+# (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 insta = { version = "1.41", features = ["yaml"] }
 tempfile = "3"
 # An integration test sees only the dev-dependencies, so the two crates

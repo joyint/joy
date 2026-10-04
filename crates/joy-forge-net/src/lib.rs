@@ -18,6 +18,11 @@
 //! Nothing here knows a forge. A forge is a [`forge::Forge`]
 //! implementation the binary hands to [`cli::run`].
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 pub mod auth;
 pub mod cli;
 pub mod config;

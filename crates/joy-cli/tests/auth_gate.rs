@@ -16,6 +16,10 @@
 //! (`joy crypt add`, and `joy ls` reading it back), and the member
 //! group (`joy project member add`).
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::PathBuf;
 use std::process::Output;
 
@@ -45,7 +49,7 @@ impl Machine {
     }
 
     fn command(&self, args: &[&str]) -> std::process::Command {
-        let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+        let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
         command
             .args(args)
             .current_dir(&self.root)
@@ -55,14 +59,7 @@ impl Machine {
             .env("HOMEPATH", "")
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_SESSION")
-            .env_remove("JOY_PASSPHRASE")
-            .env_remove("JOY_PASSPHRASE_STDIN")
-            .env_remove("JOY_USER")
-            .env_remove("GIT_AUTHOR_EMAIL")
-            .env_remove("GIT_COMMITTER_EMAIL")
-            .env_remove("EMAIL");
+            .env("GIT_CONFIG_NOSYSTEM", "1");
         command
     }
 

@@ -19,6 +19,10 @@
 
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
@@ -155,7 +159,7 @@ esac
 fn write_script(path: &std::path::Path, body: &str) {
     use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt;
-    let mut writer = joy_process::command("/bin/sh")
+    let mut writer = joy_test_env::command("/bin/sh")
         .arg("-c")
         .arg("cat > \"$0\"")
         .arg(path)
@@ -221,7 +225,7 @@ impl Machine {
     /// PATH, no forge CLI, no session, and the connector of this
     /// machine as the only one findable.
     fn joy(&self, args: &[&str]) -> std::process::Command {
-        let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+        let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
         command
             .args(args)
             .current_dir(self.path())

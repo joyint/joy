@@ -9,6 +9,10 @@
 //! `FakeForge` on `127.0.0.1`, and the "browser" is a TCP connection
 //! this test opens to the loopback listener itself.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 

@@ -14,6 +14,10 @@
 //! test refuses to pass if one is still reachable: a green run against a
 //! machine that still has git would prove nothing at all.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -71,7 +75,7 @@ impl Machine {
 
     /// Run `joy` with no git anywhere on PATH.
     fn joy(&self, args: &[&str]) -> Output {
-        joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&self.root)
             .env("PATH", &self.path)
@@ -79,7 +83,6 @@ impl Machine {
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_SESSION")
             .output()
             .expect("joy runs")
     }
@@ -92,7 +95,7 @@ impl Machine {
     /// (host.rs:119-133), so a value joy cannot load would prove nothing
     /// about the delegated host this case is about.
     fn joy_as_agent(&self, session: &str, args: &[&str]) -> Output {
-        joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&self.root)
             .env("PATH", &self.path)
