@@ -1,0 +1,36 @@
+id: JOY-02BC-C8
+title: A failed chat lane tells the person the docker exec command, cut off before the reason, and that command carries the provider key
+type: bug
+status: new
+priority: high
+tags:
+- validation
+- ai
+- chat
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T00:50:02.345849228Z
+updated: 2026-10-04T01:03:27.618943743Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Production platform, 2026-10-03 (see JP-0167-AF). The notice in the chat reads '@vibe could not finish this turn: acp chat lane could not be established: agent docker exec -i -w .../repo --env JOY_CHAT_MODE=autonomous --env JOY_CHAT_SESSION=... --env JOY_ADAPTE' and ends there. The text is shortened to 240 characters (joy-ai turn_engine), the command comes first, so the reason never reaches the person, the log record or the feedback mail. The command the platform hands to the lane also contains --env MISTRAL_API_KEY=<key>. In this case the cut came before the key, and a search of the production OTel logs and spans found no key. That was luck of the argument order, not a guarantee.
+
+  Not known: where the text 'agent <command> ...' is composed (acp_lane last_error or the agent-client-protocol crate), every place the unshortened text is written to (chat message on the forge, server log, OTel, feedback records), and whether a key has been written anywhere in the past.
+
+  Task: analyse first. Find the root cause and write it into this item before any fix is designed: trace the error text from its origin to every sink, and state for each sink whether a secret can reach it. Reproduce with an automated test we own that fails before the fix and passes after. No workaround for the symptom.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-04T01:03:27.618943081Z
+  text: |-
+    Analysis 2026-10-04. Code read at the commits deployed on 2026-10-03 06:53 to 08:06 UTC (umbrella 2bb6895: platform c1d6833, joy a7a948d, app d9e4cac; production run of 2026-10-02 20:58 UTC, next deploy 2026-10-03 14:34 UTC).
+
+    VERIFIED
+    1. Origin: crates/joy-ai/src/acp_lane.rs, run_lane: on a failed connection, reason = format!("agent '{command_shown}': {e:#}") with the complete spawn command. It is stored in last_error and printed with eprintln ('joyint: acp lane ended: ...'). A second place prints the command the same way ('acp lane refused: agent command ...').
+    2. The platform builds that command with --env MISTRAL_API_KEY=<key> and --env JOY_SESSION=<session> inside (platform src/agent/container.rs, chat_turn).
+    3. Sinks: (a) stderr of the server process, in full, twice per failed turn (two attempts). Reproduced with a made-up key: the line contains 'MISTRAL_API_KEY=FAKEKEY123' in clear. In production that is the docker json-file log of joyint-platform-production. (b) LaneSet::turn returns it in the error; the platform wraps it and joy-ai turn_engine shortens it to 240 characters for the notice. The notice goes into the chat message, the OTel log record 'chat turn refused or failed' and from there into feedback mails.
+    4. Why the reason is missing: the 240 characters are counted from the start of the text, the command comes first, the reason (docker's message) after it.
+    5. Whether the cut keeps the key out depends on the argument order and path lengths only. In production on 2026-10-03 the cut fell inside JOY_ADAPTER, before the key. A search of the production OTel logs and spans for 'MISTRAL_API_KEY' found nothing.
+
+    NOT CHECKED: the container logs of 2026-10-03 no longer exist, so it cannot be shown whether the key was written there; by the code it was, on each of the two failed turns.
