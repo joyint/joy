@@ -1,0 +1,30 @@
+id: JOY-02C1-8B
+title: joy update says up to date while the forge connector is missing, and the stale file hints invite deleting it
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+tags:
+- forge
+- update
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T22:02:54.941558113Z
+updated: 2026-10-04T22:02:55.038759635Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Operator, 2026-10-04: 'joy forge plugins' printed three near identical 'rm' lines for the stale connector files of the earlier version. Shortened to a pattern, 'rm joy-*', that removes joy-forge too. Afterwards 'joy update' answered 'up to date' and 'nothing to refresh' while every forge verb failed with plugin_missing.
+
+  - 'joy update' and 'joy update --check' name a missing connector in the Binary section, with the command that reinstalls it; --check counts it as stale.
+  - 'joy forge plugins' names the stale files once, in full, in one command, and says which file to keep.
+  - User messages stay short: no item ids, no dashes.
+
+  Tests: a_missing_connector_is_named_with_the_command_that_restores_it, stale_connector_files_are_listed_once_in_one_command.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-04T22:02:55.017251098Z
+  text: '[x] update.rs: connector row in the Binary section of update and update --check. [x] forge.rs: one closing block instead of a line per forge. [x] Two unit tests. JSON output unchanged. Gates: fmt, clippy, workspace tests.'
