@@ -103,6 +103,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         let (mark, status) = swap_binary_status();
         println!("  {mark}{:<24} {}", "binary", status);
     }
+    print_connector_row();
 
     if let Some(root) = project_root {
         // Downgrade guard: when the marker is ahead of this running
@@ -228,6 +229,9 @@ fn run_check() -> Result<()> {
             color::check_mark(),
             color::inactive(&format!("({CURRENT_VERSION})"))
         );
+    }
+    if print_connector_row() {
+        stale = true;
     }
 
     let Some(root) = store::find_project_root(&cwd) else {
@@ -584,6 +588,41 @@ fn foreign_install() -> Option<(&'static str, String)> {
     }
 }
 
+/// The forge connector ships beside `joy` and is not this binary: a
+/// machine can have a current `joy` and no `joy-forge`, and "up to date"
+/// alone would then be a wrong answer to someone whose release or sign in
+/// just failed with `plugin_missing`. This says so, with the
+/// command that brings both back. Answers whether the row was printed.
+fn print_connector_row() -> bool {
+    let missing = joy_core::forge_plugins::FORGE_PLUGINS.iter().all(|spec| {
+        joy_core::forge_plugins::resolve_plugin(spec)
+            .is_err_and(|error| error.state() == "plugin_missing")
+    });
+    let Some((status, hint)) = connector_row(missing, foreign_install().map(|(_, cmd)| cmd)) else {
+        return false;
+    };
+    println!(
+        "  {}{:<24} {}",
+        color::warn_mark(),
+        "connector",
+        color::warning(status)
+    );
+    println!("      {hint}");
+    true
+}
+
+/// What the Binary section says about the forge connector: nothing while
+/// one is installed, and otherwise that it is missing and how to get it
+/// back. `foreign` is the upgrade command of the manager that owns this
+/// `joy`, when there is one; the installer is the answer everywhere else.
+fn connector_row(missing: bool, foreign: Option<String>) -> Option<(&'static str, String)> {
+    if !missing {
+        return None;
+    }
+    let command = foreign.unwrap_or_else(|| "curl -fsSL get.joyint.com/joy | sh".to_string());
+    Some(("missing (joy-forge)", format!("reinstall with: {command}")))
+}
+
 /// An updater ready to run. Uses the cargo-dist install receipt when present;
 /// otherwise points at the GitHub release source and the running binary's
 /// directory, so a receipt-less build (e.g. `just install` into `~/.local/bin`)
@@ -647,5 +686,33 @@ fn swap_binary_status() -> (&'static str, String) {
             color::warn_mark(),
             color::warning(&format!("update failed: {e}")),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A current `joy` without `joy-forge` is not "up to date" for someone
+    /// whose release just failed: the row names the gap and the command,
+    /// and says nothing while a connector is there.
+    #[test]
+    fn a_missing_connector_is_named_with_the_command_that_restores_it() {
+        assert_eq!(connector_row(false, None), None);
+        assert_eq!(
+            connector_row(true, None),
+            Some((
+                "missing (joy-forge)",
+                "reinstall with: curl -fsSL get.joyint.com/joy | sh".to_string()
+            ))
+        );
+        // the manager that owns this joy is the one to ask
+        assert_eq!(
+            connector_row(true, Some("cargo install joy-cli".to_string())),
+            Some((
+                "missing (joy-forge)",
+                "reinstall with: cargo install joy-cli".to_string()
+            ))
+        );
     }
 }

@@ -1471,16 +1471,66 @@ fn plugins() -> Result<()> {
         if let Some(problem) = row.problem.as_deref() {
             println!("  problem: {problem}");
         }
-        for line in &row.shadowed {
-            println!("  another binary for this forge is installed and unused; {line}");
-        }
+    }
+    if let Some(block) = unused_block(&rows) {
+        println!();
+        print!("{block}");
     }
     Ok(())
+}
+
+/// The closing lines about stale connector files: every file named once,
+/// in full, in ONE command. One line per forge used to repeat the same
+/// sentence three times with three paths that differ in a suffix, which
+/// invites shortening them to a pattern, and `joy-*` matches `joy-forge`,
+/// the connector itself (operator, 2026-10-04).
+fn unused_block(rows: &[PluginRow]) -> Option<String> {
+    let mut files: Vec<&str> = Vec::new();
+    for line in rows.iter().flat_map(|row| &row.shadowed) {
+        let path = line.strip_prefix("rm ").unwrap_or(line);
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+    if files.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Unused files. Keep joy-forge.\n  rm {}\n",
+        files.join(" ")
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Three stale files are named once, in full, in one command, and the
+    /// connector itself is named as the file to keep: three near identical
+    /// lines invited `rm joy-*`, which removes the connector too.
+    #[test]
+    fn stale_connector_files_are_listed_once_in_one_command() {
+        let row = |id: &'static str, shadowed: &[&str]| PluginRow {
+            id,
+            binary: None,
+            path: None,
+            found_in: None,
+            protocol: None,
+            version: None,
+            problem: None,
+            shadowed: shadowed.iter().map(|s| s.to_string()).collect(),
+        };
+        let rows = [
+            row("github", &["rm /bin/joy-github"]),
+            row("gitlab", &["rm /bin/joy-gitlab"]),
+            row("gitea", &["rm /bin/joy-gitea"]),
+        ];
+        assert_eq!(
+            unused_block(&rows).as_deref(),
+            Some("Unused files. Keep joy-forge.\n  rm /bin/joy-github /bin/joy-gitlab /bin/joy-gitea\n")
+        );
+        assert_eq!(unused_block(&[row("github", &[])]), None);
+    }
 
     /// The sentence a stopped sign in ends with names what was left
     /// WHEN JOY STOPPED, not the last number the connector wrote
