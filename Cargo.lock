@@ -2262,7 +2262,7 @@ dependencies = [
 
 [[package]]
 name = "joy-ai"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "joy-bi"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "joy-chat"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "base64ct",
  "chrono",
@@ -2329,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "joy-chat-store"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "chrono",
  "filetime",
@@ -2352,7 +2352,7 @@ dependencies = [
 
 [[package]]
 name = "joy-cli"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2398,7 +2398,7 @@ dependencies = [
 
 [[package]]
 name = "joy-core"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2460,7 +2460,7 @@ dependencies = [
 
 [[package]]
 name = "joy-forge-net"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "base64ct",
@@ -2484,7 +2484,7 @@ dependencies = [
 
 [[package]]
 name = "joy-gitea"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "joy-forge-net",
@@ -2495,7 +2495,7 @@ dependencies = [
 
 [[package]]
 name = "joy-github"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "joy-forge-net",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "joy-gitlab"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "anyhow",
  "joy-forge-net",
@@ -2518,7 +2518,7 @@ dependencies = [
 
 [[package]]
 name = "joy-model"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "joy-test-env",
  "serde",
@@ -2528,14 +2528,14 @@ dependencies = [
 
 [[package]]
 name = "joy-process"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "joy-telemetry"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "chrono",
  "joy-core",
@@ -2550,7 +2550,7 @@ dependencies = [
 
 [[package]]
 name = "joy-test-env"
-version = "0.21.1"
+version = "0.22.0"
 dependencies = [
  "joy-process",
 ]
