@@ -370,7 +370,7 @@ joy clone [url]                         # Clone project from remote
 joy app                                 # TUI (default)
 ```
 
-The server (`joyint-server`) is a separate binary in the [platform](https://github.com/joyint/platform) repository. See [ADR-002](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-002-single-binary.md) for the rationale.
+The server (`joyint-server`) is a separate binary in the platform repository. See `JOY-01CB-3C - ADR: Single CLI binary, separate server binary` for the rationale.
 
 ### Shell Completions and Help
 
@@ -441,7 +441,7 @@ When adding new AI-related files, decide which group they belong to. If the file
 
 Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy ai init`. Each file describes one of Joy's seven fixed capabilities (conceive, plan, design, implement, test, review, document) with human-readable descriptions, a constraints table, and a machine-parseable YAML block defining permissions and applicable tools.
 
-For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe, Google Antigravity), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
+For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe, Google Antigravity), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See `JOY-01D4-42 - ADR: Capabilities over roles for AI agent abstraction` for the full rationale.
 
 ### Interaction levels
 
@@ -700,4 +700,4 @@ Joy dispatches work to AI APIs and tracks results:
 
 ## Related
 
-For roadmap, milestones, and timeline see the [umbrella repository](https://github.com/joyint/project). For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/biz/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/biz/Competition.md). These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
+Roadmap, milestones and timeline, and the business context (pricing, licensing, competitive landscape), are part of the internal planning for the Joyint product ecosystem at Joydev GmbH and are not part of this repository.

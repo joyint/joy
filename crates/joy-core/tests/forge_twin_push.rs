@@ -924,7 +924,7 @@ impl contact::RateLimitOracle for FixedOracle {
 /// that means "your organisation has not approved Joy". The
 /// push at the top is what establishes it.
 #[test]
-fn the_states_j5_defined_read_through_a_contact_over_the_twin() {
+fn the_named_states_read_through_a_contact_over_the_twin() {
     let _serial = lock();
     let tmp = tempfile::tempdir().expect("tempdir");
     let forge_dir = tmp.path().join("forge.git");

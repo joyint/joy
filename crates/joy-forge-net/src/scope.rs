@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn the_scope_missing_answer_has_the_shape_of_d2_7c() {
+    fn the_scope_missing_answer_has_its_named_shape() {
         let answer = scope_missing(
             "gitlab.com",
             "create-repository",
