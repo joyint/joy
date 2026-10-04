@@ -175,7 +175,7 @@ fn masked(text: &str) -> String {
     let token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
     let mut out = String::with_capacity(text.len());
     let mut run = String::new();
-    let mut flush = |run: &mut String, out: &mut String| {
+    let flush = |run: &mut String, out: &mut String| {
         let mixed =
             run.chars().any(|c| c.is_ascii_digit()) && run.chars().any(|c| c.is_ascii_alphabetic());
         if run.chars().count() >= 24 && mixed {
@@ -240,6 +240,28 @@ mod tests {
     }
 
     #[test]
+    fn a_protocol_error_says_what_happened_not_where_in_the_library() {
+        let mut error: agent_client_protocol::Error =
+            agent_client_protocol::schema::v1::ErrorCode::InternalError.into();
+        error.data = Some(serde_json::json!({
+            "spawned_at": "/usr/local/cargo/registry/src/x/agent-client-protocol-1.3.0/src/jsonrpc.rs:1524:39",
+            "data": "Process exited with exit status: 1: Error response from daemon: No such container: joyint-project-1\n",
+        }));
+        let reason = said(&error);
+        assert!(!reason.contains("jsonrpc.rs"), "{reason}");
+        assert!(
+            reason.ends_with("Error response from daemon: No such container: joyint-project-1"),
+            "{reason}"
+        );
+        // an error with words of its own keeps them
+        let mut plain: agent_client_protocol::Error =
+            agent_client_protocol::schema::v1::ErrorCode::InternalError.into();
+        plain.message = "Rate limit exceeded for mistral".into();
+        plain.data = Some(serde_json::json!({ "provider": "mistral" }));
+        assert_eq!(said(&plain), "Rate limit exceeded for mistral");
+    }
+
+    #[test]
     fn stderr_keeps_what_happened_and_no_credential() {
         assert_eq!(
             stderr("mistralai.SDKError: Status 429. Body: {\"message\": \"slow down\"}").as_deref(),
@@ -290,4 +312,31 @@ mod tests {
         );
         assert_eq!(wire.trail(wire.mark(), since), "nothing went over the wire");
     }
+}
+
+/// What a protocol error SAYS, for a person: the agent's own words.
+///
+/// The transport wraps the end of an agent process as an internal error
+/// whose text is a JSON object with the place in the library that
+/// spawned the task, and only then, under `data`, what happened ("No
+/// such container", the provider's refusal). Printed as it stands, the
+/// reason reached the person as a line of library path, cut before the
+/// cause (JP-0166-48).
+pub(super) fn said(error: &agent_client_protocol::Error) -> String {
+    let words = match &error.data {
+        Some(serde_json::Value::String(text)) => Some(text.clone()),
+        Some(serde_json::Value::Object(fields)) => fields
+            .get("data")
+            .or_else(|| fields.get("message"))
+            .or_else(|| fields.get("error"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        _ => None,
+    };
+    let words = words.unwrap_or_default();
+    let words = words.trim();
+    if words.is_empty() || words == error.message {
+        return cut(&masked(error.message.trim()));
+    }
+    cut(&masked(&format!("{}: {words}", error.message.trim())))
 }

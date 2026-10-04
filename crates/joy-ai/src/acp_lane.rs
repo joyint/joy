@@ -1502,7 +1502,7 @@ async fn run_lane(
                 };
                 let ended_shown = match (&ended, &prompted) {
                     (Some(ended), _) => ended.clone(),
-                    (None, Some(Err(e))) => format!("error: {e}"),
+                    (None, Some(Err(e))) => format!("error: {}", wire::said(e)),
                     (None, None) => "no answer to the cancel".to_string(),
                     (None, Some(Ok(_))) => "cancelled".to_string(),
                 };
@@ -1555,7 +1555,7 @@ async fn run_lane(
                         prompted
                             .as_ref()
                             .and_then(|r| r.as_ref().err())
-                            .map(|e| e.to_string())
+                            .map(wire::said)
                             .unwrap_or_default()
                     ))
                 };
@@ -1593,12 +1593,16 @@ async fn run_lane(
         tracing::warn!(
             target: "joy_ai::acp_wire",
             wire = %lane_wire.trail(0, lane_started),
-            error = %format!("{e:#}"),
+            error = %wire::said(e),
             "acp lane ended"
         );
     }
     if let Err(e) = connect {
-        let reason = format!("{e:#} (agent '{}')", agent_program(&command_shown));
+        let reason = format!(
+            "{} (agent '{}')",
+            wire::said(&e),
+            agent_program(&command_shown)
+        );
         eprintln!("joyint: acp lane ended: {reason}");
         *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
     }
