@@ -61,8 +61,10 @@
 //! Which case reaches the outside cannot be read off its source
 //! (`sign_in_against_fakes` sets no variable and still had the person's
 //! `gh` ask their keychain; a unit test in joy-forge-net's `src` ran
-//! their `glab`), which is why the rule is per binary and has no
-//! exception. `just guard-test-env` holds both halves.
+//! their `glab`), which is why the rule is per binary and leaves out
+//! only what lies below it: this crate, and joy-process, which this
+//! crate is built on and whose cases start nothing but their own test
+//! binary. `just guard-test-env` holds both halves.
 
 use std::ffi::{OsStr, OsString};
 use std::process::Command;

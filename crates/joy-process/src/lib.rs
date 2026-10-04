@@ -43,11 +43,6 @@
 // everyone else here.
 #![allow(clippy::disallowed_methods)]
 
-// Nothing of the developer's shell and session reaches the unit tests
-// of this crate (JOY-02BB-C7).
-#[cfg(test)]
-joy_test_env::isolate!();
-
 use std::ffi::OsStr;
 use std::process::Command;
 

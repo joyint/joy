@@ -2535,7 +2535,6 @@ dependencies = [
 name = "joy-process"
 version = "0.21.1"
 dependencies = [
- "joy-test-env",
  "windows-sys 0.61.2",
 ]
 

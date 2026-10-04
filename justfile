@@ -184,8 +184,12 @@ guard-vcs:
 #      `joy_test_env::isolate!();` stands in each file directly under a
 #      tests directory and, under #[cfg(test)], in the root of every
 #      crate. Which case reaches the outside cannot be read off its
-#      source, so there is no exception but joy-test-env itself, whose
-#      own cases are about the sweep.
+#      source, so the only crates left out are the two below the rule:
+#      joy-test-env itself, whose own cases are about the sweep, and
+#      joy-process, which joy-test-env is built on. A crate does not
+#      depend on what depends on it, and the cases of joy-process start
+#      nothing but their own test binary, which they hand a JOY_
+#      variable of their own that the sweep would take away.
 #   2. A test starts a process with joy_test_env::command and no other
 #      way. A mention in a comment is prose, not a spawn.
 #
@@ -200,7 +204,7 @@ guard-test-env:
     bad=0
     for f in crates/*/tests/*.rs crates/*/src/lib.rs crates/*/src/main.rs crates/*/src/bin/*.rs; do
         [ -f "$f" ] || continue
-        case "$f" in crates/joy-test-env/*) continue ;; esac
+        case "$f" in crates/joy-test-env/*|crates/joy-process/*) continue ;; esac
         if ! grep -qE '^joy_test_env::isolate!\(\);$' "$f"; then
             echo "guard-test-env: $f is the root of a test binary and does not say joy_test_env::isolate!();"
             bad=1
