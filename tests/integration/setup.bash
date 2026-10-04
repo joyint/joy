@@ -14,6 +14,43 @@ if [ ! -x "$JOY_BIN" ]; then
 fi
 export PATH="$(dirname "$JOY_BIN"):$PATH"
 
+# A test inherits nothing of the developer's shell and session
+# (JOY-02BB-C7), the same rule crates/joy-test-env holds for the Rust
+# tests: no JOY_ variable (JOY_BIN is the suite's own, which binary to
+# test, and stays), no git identity variable, no token or config
+# directory of a forge CLI, and no session bus. A stale JOY_SESSION
+# answered for the developer instead of the person a case builds, and
+# with the session bus in reach the connector asked the developer's own
+# keychain.
+for name in $(compgen -e); do
+    case "$name" in
+        JOY_BIN) ;;
+        JOY_*|GIT_AUTHOR_EMAIL|GIT_COMMITTER_EMAIL|EMAIL) unset "$name" ;;
+        GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN) unset "$name" ;;
+        GITLAB_TOKEN|GITEA_TOKEN|GH_CONFIG_DIR|GLAB_CONFIG_DIR|TEA_CONFIG_DIR) unset "$name" ;;
+    esac
+done
+unset name
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/joy-test-no-bus"
+
+# Nor the developer's forge CLI. joy asks gh, glab and tea for the token
+# they hold, and with the developer's PATH it asks the developer's own gh
+# and is handed their real token. A test finds stand-ins first: the
+# three programs, installed and signed in nowhere, the same on every
+# machine. One directory per run, outside every test project; a case
+# that needs a gh that answers puts its own before it.
+FORGE_CLI_STAND_INS="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/joy-test-forge-clis"
+mkdir -p "$FORGE_CLI_STAND_INS"
+for name in gh glab tea; do
+    if [ ! -x "$FORGE_CLI_STAND_INS/$name" ]; then
+        printf '#!/bin/sh\nexit 1\n' > "$FORGE_CLI_STAND_INS/$name.$$"
+        chmod 755 "$FORGE_CLI_STAND_INS/$name.$$"
+        mv -f "$FORGE_CLI_STAND_INS/$name.$$" "$FORGE_CLI_STAND_INS/$name"
+    fi
+done
+unset name
+export PATH="$FORGE_CLI_STAND_INS:$PATH"
+
 TEST_PASSPHRASE="correct horse battery staple extra words"
 
 # The address every project here is founded by. `setup` writes it into

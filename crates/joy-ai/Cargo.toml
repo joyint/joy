@@ -46,6 +46,9 @@ ts = ["dep:ts-rs", "joy-core/ts", "joy-chat/ts"]
 acp = ["dep:agent-client-protocol", "dep:tokio", "dep:anyhow"]
 
 [dev-dependencies]
+# What a test never inherits from the person's shell, said once
+# (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 # tests build fixture repos directly; production git lives in joy-core/src/vcs (JOY-0265-D7)
 git2 = { version = "0.21", default-features = false, features = ["vendored-libgit2"] }
 tempfile = "3"

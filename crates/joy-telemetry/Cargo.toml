@@ -28,3 +28,8 @@ serde_json = { workspace = true }
 serde_yaml_ng = { workspace = true }
 chrono = { workspace = true }
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }

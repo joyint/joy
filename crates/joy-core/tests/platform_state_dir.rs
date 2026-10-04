@@ -19,6 +19,10 @@
 //! env-var mutation cannot race the in-crate unit test that sets
 //! `XDG_STATE_HOME`. It is the only env-mutating test in this binary.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_core::auth::session::{self, create_session};
 use joy_core::auth::{derive_key, IdentityKeypair, PublicKey, Salt};
 

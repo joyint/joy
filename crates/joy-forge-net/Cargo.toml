@@ -86,6 +86,9 @@ rustls-pki-types = "1"
 fake-api = []
 
 [dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 # This crate's own tests drive the fake too (the proxy cases), and a
 # crate cannot dev-depend on itself, so the feature is turned on for
 # the test build here.

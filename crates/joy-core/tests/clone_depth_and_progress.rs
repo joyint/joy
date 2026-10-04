@@ -15,6 +15,10 @@
 //! and the clone that reads it writes the `shallow` file the app records
 //! (A4) and the banner of A5 reads.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 

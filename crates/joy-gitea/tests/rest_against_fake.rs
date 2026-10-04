@@ -7,6 +7,10 @@
 //! where `forges.yaml` earns its place: an internal instance nobody
 //! signed a CLI in to is claimed, asked and answered.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_forge_net::config::Instances;
 use joy_forge_net::fake::{FakeForge, Reply};
 use joy_forge_net::forge::{Ctx, NewRepository, Target};

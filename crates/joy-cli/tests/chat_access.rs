@@ -8,13 +8,17 @@
 //! opens, and every hop in between (project.yaml, the state dir, the
 //! delegation token) is part of the answer.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 
 const PASS: &str = "correct horse battery staple";
 
 /// Run `joy` in `root` with its own HOME, and return stdout.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> String {
-    let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    let out = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
@@ -37,7 +41,7 @@ fn project(dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
     std::fs::create_dir_all(&root).unwrap();
     std::fs::create_dir_all(&home).unwrap();
     let git = |args: &[&str]| {
-        joy_process::command("git")
+        joy_test_env::command("git")
             .args(args)
             .current_dir(&root)
             .output()
@@ -110,7 +114,7 @@ fn a_passphrase_change_keeps_the_chats_readable() {
 /// Run `joy`, returning stdout even when the command failed (the caller
 /// asserts on the content).
 fn joy_try(root: &Path, home: &Path, args: &[&str]) -> String {
-    let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    let out = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)

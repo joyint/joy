@@ -40,5 +40,8 @@ uuid = { version = "1", features = ["v4", "v7", "serde", "js"] }
 ts = ["dep:ts-rs", "joy-model/ts"]
 
 [dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 tempfile = "3"
 insta = { version = "1.41", features = ["yaml"] }

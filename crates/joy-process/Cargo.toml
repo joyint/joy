@@ -24,3 +24,8 @@ windows-sys = { version = "0.61", features = [
     "Win32_System_Console",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+[dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }

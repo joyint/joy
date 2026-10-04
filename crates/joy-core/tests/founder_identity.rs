@@ -10,6 +10,10 @@
 //! MISSING identity is only honest when nothing on the machine can supply
 //! one.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::Cursor;
 use std::path::Path;
 use std::sync::OnceLock;

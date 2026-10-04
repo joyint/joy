@@ -10,6 +10,10 @@
 //! contradiction: `write_repository` "Uses Git-over-HTTP. Does not
 //! support API authentication.", so creating a project needs `api`.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_forge_net::config::Instances;
 use joy_forge_net::fake::{Call, FakeForge, Reply};
 use joy_forge_net::forge::{Ctx, Listing, NewRepository, Target};

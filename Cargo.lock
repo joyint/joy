@@ -2280,6 +2280,7 @@ dependencies = [
  "joy-core",
  "joy-crypt",
  "joy-process",
+ "joy-test-env",
  "minijinja",
  "rand 0.8.8",
  "serde",
@@ -2302,6 +2303,7 @@ dependencies = [
  "chrono",
  "clap",
  "joy-core",
+ "joy-test-env",
  "serde",
  "serde_json",
 ]
@@ -2317,6 +2319,7 @@ dependencies = [
  "insta",
  "joy-crypt",
  "joy-model",
+ "joy-test-env",
  "rand 0.8.8",
  "serde",
  "serde_json",
@@ -2342,6 +2345,7 @@ dependencies = [
  "joy-core",
  "joy-crypt",
  "joy-model",
+ "joy-test-env",
  "serde",
  "serde_json",
  "serde_yaml_ng",
@@ -2377,6 +2381,7 @@ dependencies = [
  "joy-gitlab",
  "joy-process",
  "joy-telemetry",
+ "joy-test-env",
  "libc",
  "minijinja",
  "predicates",
@@ -2415,6 +2420,7 @@ dependencies = [
  "joy-crypt",
  "joy-model",
  "joy-process",
+ "joy-test-env",
  "joy-token",
  "libc",
  "minijinja",
@@ -2469,6 +2475,7 @@ dependencies = [
  "joy-core",
  "joy-forge-net",
  "joy-process",
+ "joy-test-env",
  "keyring",
  "rand 0.8.8",
  "rustls-pki-types",
@@ -2486,6 +2493,7 @@ version = "0.21.1"
 dependencies = [
  "anyhow",
  "joy-forge-net",
+ "joy-test-env",
  "serde",
  "serde_json",
 ]
@@ -2496,6 +2504,7 @@ version = "0.21.1"
 dependencies = [
  "anyhow",
  "joy-forge-net",
+ "joy-test-env",
  "serde",
  "serde_json",
  "tempfile",
@@ -2507,6 +2516,7 @@ version = "0.21.1"
 dependencies = [
  "anyhow",
  "joy-forge-net",
+ "joy-test-env",
  "serde",
  "serde_json",
 ]
@@ -2515,6 +2525,7 @@ dependencies = [
 name = "joy-model"
 version = "0.21.1"
 dependencies = [
+ "joy-test-env",
  "serde",
  "serde_json",
  "ts-rs",
@@ -2524,6 +2535,7 @@ dependencies = [
 name = "joy-process"
 version = "0.21.1"
 dependencies = [
+ "joy-test-env",
  "windows-sys 0.61.2",
 ]
 
@@ -2533,12 +2545,20 @@ version = "0.21.1"
 dependencies = [
  "chrono",
  "joy-core",
+ "joy-test-env",
  "serde",
  "serde_json",
  "serde_yaml_ng",
  "tracing",
  "tracing-subscriber",
  "uuid",
+]
+
+[[package]]
+name = "joy-test-env"
+version = "0.21.1"
+dependencies = [
+ "joy-process",
 ]
 
 [[package]]

@@ -1,0 +1,20 @@
+[package]
+name = "joy-test-env"
+# Inherited from [workspace.package], like every crate of the workspace
+# (JOY-02A4-89). Never published: it exists for the tests of this
+# workspace alone, and the crates that use it name it as a path only
+# dev-dependency, which a publish drops.
+version.workspace = true
+edition = "2021"
+license = "MIT"
+description = "What a joy test never inherits from the person's shell and session, said once (JOY-02BB-C7)"
+repository = "https://github.com/joyint/joy"
+publish = false
+
+# Not a cargo-dist App: only joy-cli is (design D2.1), see the
+# "Check the release shape" step of .github/workflows/release.yml.
+[package.metadata.dist]
+dist = false
+
+[dependencies]
+joy-process = { workspace = true }

@@ -36,6 +36,9 @@ git2 = { version = "0.21", default-features = false, features = ["vendored-libgi
 ts = ["joy-chat/ts", "joy-core/ts"]
 
 [dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 tempfile = "3"
 # The maintenance cases age the store the way the operator's store is
 # aged, so the shipped 14 day window can be asserted instead of a zero

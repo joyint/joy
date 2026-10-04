@@ -14,6 +14,10 @@
 //!
 //! Its own test binary: it moves HOME, which is process state.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_core::vcs::remote_url::{RemoteUrl, Transport};
 use joy_core::vcs::{ssh_auth, ssh_config, HostKind};
 

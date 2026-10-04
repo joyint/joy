@@ -88,6 +88,9 @@ regex = "1"
 sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 
 [dev-dependencies]
+# What a test never inherits from the person's shell, said once
+# (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 assert_cmd = "2"
 # The in process fake forge API the connector tests speak to. A dev
 # dependency, so a shipped connector never carries it.

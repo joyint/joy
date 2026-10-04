@@ -16,6 +16,10 @@
 //! `XDG_CONFIG_HOME`, which are process state, so a second test beside
 //! it would read the device pin or the git identity this one writes.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 
 use joy_core::auth::{generate_salt, seed as seed_mod, IdentityKeypair};

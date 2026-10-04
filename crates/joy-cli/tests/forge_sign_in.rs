@@ -23,6 +23,10 @@
 
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -49,7 +53,7 @@ const CONNECTOR: &str = env!("CARGO_BIN_EXE_joy-forge");
 fn write_script(path: &std::path::Path, body: &str) {
     use std::io::Write as _;
     use std::os::unix::fs::PermissionsExt;
-    let mut writer = joy_process::command("/bin/sh")
+    let mut writer = joy_test_env::command("/bin/sh")
         .arg("-c")
         .arg("cat > \"$0\"")
         .arg(path)
@@ -104,7 +108,7 @@ impl Sandbox {
     fn connector(&self) -> std::process::Command {
         // joy_process::command, like every other spawn in joy: a GUI
         // host on Windows must open no console window.
-        let mut command = joy_process::command(CONNECTOR);
+        let mut command = joy_test_env::command(CONNECTOR);
         command
             .env_clear()
             .env("PATH", "")

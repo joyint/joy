@@ -77,6 +77,8 @@ Every source file starts with an [SPDX](https://spdx.dev/learn/handling-license-
 - **Snapshot tests** (`crates/joy-cli/tests/cmd/`, `trycmd`): CLI output as `.toml` cases (command, args, expected stdout, exit code); use `...` for varying output. For formatting changes and exit-code contracts.
 - **Integration tests** (`tests/integration/`, `bats`): the real `joy` binary against real `.joy/` directories, each test setting up a temp project. For new commands/flags and multi-step workflows.
 
+A test inherits nothing of the developer's shell and session (JOY-02BB-C7 - One list of the variables a test never inherits from the person's shell): no `JOY_` variable, no git identity variable, no forge CLI token or signed-in `gh`, `glab` or `tea`, and on Linux no session bus, so no test reaches the person's keychain. `crates/joy-test-env` says the rule once. The root of every Rust test binary says `joy_test_env::isolate!();` (each file directly under a `tests` directory, and under `#[cfg(test)]` each crate root), a test starts a process with `joy_test_env::command`, and `tests/integration/setup.bash` holds the same rule for bats. `just guard-test-env` refuses a test binary without the line and a plain command under a `tests` directory. A case that needs a home directory brings its own: the person's HOME is not taken away.
+
 Every new CLI command or flag gets at least one integration test; output-critical commands also get a snapshot test. Tests are part of "done", written with the implementation, not deferred. When closing a bug, reference the covering test in a comment.
 
 Run `just test` (all layers) before closing any implementation item; all must pass. Aim for over 80% line coverage in core libraries (a signal, not a gate).

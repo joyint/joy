@@ -17,6 +17,11 @@
 //!   addresses (best effort: without the user:email scope the list
 //!   stays empty and the answer still names the login).
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 pub mod github;
 
 use joy_forge_net::auth::oauth::OAuth;

@@ -10,6 +10,10 @@
 //! the duration so that a curl or a gh on the developer's machine
 //! cannot answer for the connector by accident.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::{Path, PathBuf};
 use std::sync::Once;
 
@@ -484,7 +488,7 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
     });
     write_forges_yaml(&dir, "ghe-argv.test", "github", &fake.base());
     const TOKEN: &str = "gho_this-must-never-be-in-argv";
-    let mut child = joy_process::command(CONNECTOR)
+    let mut child = joy_test_env::command(CONNECTOR)
         .args([
             "github",
             "identity",

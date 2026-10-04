@@ -13,6 +13,10 @@
 //! Its own test binary: it moves HOME and `SSH_AUTH_SOCK`, which are
 //! process state.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_core::vcs::ssh_auth::{self, Agent, SshCandidate};
 use joy_core::vcs::{ssh_config, HostKind};
 

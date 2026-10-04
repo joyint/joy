@@ -17,6 +17,10 @@
 
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use joy_core::vcs::credential_helper::{self, Search};
 use joy_core::vcs::HostKind;
 

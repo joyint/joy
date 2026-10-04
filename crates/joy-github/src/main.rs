@@ -9,6 +9,11 @@
 //! and every verb come from `joy_forge_net::cli`, with a list of one
 //! forge instead of three.
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 use joy_forge_net::cli::{self, Manifest};
 use joy_forge_net::forge::Forge;
 

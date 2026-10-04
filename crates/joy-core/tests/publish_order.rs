@@ -76,6 +76,10 @@
 //! second edge would have been a cycle. The rule it exposed stays, and
 //! so does its guard.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
