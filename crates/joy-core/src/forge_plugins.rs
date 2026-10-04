@@ -1419,9 +1419,14 @@ pub enum Target {
 }
 
 impl Target {
-    /// The target of a remote URL.
+    /// The target of a remote URL, as joy dials it: an ssh config alias
+    /// is replaced by the host behind it, the same way the engine does
+    /// before it opens a socket. The alias is a name on this machine and
+    /// no forge knows it, so a connector asked about it finds no login
+    /// and names a host that does not exist. A remote the config does
+    /// not rename is handed over exactly as written.
     pub fn remote(url: impl Into<String>) -> Self {
-        Target::Remote(url.into())
+        Target::Remote(crate::vcs::ssh_config::dialled_url(&url.into()))
     }
 
     /// The target of a bare host name.

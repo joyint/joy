@@ -307,13 +307,17 @@ fn responsible(
 /// the contact itself used the other one.
 fn remote_urls(root: &Path) -> Vec<String> {
     let mut urls: Vec<String> = Vec::new();
-    if let Some(url) = joy_core::vcs::forge::remote_url(root) {
+    // As joy dials them: an ssh config alias is a name on this machine,
+    // and the host a person signs in to is the one behind it.
+    let dialled = |url: String| joy_core::vcs::ssh_config::dialled_url(&url);
+    if let Some(url) = joy_core::vcs::forge::remote_url(root).map(dialled) {
         urls.push(url);
     }
     for (_, url) in joy_core::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default()
     {
+        let url = dialled(url);
         if !urls.contains(&url) {
             urls.push(url);
         }
@@ -1131,7 +1135,7 @@ fn host_set(explicit: Option<&str>, ctx: &CallContext) -> Vec<String> {
             .all_remotes(root)
             .unwrap_or_default()
         {
-            add(host_of(&url));
+            add(host_of(&joy_core::vcs::ssh_config::dialled_url(&url)));
         }
     }
     for host in stored_credential_hosts() {

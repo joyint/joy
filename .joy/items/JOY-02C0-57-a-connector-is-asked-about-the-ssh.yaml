@@ -1,0 +1,30 @@
+id: JOY-02C0-57
+title: A connector is asked about the ssh alias instead of the host behind it
+type: bug
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+tags:
+- forge
+- release
+capabilities:
+- implement
+- review
+effort: 2
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T21:32:49.829147404Z
+updated: 2026-10-04T21:32:49.930804729Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Operator, 2026-10-04, on a Linux workstation: 'joy release publish' pushed the tag and then failed with 'no GitHub credential for <alias>', where <alias> is the Host name of an ssh config block whose HostName is github.com. The hint told him to run 'joy forge login --host <alias>', a host no forge has. The engine dials the host behind the alias since JOY-0294-D5, and the app's forge list resolves it since JAPP-02DE-F7; the CLI handed the connector the remote as written.
+
+  - A connector target built from a remote is the address joy dials: forge_plugins::Target::remote applies the ssh config, so release, claims, token and every other verb see the real host.
+  - The CLI names the real host wherever it derives one from a remote: joy forge login, status and logout without --host, the release refusal and the contact report.
+  - A remote the ssh config does not rename is handed over as written.
+
+  Test: crates/joy-core/tests/ssh_config_alias.rs asserts the target of an aliased remote; it fails on the old code with the alias in the target.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-04T21:32:49.908154811Z
+  text: '[x] ssh_config::dialled_url is the one spelling of the address joy dials. [x] Target::remote uses it. [x] joy-cli names the dialled host in forge login/status/logout, the release refusal and the contact report. [x] The alias test asserts the target and failed before the change. Gates: fmt, clippy, 1482 workspace tests.'

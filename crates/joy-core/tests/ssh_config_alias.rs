@@ -86,6 +86,20 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
         None,
         "https is not ssh's business"
     );
+    // A connector is asked about the address joy dials, never about the
+    // alias: `work` is a name on this machine and no forge has a login
+    // for it. Asked with the alias, `joy release publish` answered "no
+    // GitHub credential for work" while the push before it had gone
+    // through.
+    assert_eq!(
+        joy_core::forge_plugins::Target::remote("git@plain:o/r.git"),
+        joy_core::forge_plugins::Target::Remote("git@git.example.com:o/r.git".into())
+    );
+    assert_eq!(
+        joy_core::forge_plugins::Target::remote("https://github.com/o/r.git"),
+        joy_core::forge_plugins::Target::Remote("https://github.com/o/r.git".into()),
+        "a remote the config does not rename is handed over as written"
+    );
     // A rename with no port change keeps the plain scp form.
     assert_eq!(
         ssh_config::effective_url("git@plain:o/r.git").as_deref(),
