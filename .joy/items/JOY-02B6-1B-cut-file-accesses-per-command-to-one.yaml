@@ -1,7 +1,7 @@
 id: JOY-02B6-1B
 title: Cut file accesses per command to one pass over the items
 type: rework
-status: review
+status: closed
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -11,8 +11,8 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T19:20:25.641742130Z
-updated: 2026-10-02T19:48:59.248160195Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-04T16:01:09.107937829Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Every joy command touches the filesystem far more often than its job requires. On a local SSD this is invisible; on a slow filesystem (a network mount, or a host drive shared into a virtual machine) each access costs a fraction of a millisecond and a single command takes seconds.
 
