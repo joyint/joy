@@ -1,7 +1,7 @@
 id: JOY-02BA-45
 title: Open the git repository once per purpose
 type: task
-status: review
+status: closed
 priority: medium
 parent: JOY-02B6-1B
 assignees:
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-02T19:20:50.077391427Z
-updated: 2026-10-02T19:48:59.012891466Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-04T15:57:04.369312036Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Each open of the git repository costs about 36 file accesses (discovery plus the config files). A read command opens it 9 times, a write command 14 times.
 
