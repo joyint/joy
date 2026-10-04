@@ -998,7 +998,7 @@ async fn run_lane(
     let agent = match AcpAgent::from_str(&command) {
         Ok(agent) => agent,
         Err(e) => {
-            let reason = format!("agent command '{command}': {e}");
+            let reason = format!("{e} (agent '{}')", agent_program(&command));
             eprintln!("joyint: acp lane refused: {reason}");
             *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
             return;
@@ -1558,10 +1558,31 @@ async fn run_lane(
     // what turn() and the person get instead of a bare sammelsatz
     // (JAPP-01A0-1C: "could not be established" with no trace).
     if let Err(e) = connect {
-        let reason = format!("agent '{command_shown}': {e:#}");
+        let reason = format!("{e:#} (agent '{}')", agent_program(&command_shown));
         eprintln!("joyint: acp lane ended: {reason}");
         *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
     }
+}
+
+/// The one word of an agent command a failure may name: its program.
+/// Never the command itself (JOY-02BC-C8): its arguments and environment
+/// carry the provider key and the session of the member, and a failure
+/// reason travels to stderr, the logs and the chat. Reads both forms
+/// `AcpAgent::from_str` takes, the command line and the JSON spec.
+fn agent_program(command: &str) -> String {
+    let command = command.trim();
+    if command.starts_with('{') {
+        return serde_json::from_str::<serde_json::Value>(command)
+            .ok()
+            .and_then(|spec| spec["command"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "?".into());
+    }
+    command
+        .split_whitespace()
+        // leading NAME=value pairs are environment, not the program
+        .find(|token| !token.contains('='))
+        .unwrap_or("?")
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1850,8 +1871,71 @@ mod lane_error_tests {
             assert!(msg.contains("could not be established"), "{msg}");
             assert!(
                 msg.contains("joyint-missing-binary-xyz"),
-                "the reason names the command: {msg}"
+                "the reason names the program: {msg}"
             );
+        });
+    }
+
+    /// JOY-02BC-C8: the reason of a dead lane went to stderr and into
+    /// the chat WITH the whole agent command, the provider key and the
+    /// member's session in it, and the cause came last, behind a cut.
+    /// Both forms of the command, a failure at each stage.
+    #[test]
+    fn a_lane_failure_names_the_cause_and_no_secret() {
+        let line = "KEY_ENV=sk-line-secret joyint-missing-binary-xyz \
+                    --env JOY_SESSION=line-session-secret acp";
+        let spec = serde_json::json!({
+            "name": "agent",
+            "command": "joyint-missing-binary-xyz",
+            "args": ["exec", "--env", "KEY_ENV", "acp"],
+            "env": [{"name": "KEY_ENV", "value": "sk-spec-secret"}],
+        })
+        .to_string();
+        // a command nobody can parse: the quote never closes
+        let broken = "joyint-missing-binary-xyz --env 'KEY_ENV=sk-broken-secret";
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            for (key, command) in [(1u32, line), (2, spec.as_str()), (3, broken)] {
+                let lanes: LaneSet<u32> = LaneSet::default();
+                let config = LaneConfig {
+                    command: command.into(),
+                    adapter: String::new(),
+                    cwd: std::env::temp_dir(),
+                    client_name: "test".into(),
+                    client_version: "1".into(),
+                    fresh_preamble: None,
+                    model: None,
+                    prepare: None,
+                };
+                let request = TurnRequest {
+                    chat_id: "c1".into(),
+                    turn_id: "t1".into(),
+                    prompt_full: "hi".into(),
+                    prompt_delta: None,
+                    mode: joy_chat::model::AgentMode::Plan,
+                    max_price_cents: 0,
+                    activity: None,
+                    present: None,
+                };
+                let err = match lanes
+                    .turn(key, 0, &config, request, std::time::Duration::from_secs(20))
+                    .await
+                {
+                    Err(e) => e,
+                    Ok(_) => panic!("a missing binary cannot make a lane"),
+                };
+                let msg = format!("{err}");
+                assert!(!msg.contains("secret"), "a secret in the reason: {msg}");
+                assert!(!msg.contains("--env"), "the command in the reason: {msg}");
+                // the cause leads, the program closes
+                assert!(
+                    msg.ends_with("(agent 'joyint-missing-binary-xyz')"),
+                    "{msg}"
+                );
+            }
         });
     }
 }
