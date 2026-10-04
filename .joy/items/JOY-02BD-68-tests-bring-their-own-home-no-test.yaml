@@ -1,0 +1,14 @@
+id: JOY-02BD-68
+title: 'Tests bring their own HOME: no test reads the person''s home directory'
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T00:54:26.613790885Z
+updated: 2026-10-04T00:54:26.613790885Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Left open by JOY-02BB-C7 - One list of the variables a test never inherits from the person''s shell, and stated as its limit: joy-test-env takes away the person''s JOY_ variables, git identity variables, forge CLI tokens, session bus and forge CLIs, but not their HOME. A case that does not set its own HOME still reads, through joy, ~/.config/gh/hosts.yml, ~/.config/glab-cli, ~/.gitconfig, ~/.ssh and joy''s own state under the person''s home, so its result depends on the machine and it can read real credentials stored in files. Expected: the same rule, once: a test binary starts with a home of its own (HOME, XDG_CONFIG_HOME, XDG_STATE_HOME, and on Windows USERPROFILE, APPDATA, LOCALAPPDATA), set where isolate!() sweeps and in tests/integration/setup.bash, and a case that needs content in its home puts it there. To find out first: which cases today pass only because they read the developer''s home, and whether a home that does not exist or an empty one per process is the right default.'
