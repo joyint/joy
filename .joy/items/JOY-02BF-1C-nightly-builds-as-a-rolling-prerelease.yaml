@@ -1,7 +1,7 @@
 id: JOY-02BF-1C
 title: Nightly builds as a rolling prerelease that joy update never installs
 type: task
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -10,7 +10,7 @@ capabilities:
 effort: 2
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-04T14:31:28.595490556Z
-updated: 2026-10-04T14:49:24.119751788Z
+updated: 2026-10-04T15:20:32.825124414Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   A fix on main reaches a machine only through a release, and a release is slow on purpose: version bump, crates.io, winget review. A person who needs the current state on a machine where they cannot build has no way to get it.
@@ -36,3 +36,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-10-04T14:49:24.119751186Z
   text: 'Trial run on the pull request (run 37209679555): all five targets built and uploaded as workflow artifacts, publish skipped as intended. The Windows archive holds joy.exe, joy-forge.exe and host-keys.json; the x86_64 Linux binary from the runner starts and reports 0.21.1. Signing and publishing are not exercised by a pull request; the first dispatched run on main is their test.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-04T15:20:32.804393363Z
+  text: 'First dispatched run on main (run 37211780741): all five targets built, joy.exe and joy-forge.exe signed and valid (CN=Joydev GmbH), prerelease nightly created with ten assets (five archives, five checksums), tag nightly on the built commit 92b3fe11, guard passed. GitHub''s latest release is still v0.21.1. The nightly Linux binary, run from a clean home without an install receipt, answers joy update --check with up to date (0.21.1). jyn has the same workflow (joyint/jyn#5), first run 37211782883, jyn.exe signed, latest release still v0.8.0. Not yet seen: a second run replacing the assets, and a scheduled run.'
