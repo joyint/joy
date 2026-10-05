@@ -50,6 +50,7 @@ use crate::turn_engine::{TurnActivity, TurnOutcome, TurnSink, WireActivity};
 // The questions a turn puts to its present person (JOY-028A-DC): the
 // registry and the answer vocabulary, in their own file.
 mod gate;
+mod wire;
 pub use gate::{answer_from_person, GateChoice, OpenGate, PresentPerson, TurnGate};
 use gate::{gate_question, offers_allow};
 
@@ -1008,6 +1009,15 @@ async fn run_lane(
         Some(hook) => hook(agent),
         None => agent,
     };
+    // what goes over the wire, for the turn that ends without an answer
+    // (JP-0166-48)
+    let wire = Arc::new(wire::Wire::new());
+    let agent = {
+        let wire = wire.clone();
+        agent.with_debug(move |line, direction| wire.record(line, direction))
+    };
+    let lane_wire = wire.clone();
+    let lane_started = std::time::Instant::now();
     // per-SESSION turn buffers and modes: notifications and permission
     // requests carry the session id, so concurrent chats never mix
     let buffers: Arc<Mutex<HashMap<String, Collected>>> = Arc::default();
@@ -1224,6 +1234,8 @@ async fn run_lane(
             }) = rx.recv().await
             {
                 liveness.touch();
+                let wire_mark = wire.mark();
+                let turn_started = std::time::Instant::now();
                 let (session_id, prompt) = match sessions.get(&turn.chat_id) {
                     Some(sid) => (
                         sid.clone(),
@@ -1488,6 +1500,12 @@ async fn run_lane(
                 } else {
                     None
                 };
+                let ended_shown = match (&ended, &prompted) {
+                    (Some(ended), _) => ended.clone(),
+                    (None, Some(Err(e))) => format!("error: {}", wire::said(e)),
+                    (None, None) => "no answer to the cancel".to_string(),
+                    (None, Some(Ok(_))) => "cancelled".to_string(),
+                };
                 let result = if stop_ok {
                     let state = buffers
                         .lock()
@@ -1537,11 +1555,25 @@ async fn run_lane(
                         prompted
                             .as_ref()
                             .and_then(|r| r.as_ref().err())
-                            .map(|e| e.to_string())
+                            .map(wire::said)
                             .unwrap_or_default()
                     ))
                 };
                 let failed = result.is_err() || unanswered;
+                // A turn that did not end with the agent's own answer says
+                // what went over the wire until then (JP-0166-48): the
+                // silence alone explains nothing.
+                if failed || truncated {
+                    tracing::warn!(
+                        target: "joy_ai::acp_wire",
+                        chat = %turn.chat_id,
+                        turn = %turn.turn_id,
+                        ended = %ended_shown,
+                        seconds = turn_started.elapsed().as_secs(),
+                        wire = %wire.trail(wire_mark, turn_started),
+                        "acp turn ended without the agent's answer"
+                    );
+                }
                 let _ = respond.send(result);
                 if failed || login_required {
                     // a failed prompt poisons the connection state, and a
@@ -1557,8 +1589,20 @@ async fn run_lane(
     // words went to stderr already; this line plus the stored reason is
     // what turn() and the person get instead of a bare sammelsatz
     // (JAPP-01A0-1C: "could not be established" with no trace).
+    if let Err(e) = &connect {
+        tracing::warn!(
+            target: "joy_ai::acp_wire",
+            wire = %lane_wire.trail(0, lane_started),
+            error = %wire::said(e),
+            "acp lane ended"
+        );
+    }
     if let Err(e) = connect {
-        let reason = format!("{e:#} (agent '{}')", agent_program(&command_shown));
+        let reason = format!(
+            "{} (agent '{}')",
+            wire::said(&e),
+            agent_program(&command_shown)
+        );
         eprintln!("joyint: acp lane ended: {reason}");
         *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
     }
