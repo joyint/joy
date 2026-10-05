@@ -207,6 +207,33 @@ fn cut(text: &str) -> String {
     out
 }
 
+/// What a protocol error SAYS, for a person: the agent's own words.
+///
+/// The transport wraps the end of an agent process as an internal error
+/// whose text is a JSON object with the place in the library that
+/// spawned the task, and only then, under `data`, what happened ("No
+/// such container", the provider's refusal). Printed as it stands, the
+/// reason reached the person as a line of library path, cut before the
+/// cause (JP-0166-48).
+pub(super) fn said(error: &agent_client_protocol::Error) -> String {
+    let words = match &error.data {
+        Some(serde_json::Value::String(text)) => Some(text.clone()),
+        Some(serde_json::Value::Object(fields)) => fields
+            .get("data")
+            .or_else(|| fields.get("message"))
+            .or_else(|| fields.get("error"))
+            .and_then(|v| v.as_str())
+            .map(str::to_string),
+        _ => None,
+    };
+    let words = words.unwrap_or_default();
+    let words = words.trim();
+    if words.is_empty() || words == error.message {
+        return cut(&masked(error.message.trim()));
+    }
+    cut(&masked(&format!("{}: {words}", error.message.trim())))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -312,31 +339,4 @@ mod tests {
         );
         assert_eq!(wire.trail(wire.mark(), since), "nothing went over the wire");
     }
-}
-
-/// What a protocol error SAYS, for a person: the agent's own words.
-///
-/// The transport wraps the end of an agent process as an internal error
-/// whose text is a JSON object with the place in the library that
-/// spawned the task, and only then, under `data`, what happened ("No
-/// such container", the provider's refusal). Printed as it stands, the
-/// reason reached the person as a line of library path, cut before the
-/// cause (JP-0166-48).
-pub(super) fn said(error: &agent_client_protocol::Error) -> String {
-    let words = match &error.data {
-        Some(serde_json::Value::String(text)) => Some(text.clone()),
-        Some(serde_json::Value::Object(fields)) => fields
-            .get("data")
-            .or_else(|| fields.get("message"))
-            .or_else(|| fields.get("error"))
-            .and_then(|v| v.as_str())
-            .map(str::to_string),
-        _ => None,
-    };
-    let words = words.unwrap_or_default();
-    let words = words.trim();
-    if words.is_empty() || words == error.message {
-        return cut(&masked(error.message.trim()));
-    }
-    cut(&masked(&format!("{}: {words}", error.message.trim())))
 }
