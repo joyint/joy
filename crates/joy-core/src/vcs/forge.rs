@@ -308,6 +308,21 @@ impl Auth {
         }
     }
 
+    /// The queue this credential's contacts stand in (JP-0169-C8): a
+    /// fingerprint of the token, never the token, and nothing for the
+    /// machine's own credentials, which are one identity per machine
+    /// and keep the host's queue.
+    pub fn lane(&self) -> Option<String> {
+        match self {
+            Auth::Token(token) | Auth::ClaimedToken(token, _) if !token.is_empty() => {
+                use sha2::Digest;
+                let digest = sha2::Sha256::digest(token.as_bytes());
+                Some(digest.iter().take(8).map(|b| format!("{b:02x}")).collect())
+            }
+            _ => None,
+        }
+    }
+
     /// A token for a host a plugin claimed, whose shape is therefore
     /// right on the first attempt.
     pub fn token_for(token: impl Into<String>, forge: ForgeKind) -> Self {
@@ -1624,10 +1639,23 @@ fn attempt_leg<T>(
             used.set(take_used_credential());
             answer
         };
+        let lane = auth_for_leg.lane();
         if poll {
-            super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            super::contact::run_poll_as(
+                &leg.url,
+                verb,
+                auth_for_leg.credentialed(),
+                lane.as_deref(),
+                contact,
+            )
         } else {
-            super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            super::contact::run_as(
+                &leg.url,
+                verb,
+                auth_for_leg.credentialed(),
+                lane.as_deref(),
+                contact,
+            )
         }
     };
     // Read before the next leg (or the retry) runs: one contact's
@@ -1950,13 +1978,20 @@ pub fn clone(
     let host = super::contact::host_of(url);
     let (url_owned, auth_owned, dest_owned) = (url.to_string(), auth.clone(), dest.to_path_buf());
     let bounded = super::bound::reporting(&host, "clone", CONTACT_BOUND, progress, move |say| {
-        super::contact::run(&url_owned, "clone", auth_owned.credentialed(), || {
-            clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
-                super::bound::heartbeat();
-                // A caller that has gone away is a stop.
-                say.say(count).unwrap_or(false)
-            })
-        })
+        let lane = auth_owned.lane();
+        super::contact::run_as(
+            &url_owned,
+            "clone",
+            auth_owned.credentialed(),
+            lane.as_deref(),
+            || {
+                clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
+                    super::bound::heartbeat();
+                    // A caller that has gone away is a stop.
+                    say.say(count).unwrap_or(false)
+                })
+            },
+        )
     });
     bounded.unwrap_or_else(|| Err(nobody_answered(&host, "clone")))
 }
@@ -2527,6 +2562,20 @@ pub fn pull_merge(
     // the shared fetch half: honest about a vanished branch, and it
     // never touches FETCH_HEAD (JP-00DB-61)
     fetch_branch(repo_dir, auth)?;
+    merge_from_tracking(repo_dir, author_name, author_email)
+}
+
+/// The local half of [`pull_merge`]: bring the branch up to its
+/// tracking ref as [`fetch_branch`] left it, a fast-forward where it
+/// can and a yaml-aware three-way merge where it must. No forge is
+/// contacted, so a caller that keeps its checkout under a gate holds
+/// the gate for this half alone and lets the round trip run outside
+/// (JP-0169-C8).
+pub fn merge_from_tracking(
+    repo_dir: &Path,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?;
     let branch = head

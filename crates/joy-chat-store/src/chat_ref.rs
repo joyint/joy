@@ -532,6 +532,18 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     // comes back from the SECOND push with its state. Only a failure
     // the road below heals is dropped here, which is what "the forge
     // moved meanwhile" means.
+    //
+    // And no push at all when the forge already has what this checkout
+    // has (JP-0169-C8): the tracking ref is where the last fetch or the
+    // last push left the forge's ref, and a local ref that stands there
+    // carries nothing the forge still needs. The push lane of the
+    // platform runs after EVERY write to a project, item writes
+    // included, and pushed the unchanged chat ref each time: three
+    // requests of the forge's budget for nothing, while every read of
+    // the project waited behind it.
+    if in_step_with_tracking(root)? {
+        return Ok(());
+    }
     if open_repo(root)?.refname_to_id(CHATS_REF).is_ok()
         && joy_core::vcs::forge::push_ref(root, auth, CHATS_REF).is_ok()
     {
@@ -542,6 +554,39 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
             .map_err(|e| joy_core::vcs::contact::as_joy_error("chats push", e))?;
     }
     Ok(())
+}
+
+/// Whether the local chats ref and the tracking ref stand on one
+/// commit: then the forge has what this checkout has, as far as this
+/// checkout can know, and a sync has nothing to send. A checkout with no
+/// chats ref yet is NOT in step: it still has to adopt the forge's.
+pub fn in_step_with_tracking(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    Ok(
+        match (
+            repo.refname_to_id(CHATS_REF).ok(),
+            repo.refname_to_id(CHATS_TRACKING_REF).ok(),
+        ) {
+            (Some(local), Some(tracking)) => local == tracking,
+            _ => false,
+        },
+    )
+}
+
+/// Whether the local chats ref carries anything the tracking ref does
+/// not: nothing to push when both stand on one commit, or when there is
+/// no local ref at all. A tracking ref the local ref has moved away
+/// from, or none, means the forge may still need something, and only a
+/// contact can tell (JP-0169-C8).
+pub fn needs_push(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    let local = repo.refname_to_id(CHATS_REF).ok();
+    let tracking = repo.refname_to_id(CHATS_TRACKING_REF).ok();
+    Ok(match (local, tracking) {
+        (None, _) => false,
+        (Some(local), Some(tracking)) => local != tracking,
+        (Some(_), None) => true,
+    })
 }
 
 /// ONE inbound poll pass (JAPP-01A3-4A / JP-00E6-3D), the same algorithm
