@@ -1871,3 +1871,81 @@ fn only_a_spent_token_is_worth_one_refresh() {
     );
     assert!(!wants_token_refresh(&never_worked));
 }
+
+/// One forge queue per host AND credential (JP-0169-C8). A forge counts
+/// its requests per account; one queue per host made every account's
+/// contacts wait for every other's on a server.
+#[test]
+fn two_credentials_on_one_host_stand_in_queues_of_their_own() {
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    reset_limits();
+    reset_throttle();
+    // 200 ms a request: a credentialed fetch reserves 600 ms
+    set_gaps("queue.test=200");
+    let turn = |lane: Option<&str>| take_turn("queue.test", lane, "fetch", Transport::Https, true);
+
+    let first = turn(Some("account-a"));
+    assert!(first.waited.is_zero(), "{:?}", first.waited);
+    // another account right behind: its own queue, no wait
+    let other = turn(Some("account-b"));
+    assert!(
+        other.waited.is_zero(),
+        "another credential waited {:?}",
+        other.waited
+    );
+    // and a contact with no credential of its own: the host's queue, no wait
+    let nobody = turn(None);
+    assert!(
+        nobody.waited.is_zero(),
+        "the host's own queue waited {:?}",
+        nobody.waited
+    );
+    // the same account again waits its reservation out (the wait is
+    // slept here, so every queue is free again afterwards)
+    let again = turn(Some("account-a"));
+    assert!(
+        again.waited >= Duration::from_millis(400),
+        "the same credential did not wait: {:?}",
+        again.waited
+    );
+    // the host's own queue is a queue too
+    reset_throttle();
+    assert!(turn(None).waited.is_zero());
+    let nobody_again = turn(None);
+    assert!(
+        nobody_again.waited >= Duration::from_millis(400),
+        "the host's own queue did not wait: {:?}",
+        nobody_again.waited
+    );
+
+    reset_throttle();
+    set_gaps("");
+}
+
+/// The lane is a fingerprint of the token: the same token the same
+/// lane, another token another lane, and the token itself appears
+/// nowhere in it. The machine's own credentials have no lane: they are
+/// one identity per machine and keep the host's queue.
+#[test]
+fn a_credentials_lane_is_a_fingerprint_and_never_the_token() {
+    use crate::vcs::forge::{Auth, ForgeKind};
+    let a = Auth::token("ghp_secret_token_a")
+        .lane()
+        .expect("a token has a lane");
+    let a_again = Auth::token("ghp_secret_token_a").lane().unwrap();
+    let b = Auth::token("ghp_secret_token_b").lane().unwrap();
+    assert_eq!(a, a_again);
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 16, "{a}");
+    assert!(a.chars().all(|c| c.is_ascii_hexdigit()), "{a}");
+    assert!(!a.contains("secret") && !a.contains("ghp_"), "{a}");
+    // the claimed form of the same token is the same account
+    assert_eq!(
+        Auth::token_for("ghp_secret_token_a", ForgeKind::GitHub)
+            .lane()
+            .as_deref(),
+        Some(a.as_str())
+    );
+    assert_eq!(Auth::token("").lane(), None);
+    assert_eq!(Auth::Local.lane(), None);
+}

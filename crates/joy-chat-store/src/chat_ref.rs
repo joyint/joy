@@ -1671,6 +1671,81 @@ mod forge_sync_tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
+    /// A sync whose chats ref stands where the forge's does contacts
+    /// nobody (JP-0169-C8). The platform's push lane ran a chat sync
+    /// after every write to a project and pushed the unchanged ref each
+    /// time: a round trip the forge queue charged while every read of
+    /// the project waited. Observed here through a forge that is taken
+    /// away: a sync that reaches for it fails, one that does not
+    /// succeeds.
+    #[test]
+    fn a_sync_in_step_with_the_forge_contacts_nobody() {
+        let base = std::env::temp_dir().join(format!("jp-chatref-instep-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+        let clone = base.join("clone");
+        let repo = git2::Repository::init(&clone).unwrap();
+        repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@t").unwrap();
+        let tree = {
+            let oid = repo.index().unwrap().write_tree().unwrap();
+            repo.find_tree(oid).unwrap()
+        };
+        let first = repo
+            .commit(Some(CHATS_REF), &sig, &sig, "a chat", &tree, &[])
+            .unwrap();
+        let auth = joy_core::vcs::forge::Auth::token("x");
+
+        // the first sync delivers, and notes the delivery in the tracking ref
+        assert!(!in_step_with_tracking(&clone).unwrap());
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            first
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
+        assert!(!needs_push(&clone).unwrap());
+
+        // the forge is taken away: a sync in step still succeeds, because
+        // it has nothing to say and says nothing
+        let away = base.join("forge-away.git");
+        std::fs::rename(&forge, &away).unwrap();
+        sync_with_forge(&clone, &auth).expect("nothing to send, nobody asked");
+
+        // a chats ref that moved reaches for the forge, and finds none
+        let parent = repo.find_commit(first).unwrap();
+        let second = repo
+            .commit(
+                Some(CHATS_REF),
+                &sig,
+                &sig,
+                "another chat",
+                &tree,
+                &[&parent],
+            )
+            .unwrap();
+        assert!(needs_push(&clone).unwrap());
+        sync_with_forge(&clone, &auth).expect_err("a moved ref has to be delivered");
+
+        // the forge is back: delivered, in step again
+        std::fs::rename(&away, &forge).unwrap();
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            second
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     /// Chats sync on their own ref (refs/joy/chats), never the working
     /// branch: write a chat, sync it, and see the message land on
     /// refs/joy/chats on the bare forge while the branch stays chat-free.
