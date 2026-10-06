@@ -1606,12 +1606,34 @@ impl Turn {
     }
 }
 
+/// The queue one contact stands in: the host's, and within the host the
+/// credential's (JP-0169-C8). A forge counts its requests per account,
+/// not per machine, so two accounts' contacts to one host never had to
+/// wait for each other; on a server that holds many accounts' work one
+/// queue per host put every project behind every other one, and a read
+/// of a project waited for a push of a stranger's. `lane` is what the
+/// caller knows about the credential (a fingerprint, never the secret);
+/// a contact without one stands in the host's own queue, as before.
+fn queue_key(host: &str, lane: Option<&str>) -> String {
+    match lane {
+        Some(lane) if !lane.is_empty() => format!("{host}\u{0}{lane}"),
+        _ => host.to_string(),
+    }
+}
+
 /// Wait for this host's turn: the gap the verb's requests cost, doubled
 /// once per standing strike. Takes the slot on the way out, so
 /// concurrent callers line up one behind the other instead of leaving
 /// together.
-fn take_turn(host: &str, verb: &str, transport: Transport, credentialed: bool) -> Turn {
+fn take_turn(
+    host: &str,
+    lane: Option<&str>,
+    verb: &str,
+    transport: Transport,
+    credentialed: bool,
+) -> Turn {
     let base_gap = gap_for(host) * requests(verb, transport, credentialed);
+    let queue = queue_key(host, lane);
     // A forge that said 429 is never stopped, only slowed (Horst,
     // 2026-08-29): `strikes` is the exponent it is documented to be.
     let gap = base_gap * strike_factor(strikes_for(host));
@@ -1624,9 +1646,9 @@ fn take_turn(host: &str, verb: &str, transport: Transport, credentialed: bool) -
     }
     let (waited, start) = with_throttle(|t| {
         let now = Instant::now();
-        let free = t.next_free.get(host).copied().unwrap_or(now);
+        let free = t.next_free.get(&queue).copied().unwrap_or(now);
         let start = free.max(now);
-        t.next_free.insert(host.to_string(), start + gap);
+        t.next_free.insert(queue, start + gap);
         (start.saturating_duration_since(now), start)
     });
     if !waited.is_zero() {
@@ -1660,13 +1682,13 @@ fn strike_factor(strikes: u32) -> u32 {
 /// the strike alone reached only the contact after next: the very
 /// contact that runs straight back into the limit went out on the old
 /// gap.
-fn widen_for_strike(host: &str, turn: &Turn) {
+fn widen_for_strike(host: &str, lane: Option<&str>, turn: &Turn) {
     if turn.base_gap.is_zero() {
         return;
     }
     let free = turn.start + turn.base_gap * strike_factor(strikes_for(host));
     with_throttle(|t| {
-        let entry = t.next_free.entry(host.to_string()).or_insert(free);
+        let entry = t.next_free.entry(queue_key(host, lane)).or_insert(free);
         if *entry < free {
             *entry = free;
         }
@@ -2042,6 +2064,19 @@ pub fn run<T>(
     credentialed: bool,
     work: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
+    run_as(url, verb, credentialed, None, work)
+}
+
+/// [`run`] in the queue of one credential (`lane`, see [`queue_key`]):
+/// the contacts of one account to one host stand in line with each
+/// other and with nobody else's.
+pub fn run_as<T>(
+    url: &str,
+    verb: &'static str,
+    credentialed: bool,
+    lane: Option<&str>,
+    work: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     // The host joy really contacts: the person's ssh config may name
     // another one behind an alias, and the throttle, the strike gate
     // and the log all key on the host a socket is opened to, not on
@@ -2059,7 +2094,7 @@ pub fn run<T>(
     // 2026-08-29: throttle, never block): while a strike stands, this
     // host's gap is doubled inside take_turn; the contact still goes out.
     let turn = if opens_a_socket {
-        take_turn(&host, verb, transport, credentialed)
+        take_turn(&host, lane, verb, transport, credentialed)
     } else {
         Turn::none()
     };
@@ -2138,7 +2173,7 @@ pub fn run<T>(
                     // and the NEXT contact pays the doubled gap at
                     // once: its slot was reserved on the way out, with
                     // the gap that was in force before the 429
-                    widen_for_strike(&host, &turn);
+                    widen_for_strike(&host, lane, &turn);
                     Some(next_try_of(&e).unwrap_or(window_ends))
                 }
                 _ => next_try_of(&e),
@@ -2207,6 +2242,17 @@ pub fn run_poll<T>(
     credentialed: bool,
     work: impl FnOnce() -> anyhow::Result<T>,
 ) -> anyhow::Result<T> {
+    run_poll_as(url, verb, credentialed, None, work)
+}
+
+/// [`run_poll`] in the queue of one credential, like [`run_as`].
+pub fn run_poll_as<T>(
+    url: &str,
+    verb: &'static str,
+    credentialed: bool,
+    lane: Option<&str>,
+    work: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
     let host = host_of(url);
     let anonymous = |host: &str| {
         transport_of(url) == Transport::Https
@@ -2235,7 +2281,7 @@ pub fn run_poll<T>(
             }));
         }
     }
-    let result = run(url, verb, credentialed, work);
+    let result = run_as(url, verb, credentialed, lane, work);
     // The slot is taken AFTER the poll, and only for a poll that really
     // went out with nothing to present and really reached the forge. A
     // poll that found nobody home burnt no window, and a poll that did
