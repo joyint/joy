@@ -532,6 +532,18 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     // comes back from the SECOND push with its state. Only a failure
     // the road below heals is dropped here, which is what "the forge
     // moved meanwhile" means.
+    //
+    // And no push at all when the forge already has what this checkout
+    // has (JP-0169-C8): the tracking ref is where the last fetch or the
+    // last push left the forge's ref, and a local ref that stands there
+    // carries nothing the forge still needs. The push lane of the
+    // platform runs after EVERY write to a project, item writes
+    // included, and pushed the unchanged chat ref each time: three
+    // requests of the forge's budget for nothing, while every read of
+    // the project waited behind it.
+    if in_step_with_tracking(root)? {
+        return Ok(());
+    }
     if open_repo(root)?.refname_to_id(CHATS_REF).is_ok()
         && joy_core::vcs::forge::push_ref(root, auth, CHATS_REF).is_ok()
     {
@@ -542,6 +554,39 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
             .map_err(|e| joy_core::vcs::contact::as_joy_error("chats push", e))?;
     }
     Ok(())
+}
+
+/// Whether the local chats ref and the tracking ref stand on one
+/// commit: then the forge has what this checkout has, as far as this
+/// checkout can know, and a sync has nothing to send. A checkout with no
+/// chats ref yet is NOT in step: it still has to adopt the forge's.
+pub fn in_step_with_tracking(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    Ok(
+        match (
+            repo.refname_to_id(CHATS_REF).ok(),
+            repo.refname_to_id(CHATS_TRACKING_REF).ok(),
+        ) {
+            (Some(local), Some(tracking)) => local == tracking,
+            _ => false,
+        },
+    )
+}
+
+/// Whether the local chats ref carries anything the tracking ref does
+/// not: nothing to push when both stand on one commit, or when there is
+/// no local ref at all. A tracking ref the local ref has moved away
+/// from, or none, means the forge may still need something, and only a
+/// contact can tell (JP-0169-C8).
+pub fn needs_push(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    let local = repo.refname_to_id(CHATS_REF).ok();
+    let tracking = repo.refname_to_id(CHATS_TRACKING_REF).ok();
+    Ok(match (local, tracking) {
+        (None, _) => false,
+        (Some(local), Some(tracking)) => local != tracking,
+        (Some(_), None) => true,
+    })
 }
 
 /// ONE inbound poll pass (JAPP-01A3-4A / JP-00E6-3D), the same algorithm
@@ -1623,6 +1668,81 @@ mod forge_sync_tests {
             !polled.join().unwrap().unwrap(),
             "nothing moved, so nothing changed"
         );
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// A sync whose chats ref stands where the forge's does contacts
+    /// nobody (JP-0169-C8). The platform's push lane ran a chat sync
+    /// after every write to a project and pushed the unchanged ref each
+    /// time: a round trip the forge queue charged while every read of
+    /// the project waited. Observed here through a forge that is taken
+    /// away: a sync that reaches for it fails, one that does not
+    /// succeeds.
+    #[test]
+    fn a_sync_in_step_with_the_forge_contacts_nobody() {
+        let base = std::env::temp_dir().join(format!("jp-chatref-instep-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+        let clone = base.join("clone");
+        let repo = git2::Repository::init(&clone).unwrap();
+        repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@t").unwrap();
+        let tree = {
+            let oid = repo.index().unwrap().write_tree().unwrap();
+            repo.find_tree(oid).unwrap()
+        };
+        let first = repo
+            .commit(Some(CHATS_REF), &sig, &sig, "a chat", &tree, &[])
+            .unwrap();
+        let auth = joy_core::vcs::forge::Auth::token("x");
+
+        // the first sync delivers, and notes the delivery in the tracking ref
+        assert!(!in_step_with_tracking(&clone).unwrap());
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            first
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
+        assert!(!needs_push(&clone).unwrap());
+
+        // the forge is taken away: a sync in step still succeeds, because
+        // it has nothing to say and says nothing
+        let away = base.join("forge-away.git");
+        std::fs::rename(&forge, &away).unwrap();
+        sync_with_forge(&clone, &auth).expect("nothing to send, nobody asked");
+
+        // a chats ref that moved reaches for the forge, and finds none
+        let parent = repo.find_commit(first).unwrap();
+        let second = repo
+            .commit(
+                Some(CHATS_REF),
+                &sig,
+                &sig,
+                "another chat",
+                &tree,
+                &[&parent],
+            )
+            .unwrap();
+        assert!(needs_push(&clone).unwrap());
+        sync_with_forge(&clone, &auth).expect_err("a moved ref has to be delivered");
+
+        // the forge is back: delivered, in step again
+        std::fs::rename(&away, &forge).unwrap();
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            second
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
         std::fs::remove_dir_all(&base).ok();
     }
 

@@ -308,6 +308,21 @@ impl Auth {
         }
     }
 
+    /// The queue this credential's contacts stand in (JP-0169-C8): a
+    /// fingerprint of the token, never the token, and nothing for the
+    /// machine's own credentials, which are one identity per machine
+    /// and keep the host's queue.
+    pub fn lane(&self) -> Option<String> {
+        match self {
+            Auth::Token(token) | Auth::ClaimedToken(token, _) if !token.is_empty() => {
+                use sha2::Digest;
+                let digest = sha2::Sha256::digest(token.as_bytes());
+                Some(digest.iter().take(8).map(|b| format!("{b:02x}")).collect())
+            }
+            _ => None,
+        }
+    }
+
     /// A token for a host a plugin claimed, whose shape is therefore
     /// right on the first attempt.
     pub fn token_for(token: impl Into<String>, forge: ForgeKind) -> Self {
@@ -1624,10 +1639,23 @@ fn attempt_leg<T>(
             used.set(take_used_credential());
             answer
         };
+        let lane = auth_for_leg.lane();
         if poll {
-            super::contact::run_poll(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            super::contact::run_poll_as(
+                &leg.url,
+                verb,
+                auth_for_leg.credentialed(),
+                lane.as_deref(),
+                contact,
+            )
         } else {
-            super::contact::run(&leg.url, verb, auth_for_leg.credentialed(), contact)
+            super::contact::run_as(
+                &leg.url,
+                verb,
+                auth_for_leg.credentialed(),
+                lane.as_deref(),
+                contact,
+            )
         }
     };
     // Read before the next leg (or the retry) runs: one contact's
@@ -1950,13 +1978,20 @@ pub fn clone(
     let host = super::contact::host_of(url);
     let (url_owned, auth_owned, dest_owned) = (url.to_string(), auth.clone(), dest.to_path_buf());
     let bounded = super::bound::reporting(&host, "clone", CONTACT_BOUND, progress, move |say| {
-        super::contact::run(&url_owned, "clone", auth_owned.credentialed(), || {
-            clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
-                super::bound::heartbeat();
-                // A caller that has gone away is a stop.
-                say.say(count).unwrap_or(false)
-            })
-        })
+        let lane = auth_owned.lane();
+        super::contact::run_as(
+            &url_owned,
+            "clone",
+            auth_owned.credentialed(),
+            lane.as_deref(),
+            || {
+                clone_raw(&url_owned, &auth_owned, &dest_owned, depth, &mut |count| {
+                    super::bound::heartbeat();
+                    // A caller that has gone away is a stop.
+                    say.say(count).unwrap_or(false)
+                })
+            },
+        )
     });
     bounded.unwrap_or_else(|| Err(nobody_answered(&host, "clone")))
 }
@@ -2167,6 +2202,129 @@ pub fn fetch_branch(repo_dir: &Path, auth: &Auth) -> anyhow::Result<()> {
 /// The LOCAL half of a pull: fast-forward the working branch onto its
 /// remote-tracking ref, which [`fetch_branch`] just updated. Fast, no
 /// network; the caller holds the project gate.
+/// The branch and more refs in ONE contact (JP-0169-C8): one connection,
+/// one advertisement, one download carrying every refspec. The branch
+/// lands in its tracking ref as [`fetch_branch`] puts it there; every
+/// pair of `extra` (`src` on the forge, `dst` here) lands the way
+/// [`fetch_ref`] lands it, and a ref the forge has not got takes its
+/// stale `dst` away. The platform's fetch lane fetched the branch and
+/// the chats ref in two contacts, and each paid the forge queue its
+/// turn; now it is one turn.
+///
+/// Returns, per pair of `extra`, the tip the forge advertised, or None
+/// when it has no such ref.
+pub fn fetch_branch_and(
+    repo_dir: &Path,
+    auth: &Auth,
+    extra: &[(&str, &str)],
+) -> anyhow::Result<Vec<Option<git2::Oid>>> {
+    let span = tracing::info_span!("git.fetch", repo = %repo_dir.display());
+    let _s = span.enter();
+    let kind = auth.host_kind();
+    let extra: Vec<(String, String)> = extra
+        .iter()
+        .map(|(src, dst)| (src.to_string(), dst.to_string()))
+        .collect();
+    over_plan(
+        repo_dir,
+        auth,
+        "fetch",
+        super::contact::ContactDirection::Fetch,
+        false,
+        move |repo, remote, leg_auth, _leg| {
+            let head = repo.head().map_err(err)?;
+            let branch = head
+                .shorthand()
+                .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+                .to_string();
+            let branch_src = format!("refs/heads/{branch}");
+            let branch_dst = tracking_ref_name(repo, &branch)?;
+            let url = remote_url_of(remote);
+            let proxy = proxy_for(&url, Some(repo))?;
+            let mut connection = remote
+                .connect_auth(
+                    git2::Direction::Fetch,
+                    Some(leg_auth.callbacks_as(kind, cred_source(Some(repo)))),
+                    Some(proxy.options()),
+                )
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+            let advertised: std::collections::HashMap<String, git2::Oid> = connection
+                .list()
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?
+                .iter()
+                .map(|r| (r.name().to_string(), r.oid()))
+                .collect();
+            let Some(branch_tip) = advertised.get(&branch_src).copied() else {
+                anyhow::bail!("branch {branch} not found on the forge (renamed or deleted?)")
+            };
+            // what the forge has, in the order asked: the branch first
+            let mut wanted: Vec<(String, String, git2::Oid)> =
+                vec![(branch_src.clone(), branch_dst.clone(), branch_tip)];
+            let mut tips = Vec::with_capacity(extra.len());
+            for (src, dst) in &extra {
+                let tip = advertised.get(src).copied();
+                if let Some(tip) = tip {
+                    wanted.push((src.clone(), dst.clone(), tip));
+                }
+                tips.push(tip);
+            }
+            let refspecs: Vec<String> = wanted
+                .iter()
+                .map(|(src, dst, _)| format!("+{src}:{dst}"))
+                .collect();
+            let refspec_strs: Vec<&str> = refspecs.iter().map(String::as_str).collect();
+            let mut opts = git2::FetchOptions::new();
+            opts.remote_callbacks(leg_auth.callbacks_as(kind, cred_source(Some(repo))));
+            opts.proxy_options(proxy.options());
+            connection
+                .remote()
+                .download(&refspec_strs, Some(&mut opts))
+                .map_err(|e| contact_failed(&url, super::contact::ContactDirection::Fetch, e))?;
+            drop(connection);
+            for (_, dst, tip) in &wanted {
+                repo.reference(dst, *tip, true, "joy-vcs: fetch")
+                    .map_err(err)?;
+            }
+            // a ref the forge has not got: its tracking ref goes, like fetch_ref
+            for ((_, dst), tip) in extra.iter().zip(&tips) {
+                if tip.is_none() {
+                    if let Ok(mut stale) = repo.find_reference(dst) {
+                        stale.delete().ok();
+                    }
+                }
+            }
+            Ok(tips)
+        },
+    )
+}
+
+/// The checked-out branch as the forge names it and the ref its fetch
+/// lands in here: (`refs/heads/<branch>`, the tracking ref). What a
+/// caller needs to ask the forge about the branch in an `ls-remote` and
+/// to compare the answer with what it already has (JP-0169-C8).
+pub fn branch_refs(repo_dir: &Path) -> anyhow::Result<(String, String)> {
+    let repo = open(repo_dir).map_err(err)?;
+    let head = repo.head().map_err(err)?;
+    let branch = head
+        .shorthand()
+        .map_err(|_| anyhow::anyhow!("detached HEAD"))?
+        .to_string();
+    Ok((
+        format!("refs/heads/{branch}"),
+        tracking_ref_name(&repo, &branch)?,
+    ))
+}
+
+/// The tip a ref stands on in this checkout, as text; None for a ref
+/// that is not there. A local read.
+pub fn ref_tip(repo_dir: &Path, refname: &str) -> Option<String> {
+    open(repo_dir)
+        .ok()?
+        .refname_to_id(refname)
+        .ok()
+        .map(|oid| oid.to_string())
+}
+
 pub fn ff_from_tracking(repo_dir: &Path) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?;
@@ -2527,6 +2685,20 @@ pub fn pull_merge(
     // the shared fetch half: honest about a vanished branch, and it
     // never touches FETCH_HEAD (JP-00DB-61)
     fetch_branch(repo_dir, auth)?;
+    merge_from_tracking(repo_dir, author_name, author_email)
+}
+
+/// The local half of [`pull_merge`]: bring the branch up to its
+/// tracking ref as [`fetch_branch`] left it, a fast-forward where it
+/// can and a yaml-aware three-way merge where it must. No forge is
+/// contacted, so a caller that keeps its checkout under a gate holds
+/// the gate for this half alone and lets the round trip run outside
+/// (JP-0169-C8).
+pub fn merge_from_tracking(
+    repo_dir: &Path,
+    author_name: &str,
+    author_email: &str,
+) -> anyhow::Result<()> {
     let repo = open(repo_dir).map_err(err)?;
     let head = repo.head().map_err(err)?;
     let branch = head
@@ -7609,5 +7781,99 @@ mod resolver_assembly_tests {
             !nothing_to_present(&plan_of(vec![ssh_leg()], with_candidates(1))),
             "an ssh candidate is something to present"
         );
+    }
+}
+
+#[cfg(test)]
+mod one_contact_fetch_tests {
+    use super::*;
+
+    fn sh(args: &[&str], cwd: &Path) {
+        let out = joy_process::command("git")
+            .args(args)
+            .current_dir(cwd)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .output()
+            .expect("git runs");
+        assert!(
+            out.status.success(),
+            "git {:?}: {}",
+            args,
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// The branch and another ref land in one contact (JP-0169-C8); a
+    /// ref the forge has not got takes its stale tracking ref away; a
+    /// branch the forge has not got is the fault it always was.
+    #[test]
+    fn the_branch_and_the_chats_ref_come_in_one_contact() {
+        let tmp = tempfile::tempdir().unwrap();
+        let origin = tmp.path().join("origin.git");
+        let clone = tmp.path().join("clone");
+        sh(
+            &["init", "--bare", "-b", "main", origin.to_str().unwrap()],
+            tmp.path(),
+        );
+        let seed = tmp.path().join("seed");
+        sh(
+            &["clone", origin.to_str().unwrap(), seed.to_str().unwrap()],
+            tmp.path(),
+        );
+        std::fs::write(seed.join("a.txt"), "a").unwrap();
+        sh(&["add", "."], &seed);
+        sh(&["commit", "-m", "one"], &seed);
+        sh(&["push", "origin", "main"], &seed);
+        sh(
+            &["clone", origin.to_str().unwrap(), clone.to_str().unwrap()],
+            tmp.path(),
+        );
+        // the forge moves on, and grows a chats ref
+        std::fs::write(seed.join("b.txt"), "b").unwrap();
+        sh(&["add", "."], &seed);
+        sh(&["commit", "-m", "two"], &seed);
+        sh(&["push", "origin", "main"], &seed);
+        let origin_repo = git2::Repository::open(&origin).unwrap();
+        let tip = origin_repo.refname_to_id("refs/heads/main").unwrap();
+        origin_repo.reference(CHATS_REF, tip, true, "test").unwrap();
+        drop(origin_repo);
+
+        let auth = Auth::token("");
+        let tips = fetch_branch_and(&clone, &auth, &[(CHATS_REF, CHATS_TRACKING_REF)]).unwrap();
+        assert_eq!(tips, vec![Some(tip)]);
+        assert_eq!(
+            ref_tip(&clone, "refs/remotes/origin/main").as_deref(),
+            Some(tip.to_string().as_str())
+        );
+        assert_eq!(
+            ref_tip(&clone, CHATS_TRACKING_REF).as_deref(),
+            Some(tip.to_string().as_str())
+        );
+        assert_eq!(
+            branch_refs(&clone).unwrap(),
+            (
+                "refs/heads/main".to_string(),
+                "refs/remotes/origin/main".to_string()
+            )
+        );
+
+        // the forge loses its chats ref: the stale tracking ref goes
+        git2::Repository::open(&origin)
+            .unwrap()
+            .find_reference(CHATS_REF)
+            .unwrap()
+            .delete()
+            .unwrap();
+        let tips = fetch_branch_and(&clone, &auth, &[(CHATS_REF, CHATS_TRACKING_REF)]).unwrap();
+        assert_eq!(tips, vec![None]);
+        assert_eq!(ref_tip(&clone, CHATS_TRACKING_REF), None);
+
+        // a branch the forge has not got
+        sh(&["checkout", "-q", "-b", "elsewhere"], &clone);
+        let e = fetch_branch_and(&clone, &auth, &[]).expect_err("no such branch on the forge");
+        assert!(e.to_string().contains("not found on the forge"), "{e}");
     }
 }

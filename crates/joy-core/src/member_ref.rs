@@ -9,9 +9,13 @@
 //! decrypted `members.yaml`. [`install`] hands that to joy-model as a
 //! closure, once per command.
 
+use std::path::Path;
 use std::rc::Rc;
 
+use joy_crypt::zone::ZoneKey;
+
 use crate::members_file::MembersFile;
+use crate::model::project::PrivacyMode;
 
 pub use joy_model::member_ref::{
     presentation_active, resolve_str, uninstall, with_presentation, MemberRef, Resolved,
@@ -47,6 +51,19 @@ impl MemberResolver {
         }
     }
 
+    /// The decrypted members file behind an unlocked anonymous resolver,
+    /// for a host that needs name and address apart (the desktop's member
+    /// list, JOY-02C3-85). None in open mode and while locked.
+    pub fn members(&self) -> Option<&MembersFile> {
+        self.members.as_ref()
+    }
+
+    /// Whether this resolver would answer [`Resolved::AuthRequired`] for a
+    /// human id: anonymous mode with no members file at hand.
+    pub fn locked(&self) -> bool {
+        self.anonymous && self.members.is_none()
+    }
+
     fn resolve(&self, id: &str) -> Resolved {
         // Open mode: the id is the e-mail already.
         if !self.anonymous {
@@ -72,6 +89,49 @@ pub fn install(resolver: MemberResolver) {
     joy_model::member_ref::install(Rc::new(move |id: &str| resolver.resolve(id)));
 }
 
+/// The resolver for the project at `root`, built the one way every host
+/// builds it (JOY-02C3-85): an open project passes ids through; an
+/// anonymous project decrypts `members.yaml` with the members-zone key
+/// the acting member's live session caches, and is locked without one.
+/// A directory that is no project resolves like an open one, since there
+/// are no opaque ids in it to protect.
+///
+/// The CLI installed this per command and the desktop never did, so the
+/// same anonymous project named its members in a terminal and showed
+/// opaque ids in the app (operator validation 2026-10-07).
+pub fn resolver_for(root: &Path) -> MemberResolver {
+    let Ok(project) = crate::store::load_project(root) else {
+        return MemberResolver::open();
+    };
+    if project.privacy_mode() != PrivacyMode::Anonymous {
+        return MemberResolver::open();
+    }
+    MemberResolver::anonymous(session_members(root))
+}
+
+/// [`resolver_for`], installed for the current command on this thread.
+/// Returns the resolver too, for a host that also reads it directly.
+pub fn install_for(root: &Path) -> MemberResolver {
+    let resolver = resolver_for(root);
+    install(resolver.clone());
+    resolver
+}
+
+/// `members.yaml` decrypted with the members-zone key cached in the
+/// acting member's live session; None when there is no live session, the
+/// session carries no key, or the file does not read.
+fn session_members(root: &Path) -> Option<MembersFile> {
+    let identity = crate::identity::resolve_identity(root).ok()?;
+    let project_id = crate::auth::session::project_id(root).ok()?;
+    let token = crate::auth::session::load_session(&project_id, &identity.member).ok()??;
+    if token.claims.expires <= chrono::Utc::now() {
+        return None;
+    }
+    let bytes = hex::decode(token.members_zone_key.as_deref()?).ok()?;
+    let arr: [u8; 32] = bytes.try_into().ok()?;
+    crate::members_file::read(root, &ZoneKey::from_bytes(arr)).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,6 +147,48 @@ mod tests {
             },
         );
         mf
+    }
+
+    /// A directory that is no project protects no ids (JOY-02C3-85).
+    #[test]
+    fn a_directory_without_a_project_resolves_openly() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let resolver = resolver_for(dir.path());
+        assert!(!resolver.locked());
+        install(resolver);
+        assert_eq!(MemberRef::new("m-deadbeef").to_string(), "m-deadbeef");
+        uninstall();
+    }
+
+    /// An anonymous project on a machine where nobody signed in is
+    /// locked: the id stays behind the sign-in affordance, never shown
+    /// (JOY-02C3-85).
+    #[test]
+    fn an_anonymous_project_without_a_session_is_locked() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let joy = crate::store::joy_dir(dir.path());
+        std::fs::create_dir_all(&joy).expect("joy dir");
+        // the project file as `joy init --anonymous` leaves it: the model
+        // keeps the switch behind a migration, so the mode is written here
+        let project = crate::model::project::Project::new("Anon".into(), Some("AN".into()));
+        let yaml = serde_yaml_ng::to_string(&project).expect("yaml");
+        std::fs::write(
+            joy.join(crate::store::PROJECT_FILE),
+            format!("{yaml}privacy: anonymous\n"),
+        )
+        .expect("project file");
+        assert_eq!(
+            crate::store::load_project(dir.path())
+                .expect("loads")
+                .privacy_mode(),
+            PrivacyMode::Anonymous
+        );
+        let resolver = resolver_for(dir.path());
+        assert!(resolver.locked(), "no session, no members file: locked");
+        assert!(resolver.members().is_none());
+        install(resolver);
+        assert_eq!(MemberRef::new("m-deadbeef").to_string(), AUTH_REQUIRED);
+        uninstall();
     }
 
     #[test]
