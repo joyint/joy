@@ -23,7 +23,6 @@
 //! and a signature made with an AI member's key counts for nothing.
 
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 
 use super::{session, vouch, IdentityKeypair, PublicKey};
 use crate::error::JoyError;
@@ -74,23 +73,28 @@ fn personal_text(
     )
 }
 
-/// What a token carries for this grant: a hash of the signed text and
-/// the signature, or [`NO_GRANT`].
+/// What a token carries for this grant, in words anybody can read: the
+/// capabilities and the level (`review,create|proposing`), or
+/// [`NO_GRANT`]. It rides inside the token's signed claims. The guard
+/// holds the delegator's entry against it, so a grant that was dropped
+/// or changed after the token was issued shows; that the entry itself
+/// is what the person signed is checked on its own.
 pub fn grant_hash(grant: Option<&DelegationGrant>) -> String {
     match grant {
         None => NO_GRANT.to_string(),
-        Some(grant) => {
-            let mut hasher = Sha256::new();
-            for cap in &grant.capabilities {
-                hasher.update(cap.to_string().as_bytes());
-                hasher.update(b",");
-            }
-            hasher.update(grant.level.to_string().as_bytes());
-            hasher.update(b"|");
-            hasher.update(grant.signature.as_bytes());
-            hex::encode(&hasher.finalize()[..16])
-        }
+        Some(grant) => grant_claim(&grant.capabilities, grant.level),
     }
+}
+
+/// [`grant_hash`] of a grant with these capabilities and this level,
+/// for a host that has to say it before the grant is signed (the token
+/// minted in the same gesture names it).
+pub fn grant_claim(capabilities: &[Capability], level: InteractionLevel) -> String {
+    let mut caps: Vec<Capability> = capabilities.to_vec();
+    caps.sort();
+    caps.dedup();
+    let caps: Vec<String> = caps.iter().map(|c| c.to_string()).collect();
+    format!("{}|{level}", caps.join(","))
 }
 
 /// What the token a person issues for `ai` right now has to carry.

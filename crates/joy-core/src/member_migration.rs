@@ -111,21 +111,44 @@ fn convert(
     (key, member)
 }
 
-/// Bring the project at `root` over, signed by the person `signer_key`
-/// with `keypair`. `Ok(false)`: there was nothing to do, or the one who
-/// asked is not a person of this project with that key (an AI session
-/// never brings a project over).
-pub fn migrate(root: &Path, signer_key: &str, keypair: &IdentityKeypair) -> Result<bool, JoyError> {
+/// A project converted and waiting for the signatures under what its AI
+/// members may do.
+pub struct Prepared {
+    project: Project,
+    renamed: Vec<(String, String)>,
+    /// One per AI member, in the order of [`Prepared::payloads`].
+    ai_members: Vec<String>,
+}
+
+impl Prepared {
+    /// What the person signs: one text per AI member, in the order the
+    /// signatures are handed to [`finish`].
+    pub fn payloads(&self) -> Vec<(String, Vec<u8>)> {
+        self.ai_members
+            .iter()
+            .filter_map(|key| {
+                let member = self.project.member_by_key(key)?;
+                let bytes = vouch::payload(&self.project, key, member, Occasion::New)?;
+                Some((key.clone(), bytes))
+            })
+            .collect()
+    }
+}
+
+/// The first half of bringing a project over, for a host whose person
+/// holds their key somewhere else (a browser): the converted project
+/// and what is to be signed. `None`: there is nothing to do, or
+/// `signer_key` is not a person of this project with a key.
+pub fn prepare(root: &Path, signer_key: &str) -> Result<Option<Prepared>, JoyError> {
     let mut project = store::load_project(root)?;
     if !is_pending(&project) || is_ai_member(signer_key) {
-        return Ok(false);
+        return Ok(None);
     }
-    let holds_the_key = project
+    let has_a_key = project
         .member_by_key(signer_key)
-        .and_then(|m| m.verify_key.as_deref())
-        == Some(keypair.public_key().to_hex().as_str());
-    if !holds_the_key {
-        return Ok(false);
+        .is_some_and(|m| m.verify_key.is_some());
+    if !has_a_key {
+        return Ok(None);
     }
 
     let project_id = session::project_id_of(&project);
@@ -143,25 +166,61 @@ pub fn migrate(root: &Path, signer_key: &str, keypair: &IdentityKeypair) -> Resu
     }
     project.replace_members(members);
     project.set_member_layout(MemberLayout::Files);
-
-    // The signature under what each AI member may do: the first person
-    // who is there with a key.
-    let ai_members: Vec<String> = project
+    let ai_members = project
         .member_keys()
         .filter(|key| is_ai_member(key))
         .cloned()
         .collect();
-    for key in ai_members {
-        let mut member = project.member_by_key(&key).cloned().expect("just inserted");
-        vouch::sign(
+    Ok(Some(Prepared {
+        project,
+        renamed,
+        ai_members,
+    }))
+}
+
+/// The second half: the signatures `signer_key` made over
+/// [`Prepared::payloads`], in that order. Each is checked against the
+/// signer's key before anything is written.
+pub fn finish(
+    root: &Path,
+    prepared: Prepared,
+    signer_key: &str,
+    signatures: &[Vec<u8>],
+) -> Result<(), JoyError> {
+    let Prepared {
+        mut project,
+        renamed,
+        ai_members,
+    } = prepared;
+    if signatures.len() != ai_members.len() {
+        return Err(JoyError::Other(format!(
+            "{} AI members to sign for, {} signatures",
+            ai_members.len(),
+            signatures.len()
+        )));
+    }
+    let signer_public = project
+        .member_by_key(signer_key)
+        .and_then(|m| m.verify_key.as_deref())
+        .ok_or_else(|| JoyError::Other(format!("{signer_key} has no key")))
+        .and_then(|hex| Ok(crate::auth::PublicKey::from_hex(hex)?))?;
+    for (key, signature) in ai_members.iter().zip(signatures) {
+        let mut member = project.member_by_key(key).cloned().expect("converted");
+        let bytes = vouch::payload(&project, key, &member, Occasion::New).expect("an AI member");
+        signer_public.verify(&bytes, signature).map_err(|_| {
+            JoyError::AuthFailed(format!(
+                "the signature for {key} was not made with the key of {signer_key}"
+            ))
+        })?;
+        vouch::apply(
             &project,
             signer_key,
-            keypair,
-            &key,
+            key,
             &mut member,
             Occasion::New,
+            signature,
         );
-        *project.member_by_key_mut(&key).expect("just inserted") = member;
+        *project.member_by_key_mut(key).expect("converted") = member;
     }
 
     store::save_project(root, &project)?;
@@ -188,6 +247,31 @@ pub fn migrate(root: &Path, signer_key: &str, keypair: &IdentityKeypair) -> Resu
     }
     let staged: Vec<&str> = staged.iter().map(String::as_str).collect();
     crate::git_ops::auto_git_add(root, &staged);
+    Ok(())
+}
+
+/// Bring the project at `root` over, signed by the person `signer_key`
+/// with `keypair`. `Ok(false)`: there was nothing to do, or the one who
+/// asked is not a person of this project with that key (an AI session
+/// never brings a project over).
+pub fn migrate(root: &Path, signer_key: &str, keypair: &IdentityKeypair) -> Result<bool, JoyError> {
+    let Some(prepared) = prepare(root, signer_key)? else {
+        return Ok(false);
+    };
+    let holds_the_key = prepared
+        .project
+        .member_by_key(signer_key)
+        .and_then(|m| m.verify_key.as_deref())
+        == Some(keypair.public_key().to_hex().as_str());
+    if !holds_the_key {
+        return Ok(false);
+    }
+    let signatures: Vec<Vec<u8>> = prepared
+        .payloads()
+        .iter()
+        .map(|(_, bytes)| keypair.sign(bytes))
+        .collect();
+    finish(root, prepared, signer_key, &signatures)?;
     Ok(true)
 }
 
