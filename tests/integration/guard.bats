@@ -364,3 +364,24 @@ EOF
     run joy comment "$ITEM_ID" "Human comment"
     [ "$status" -eq 0 ]
 }
+
+# ============================================================
+# The validation case APP-KI-05, pinned before JI-019D-46 changes it
+# ============================================================
+
+# An AI whose capabilities do not include the work it is asked to do
+# carried on regardless: joy warns and writes. This is what Roland saw
+# with Vibe. JOY-02C6-25 turns the two status lines into refusals; until
+# then this case says what happens today (JOY-02C3-46).
+@test "an AI without implement starts an item all the same and is only warned" {
+    setup_human_auth
+    joy project member add ai:test@joy --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
+    joy add task "Not the AI's to implement"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Not the AI's to implement" | awk '{print $1}')
+    setup_ai_session ai:test@joy
+
+    run joy start "$ITEM_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"does not have 'implement' capability"* ]]
+    grep -q "^status: in-progress" .joy/items/"$ITEM_ID"-*.yaml
+}
