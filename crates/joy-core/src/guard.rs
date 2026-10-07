@@ -588,6 +588,36 @@ mod tests {
         }
     }
 
+    /// What an AI member without the capability gets today, pinned
+    /// before JI-019D-46 changes it (JOY-02C3-46): a missing MANAGEMENT
+    /// capability refuses, a missing WORK capability only warns and the
+    /// action runs. The validation saw exactly this (an AI restricted in
+    /// its capabilities carried on). The second half of this case is the
+    /// one JOY-02C6-25 turns into a refusal.
+    #[test]
+    fn an_ai_without_the_capability_is_refused_for_management_and_only_warned_for_work() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            ("ai:claude@joy", specific_caps(&[Capability::Review])),
+        ]);
+        let guard = Guard::new(&project);
+        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+
+        match guard.check(&Action::CreateItem, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'create'"), "{reason}"),
+            other => panic!("create without the capability: {other:?}"),
+        }
+
+        let start = Action::ChangeStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+        };
+        match guard.check(&start, &ai) {
+            Verdict::Warn(reason) => assert!(reason.contains("'implement'"), "{reason}"),
+            other => panic!("start without implement: {other:?}"),
+        }
+    }
+
     #[test]
     fn no_members_allows_all() {
         let project = Project::new("Test".into(), Some("TST".into()));

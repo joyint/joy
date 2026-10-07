@@ -1,14 +1,16 @@
 id: JOY-02C3-46
 title: Lane test pinning the session mode per level per turn, guard test pinning today's warn
 type: task
-status: new
+status: review
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - implement
 effort: 3
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:44.844839533Z
-updated: 2026-10-07T20:18:44.844839533Z
+updated: 2026-10-07T20:30:27.381038642Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Safety net for JI-019E-40 (delivery 0), against today's code.
@@ -16,3 +18,7 @@ description: |-
   Lane: a test with the mock adapter that drives one chat turn per interaction level and asserts the ACP session mode the lane sets for that turn (joy-ai acp_lane.rs, pick_session_mode, JOY-0280-A5): proposing sets plan, confirmed sets the accept-edits candidate, autonomous the bypass candidate, and the mode is set on every turn, not only on change.
 
   Guard: a test that an AI member without a work capability moving an item to in-progress today gets Verdict::Warn and the action runs (joy-core guard.rs), and without a management capability gets Deny. Named so that JI-019D-46 section 2 flips the first assertion to Deny deliberately.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-07T20:30:20.579165184Z
+  text: 'Result: crates/joy-ai/tests/session_mode_per_turn.rs drives five turns of one chat through the lane against a shell stand-in agent (tests/fake_agent.sh) and asserts the session mode set per turn: plan, acceptEdits, bypassPermissions, plan, plan, so every turn sets it, not only a change. guard.rs gains the case an_ai_without_the_capability_is_refused_for_management_and_only_warned_for_work, whose second half JOY-02C6-25 turns into a refusal. Found on the way: the lane test and the 40 existing acp_lane unit tests need the acp feature, which neither just test-unit nor the CI test step enables; they run only when asked for with --features acp.'
