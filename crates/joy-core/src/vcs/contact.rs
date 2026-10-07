@@ -1378,11 +1378,13 @@ pub fn action_of(error: &anyhow::Error) -> Option<String> {
 /// budget` computed from this table, and no millisecond figure is
 /// written down anywhere else. Codeberg's 0.9 is a measured ceiling of
 /// about 1.1 requests per second minus the buffer (JP-00EF-CC); GitHub's
-/// 1.0 and the unknown host's 1.0 are decided values;
-/// gitlab.com's 5.0 is its documented headroom.
+/// 2.0 is a decided value (operator 2026-10-07: the queue stands per
+/// credential since JP-0169-C8, and GitHub's own limits for authenticated
+/// git over HTTPS lie far above it; 1.0 before); the unknown host's 1.0 is
+/// a decided value; gitlab.com's 5.0 is its documented headroom.
 const BUDGETS: [(&str, f64); 4] = [
     ("codeberg.org", 0.9),
-    ("github.com", 1.0),
+    ("github.com", 2.0),
     ("gitlab.com", 5.0),
     ("default", 1.0),
 ];

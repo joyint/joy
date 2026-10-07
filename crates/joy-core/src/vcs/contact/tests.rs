@@ -1283,7 +1283,7 @@ fn every_millisecond_is_derived_from_the_budget_table() {
     let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     set_gaps("");
     assert_eq!(gap_for("codeberg.org"), Duration::from_millis(1111));
-    assert_eq!(gap_for("github.com"), Duration::from_millis(1000));
+    assert_eq!(gap_for("github.com"), Duration::from_millis(500));
     assert_eq!(gap_for("gitlab.com"), Duration::from_millis(200));
     assert_eq!(
         gap_for("git.acme.example"),
@@ -1317,8 +1317,8 @@ fn the_poll_period_is_the_verbs_requests_over_the_hosts_budget() {
 
     // 2 requests / 0.9 = 2.222 s, rounded up
     assert_eq!(poll("codeberg.org"), Duration::from_secs(3));
-    // 2 / 1.0 = 2 s exactly
-    assert_eq!(poll("github.com"), Duration::from_secs(2));
+    // 2 / 2.0 = 1 s exactly (JOY-02C2-01)
+    assert_eq!(poll("github.com"), Duration::from_secs(1));
     // 2 / 5.0 = 0.4 s, and a poll never runs faster than once a second
     assert_eq!(poll("gitlab.com"), Duration::from_secs(1));
     assert_eq!(poll("git.acme.example"), Duration::from_secs(2));
@@ -1336,7 +1336,7 @@ fn the_poll_period_is_the_verbs_requests_over_the_hosts_budget() {
         requests
     };
     assert_eq!(per_minute("codeberg.org", 0.9), 40);
-    assert_eq!(per_minute("github.com", 1.0), 60);
+    assert_eq!(per_minute("github.com", 2.0), 120);
 
     // N open projects on one host divide the budget
     assert_eq!(
