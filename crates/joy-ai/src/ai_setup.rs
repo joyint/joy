@@ -1054,6 +1054,25 @@ pub fn unlock_acting_keypair(
 }
 
 /// Register the tool's AI member with an attestation when missing.
+/// The capabilities a new AI member gets in the project at `root`: the
+/// project's ai-defaults, else joy's work capabilities. The CLI, the
+/// desktop and the platform register an AI member with exactly these,
+/// because what is signed for it covers them.
+pub fn new_member_capabilities(root: &Path) -> joy_core::model::project::MemberCapabilities {
+    let ai_defaults = joy_core::store::load_ai_defaults(root);
+    let capabilities = if ai_defaults.capabilities.is_empty() {
+        joy_core::model::item::Capability::work_capabilities()
+    } else {
+        ai_defaults.capabilities.clone()
+    };
+    joy_core::model::project::MemberCapabilities::Specific(
+        capabilities
+            .into_iter()
+            .map(|cap| (cap, Default::default()))
+            .collect(),
+    )
+}
+
 /// Returns whether project.yaml changed.
 pub fn register_tool_member(
     project: &mut joy_core::model::Project,
@@ -1064,22 +1083,8 @@ pub fn register_tool_member(
     if project.has_member_key(member_id) {
         return Ok(false);
     }
-    let ai_defaults = joy_core::store::load_ai_defaults(root);
-    let ai_caps = if ai_defaults.capabilities.is_empty() {
-        joy_core::model::item::Capability::work_capabilities()
-    } else {
-        ai_defaults.capabilities.clone()
-    };
-    let capabilities = {
-        use joy_core::model::project::CapabilityConfig;
-        let mut map = std::collections::BTreeMap::new();
-        for cap in ai_caps {
-            map.insert(cap, CapabilityConfig::default());
-        }
-        joy_core::model::project::MemberCapabilities::Specific(map)
-    };
     let (attester_id, attester_kp) = attester;
-    let mut new_member = joy_core::model::project::Member::new(capabilities);
+    let mut new_member = joy_core::model::project::Member::new(new_member_capabilities(root));
     joy_core::auth::vouch::sign(
         project,
         attester_id,

@@ -313,6 +313,74 @@ pub fn view(project: &Project, ai_key: &str, viewer_key: Option<&str>) -> View {
     }
 }
 
+/// [`View`] in words, as a card or a table shows it: capability names
+/// and a level for each side, empty where a side has none, and the one
+/// sentence that says why the AI member may do nothing.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Shown {
+    /// What the project allows at most.
+    pub capabilities: Vec<String>,
+    pub level: String,
+    /// What the viewer allows for themselves; empty when they made no
+    /// grant of their own and the project's side applies to them.
+    pub my_capabilities: Vec<String>,
+    pub my_level: String,
+    /// What the AI member may do for the viewer.
+    pub effective_capabilities: Vec<String>,
+    pub effective_level: String,
+    /// Why it may do nothing, when that is so.
+    pub problem: String,
+}
+
+/// [`Shown`] of the AI member `ai_key` for the person `viewer_key`, on
+/// the desktop, on the platform and in the CLI alike.
+///
+/// A project from before the member files has no signed sides: there
+/// the member's entry is shown as it stands, until a person brings the
+/// project over.
+pub fn shown(project: &Project, ai_key: &str, viewer_key: Option<&str>) -> Shown {
+    let names = |side: &Effective| -> Vec<String> {
+        side.capabilities.iter().map(|c| c.to_string()).collect()
+    };
+    let mut shown = Shown::default();
+    if !applies(project) {
+        if let Some(member) = project.member_by_key(ai_key) {
+            shown.capabilities = vouch::capability_list(&member.capabilities)
+                .iter()
+                .map(|c| c.to_string())
+                .collect();
+            shown.level = member
+                .interaction_level
+                .map(|l| l.to_string())
+                .unwrap_or_default();
+            shown.effective_capabilities = shown.capabilities.clone();
+            shown.effective_level = shown.level.clone();
+        }
+        return shown;
+    }
+    let view = view(project, ai_key, viewer_key);
+    match &view.project {
+        Ok(side) => {
+            shown.capabilities = names(side);
+            shown.level = side.level.to_string();
+        }
+        Err(why) => shown.problem = why.clone(),
+    }
+    if let Some(mine) = &view.mine {
+        shown.my_capabilities = names(mine);
+        shown.my_level = mine.level.to_string();
+    }
+    match &view.effective {
+        Ok(side) => {
+            shown.effective_capabilities = names(side);
+            shown.effective_level = side.level.to_string();
+        }
+        Err(why) if shown.problem.is_empty() => shown.problem = why.clone(),
+        Err(_) => {}
+    }
+    shown
+}
+
 /// What `ai` may do for `delegator_key` as the project stands right
 /// now, for a host that acts for a signed-in person and holds no token
 /// of theirs: their grant as it is in their entry, checked against its
@@ -322,8 +390,13 @@ pub fn effective_now(
     ai_key: &str,
     delegator_key: &str,
 ) -> Result<Effective, String> {
+    // by their key, or by an address the project knows them under
     let issued = project
         .member_by_key(delegator_key)
+        .or_else(|| {
+            let key = project.member_key_for_email(delegator_key)?;
+            project.member_by_key(&key)
+        })
         .map(|member| token_grant(member, ai_key));
     effective(project, ai_key, delegator_key, issued.as_deref())
 }

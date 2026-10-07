@@ -237,6 +237,50 @@ fn still_works(fixture: &str, host: Host) {
         "{ctx}: the AI writes under its name: {item}"
     );
 
+    // The delegation from before is still the founder's to use: a new
+    // token for the AI member is issued without a new delegation, under
+    // its name, and redeems. The key behind it was derived when the
+    // member was `ai:claude@joy`, and it is the same key now.
+    let issued = project.joy(&[
+        "auth",
+        "token",
+        "add",
+        "claude",
+        // redeeming made the AI the one signed in on this terminal, so
+        // the founder says who they are
+        "--user",
+        FOUNDER,
+        "--passphrase",
+        FOUNDER_PASS,
+    ]);
+    assert!(
+        issued.status.success(),
+        "{ctx}: a new token for claude: {}",
+        text(&issued)
+    );
+    let token = String::from_utf8_lossy(&issued.stdout)
+        .split_whitespace()
+        .find(|word| word.trim_matches('"').starts_with("joy_t_"))
+        .map(|word| word.trim_matches('"').to_string())
+        .unwrap_or_else(|| panic!("{ctx}: a token in the answer: {}", text(&issued)));
+    let redeemed = project.joy(&["auth", "--token", &token, "--json"]);
+    assert!(
+        redeemed.status.success(),
+        "{ctx}: the new token redeems: {}",
+        text(&redeemed)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&redeemed.stdout).unwrap();
+    let session = json["data"]["session_env"].as_str().unwrap().to_string();
+    let add = project.joy_with(
+        &["add", "task", "Written by the AI under its new token"],
+        Some(&session),
+    );
+    assert!(
+        add.status.success(),
+        "{ctx}: the AI writes under its new token: {}",
+        text(&add)
+    );
+
     // And the item from before is still there to be read.
     let ls = project.joy(&["ls"]);
     assert!(
