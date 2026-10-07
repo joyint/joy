@@ -125,7 +125,9 @@ jobs:
       # --no-fail-fast: run every test binary even if an earlier one fails,
       # so a single CI run surfaces all platform-specific failures at once
       # (important for the slow windows-latest leg). See JOY-01A4-5B.
-      - run: cargo test --workspace --no-fail-fast
+      # joy-ai/acp: the ACP lane and its tests exist only with that
+      # feature, which no member of this workspace turns on.
+      - run: cargo test --workspace --no-fail-fast --features joy-ai/acp
         working-directory: joy
 
   # Split out of the matrix so the windows leg can differ from linux when a

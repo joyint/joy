@@ -20,8 +20,11 @@ test: test-unit test-cmd test-int
 # what CI runs (cargo test --workspace). Do NOT re-add --lib: it silently
 # skips the integration tests (e.g. job_session_mint) and lets a red CI
 # slip past a green local check. fast-kdf keeps Argon2id minimal for speed.
+# joy-ai/acp: the ACP lane and its tests exist only with that feature, and
+# no member of this workspace turns it on (the platform and the desktop
+# do), so without it here the lane tests ran nowhere.
 test-unit:
-    cargo test --workspace --features fast-kdf
+    cargo test --workspace --features fast-kdf,joy-ai/acp
 
 # Snapshot tests (trycmd)
 test-cmd:
