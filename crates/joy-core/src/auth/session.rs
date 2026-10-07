@@ -72,6 +72,16 @@ pub struct SessionClaims {
     pub grant: Option<String>,
 }
 
+/// The person an AI session acts for, as its token names them.
+#[derive(Debug, Clone, Default)]
+pub struct Delegator {
+    /// Their member id, as it is written at rest.
+    pub member: Option<String>,
+    /// What the token says they allow the AI member
+    /// ([`SessionClaims::grant`]).
+    pub grant: Option<String>,
+}
+
 /// A session token: claims + Ed25519 signature.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SessionToken {
@@ -161,9 +171,12 @@ pub fn create_session_for_ai(
     ttl: Option<Duration>,
     delegation_key: &str,
     token_expires: Option<DateTime<Utc>>,
-    delegated_by: Option<String>,
-    grant: Option<String>,
+    delegator: Delegator,
 ) -> SessionToken {
+    let Delegator {
+        member: delegated_by,
+        grant,
+    } = delegator;
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
     let session_expiry = now + ttl;
@@ -867,8 +880,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         assert_eq!(
             token.claims.session_public_key.as_deref(),
@@ -892,8 +904,7 @@ mod tests {
             None,
             "dkey",
             Some(token_expires),
-            None,
-            None,
+            Delegator::default(),
         );
         // Session expiry should equal token_expires (within a tiny window).
         let delta = (token.claims.expires - token_expires).num_seconds().abs();
@@ -911,8 +922,7 @@ mod tests {
             Some(Duration::hours(1)),
             "dkey",
             Some(token_expires),
-            None,
-            None,
+            Delegator::default(),
         );
         // Session expiry should be ~1h, not 7 days.
         let session_ttl = token.claims.expires - token.claims.created;
@@ -1026,8 +1036,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         let second = create_session_for_ai(
             &second_kp,
@@ -1036,8 +1045,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
@@ -1091,8 +1099,7 @@ mod tests {
             Some(Duration::seconds(-1)),
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         save_session("TST", &expired).unwrap();
 
@@ -1104,8 +1111,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         save_session("TST", &fresh).unwrap();
 
@@ -1158,8 +1164,15 @@ mod tests {
         unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
 
         let kp = IdentityKeypair::from_random();
-        let token =
-            create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None, None);
+        let token = create_session_for_ai(
+            &kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         let dir = session_dir().unwrap();
         std::fs::create_dir_all(&dir).unwrap();
         let legacy_sid = session_id("TST", "ai:claude@joy");
@@ -1200,8 +1213,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         let second = create_session_for_ai(
             &second_kp,
@@ -1210,8 +1222,7 @@ mod tests {
             None,
             "dkey",
             None,
-            None,
-            None,
+            Delegator::default(),
         );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();

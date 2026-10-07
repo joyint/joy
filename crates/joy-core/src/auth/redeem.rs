@@ -146,8 +146,10 @@ pub fn redeem_ai_session(
         None,
         &delegation_entry.delegation_verifier,
         claims.expires,
-        delegated_by_at_rest,
-        token::grant_scope(&claims).map(str::to_string),
+        session::Delegator {
+            member: delegated_by_at_rest,
+            grant: token::grant_scope(&claims).map(str::to_string),
+        },
     );
 
     let sid = session::session_storage_id(project_id, &token_obj.claims);
