@@ -250,10 +250,7 @@ impl UpdateItem for AiMemberAdapterItem {
                     m.adapter = Some(adapter.to_string());
                 }
             }
-            joy_core::store::write_yaml_preserve(
-                &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
-                &project,
-            )?;
+            joy_core::store::save_project(root, &project)?;
         }
         Ok(vec![RefreshRow {
             name: "AI member adapters".into(),
