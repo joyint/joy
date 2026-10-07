@@ -127,3 +127,16 @@ load setup
     run joy assign "$id" helper --unassign
     [ "$status" -eq 0 ]
 }
+
+@test "an assignment made under the name is taken away under the old spelling" {
+    setup_human_auth
+    joy project member add helper --passphrase "$TEST_PASSPHRASE"
+    run joy add task "Handed over"
+    local id; id="$(echo "$output" | grep -oE 'TP-[0-9A-F]{4}-[0-9A-F]{2}' | head -1)"
+    joy assign "$id" helper
+
+    run --separate-stderr joy assign "$id" ai:helper@joy --unassign
+    [ "$status" -eq 0 ]
+    run joy show "$id"
+    [[ "$output" != *"helper"* ]]
+}

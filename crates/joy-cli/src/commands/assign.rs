@@ -42,12 +42,16 @@ pub fn run(args: AssignArgs) -> Result<()> {
     crate::auth_gate::enforce(&mut ctx, &Action::AssignItem, &item.id)?;
 
     // A person by address, an AI member by its name, which has to be
-    // one of this project's. Taking an assignment away asks nothing.
-    if !args.unassign {
-        joy_core::store::load_project(&ctx.root)?
-            .check_assignee(&member)
-            .map_err(|why| anyhow::anyhow!(why))?;
-    }
+    // one of this project's; either spelling of the name is the member
+    // as the project keeps it. Taking an assignment away asks nothing.
+    let project = joy_core::store::load_project(&ctx.root)?;
+    let member = if args.unassign {
+        project.former_assignee(&member)
+    } else {
+        project
+            .assignee(&member)
+            .map_err(|why| anyhow::anyhow!(why))?
+    };
 
     if args.unassign {
         let before = item.assignees.len();

@@ -938,26 +938,35 @@ impl Project {
         }
     }
 
-    /// Whether work can be assigned to `member` here, or in words why
-    /// not. A person is named by an address (or, in an anonymous
-    /// project, by their id) and need not be a member yet; an AI member
-    /// is named by its name and has to be one of this project's.
-    pub fn check_assignee(&self, member: &str) -> Result<(), String> {
+    /// The member work is assigned to when a person names `member`, in
+    /// the spelling this project keeps them under, or in words why work
+    /// cannot be assigned to them. A person is named by an address (or,
+    /// in an anonymous project, by their id) and need not be a member
+    /// yet; an AI member is named by its name, in either spelling, and
+    /// has to be one of this project's.
+    pub fn assignee(&self, member: &str) -> Result<String, String> {
         if !is_ai_member(member) {
             if member.contains('@') || crate::member_id::is_opaque_member_id(member) {
-                return Ok(());
+                return Ok(member.to_string());
             }
             return Err(format!(
                 "{member} is neither an address nor the name of an AI member"
             ));
         }
-        if self.member_key(member).is_some() {
-            return Ok(());
-        }
-        Err(format!(
-            "this project has no AI member named {}",
-            ai_member_name(member)
-        ))
+        self.member_key(member).ok_or_else(|| {
+            format!(
+                "this project has no AI member named {}",
+                ai_member_name(member)
+            )
+        })
+    }
+
+    /// The assignee an assignment is taken away from: the member as the
+    /// project keeps them, and as they were named where the project does
+    /// not know them any more. Taking away asks nothing.
+    pub fn former_assignee(&self, member: &str) -> String {
+        self.member_key(member)
+            .unwrap_or_else(|| member.to_string())
     }
 
     /// The key a member is stored under, for a key as anybody may write
