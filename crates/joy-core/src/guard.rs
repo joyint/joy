@@ -224,7 +224,9 @@ impl Guard {
         }
 
         // Look up the member
-        let member = match self.members.get(identity.member.id()) {
+        // By the key the project knows the member under: an AI session
+        // from before the member files still names it the older way.
+        let member = match self.project.member_by_key(identity.member.id()) {
             Some(m) => m,
             None => {
                 return Verdict::Deny(format!(

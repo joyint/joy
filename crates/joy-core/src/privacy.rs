@@ -314,7 +314,7 @@ fn rewrite_file(path: &Path, replacements: &[(String, String)]) -> Result<(), Jo
 /// of the file may name people (a crypt zone records who delegated to
 /// which AI member), the list under `members` names files, and a file
 /// keeps its name whichever way the project is switched.
-fn rewrite_project_keeping_the_member_list(
+pub(crate) fn rewrite_project_keeping_the_member_list(
     path: &Path,
     replacements: &[(String, String)],
 ) -> Result<(), JoyError> {
@@ -333,7 +333,11 @@ fn rewrite_project_keeping_the_member_list(
 }
 
 /// Replace each `from -> to` across every `*.<ext>` file in `dir`.
-fn rewrite_dir(dir: &Path, ext: &str, replacements: &[(String, String)]) -> Result<(), JoyError> {
+pub(crate) fn rewrite_dir(
+    dir: &Path,
+    ext: &str,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
     if !dir.exists() {
         return Ok(());
     }

@@ -619,6 +619,14 @@ pub fn cli_main() -> anyhow::Result<()> {
     // Install the per-command member resolver (ADR-042) so every output that
     // names a member resolves the opaque id to a name/e-mail, fail-safe. In open
     // mode this is a pass-through.
+    // A project from before the member files is brought over as soon as
+    // the person at this terminal is signed in (JI-019D-46).
+    if let Some(root) = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| joy_core::store::find_project_root(&cwd))
+    {
+        auth_gate::bring_members_over(&root);
+    }
     member_resolver::install_member_resolver();
 
     let result =

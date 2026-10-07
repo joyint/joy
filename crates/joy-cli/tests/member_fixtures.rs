@@ -157,6 +157,12 @@ fn text(out: &Output) -> String {
 fn still_works(fixture: &str, host: Host) {
     let project = Project::clone_of(fixture);
     project.open_as(host);
+    // Opening it changes nothing about where its members are kept: no
+    // host that merely opens a project holds anybody's key.
+    assert!(
+        !project.root.join(".joy/members").exists(),
+        "{fixture} opened as {host:?}: still as it was"
+    );
     let ctx = format!("{fixture} opened as {host:?}");
 
     // The second person signs in with their passphrase, may write an
@@ -206,6 +212,29 @@ fn still_works(fixture: &str, host: Host) {
         !manage.status.success(),
         "{ctx}: the AI never manages: {}",
         text(&manage)
+    );
+
+    // A person was here with their key, so the project is brought over
+    // (JI-019D-46): one file per member, project.yaml lists them, and
+    // the AI member is known by its name everywhere.
+    let members = joy_test_env::project_text(&project.root);
+    let files = std::fs::read_dir(project.root.join(".joy/members"))
+        .map(|dir| dir.count())
+        .unwrap_or(0);
+    assert_eq!(files, 3, "{ctx}: three member files");
+    assert!(members.contains("name: claude"), "{ctx}: {members}");
+    assert!(!members.contains("ai:claude@joy"), "{ctx}: {members}");
+    assert!(!members.contains("attestation:"), "{ctx}: {members}");
+    assert!(members.contains("granted:"), "{ctx}: {members}");
+    let item = std::fs::read_dir(project.root.join(".joy/items"))
+        .unwrap()
+        .flatten()
+        .map(|entry| std::fs::read_to_string(entry.path()).unwrap())
+        .find(|body| body.contains("Written by the AI"))
+        .expect("the AI's item");
+    assert!(
+        item.contains("created_by: claude delegated-by:"),
+        "{ctx}: the AI writes under its name: {item}"
     );
 
     // And the item from before is still there to be read.

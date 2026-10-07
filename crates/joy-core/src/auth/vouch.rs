@@ -290,8 +290,14 @@ pub fn verify_origin(
 }
 
 /// Whether the project maximum of the AI member `name` is what a person
-/// with the manage capability signed. The reason comes back in words a
-/// refusal can say.
+/// signed. The reason comes back in words a refusal can say.
+///
+/// What is checked is that a person stands behind it and no AI member:
+/// the signer is a member with a key, and not an AI. That the person may
+/// manage the project is asked of them when they write the maximum
+/// (every host does, before it signs); here it is not, because the
+/// person who brings a project from before the member files over signs
+/// the maxima as they were, whoever they are (JI-019D-46).
 pub fn verify_maximum(project: &Project, name: &str, member: &Member) -> Result<(), String> {
     let Some(granted) = &member.granted else {
         return Err(format!(
@@ -307,11 +313,6 @@ pub fn verify_maximum(project: &Project, name: &str, member: &Member) -> Result<
     let entry = project
         .member_by_key(signer)
         .ok_or_else(|| format!("what {name} may do is signed by someone who is not a member"))?;
-    if !entry.has_capability(&Capability::Manage) {
-        return Err(format!(
-            "what {name} may do is signed by a member without the manage capability"
-        ));
-    }
     let key = entry
         .verify_key
         .as_deref()
@@ -482,18 +483,11 @@ mod tests {
     }
 
     #[test]
-    fn a_maximum_nobody_with_manage_signed_counts_for_nothing() {
+    fn a_maximum_no_person_signed_counts_for_nothing() {
         let (mut project, _) = files_project();
         let dev_kp = keypair(2);
         let mut dev = Member::new(caps(&[Capability::Implement]));
         dev.verify_key = Some(dev_kp.public_key().to_hex());
-        dev.origin = Some(Origin {
-            attester: "founder@example.com".into(),
-            signed_at: Utc::now(),
-            signature: None,
-            invitation: None,
-            commit: None,
-        });
         project.register_member("dev@example.com", dev).unwrap();
 
         let mut claude = Member::new(caps(&[Capability::Plan]));
@@ -501,6 +495,8 @@ mod tests {
             .unwrap_err()
             .contains("nobody has signed"));
 
+        // any person's signature stands: whether they may manage was
+        // asked when they wrote it
         sign(
             &project,
             "dev@example.com",
@@ -509,9 +505,7 @@ mod tests {
             &mut claude,
             Occasion::New,
         );
-        assert!(verify_maximum(&project, "claude", &claude)
-            .unwrap_err()
-            .contains("without the manage capability"));
+        verify_maximum(&project, "claude", &claude).unwrap();
 
         // signed with the AI's own name as the signer
         let mut selfmade = Member::new(caps(&[Capability::Plan]));
@@ -526,6 +520,20 @@ mod tests {
         assert!(verify_maximum(&project, "claude", &selfmade)
             .unwrap_err()
             .contains("signs for nobody"));
+
+        // signed by somebody who is not in the project
+        let mut foreign = Member::new(caps(&[Capability::Plan]));
+        sign(
+            &project,
+            "stranger@example.com",
+            &keypair(3),
+            "claude",
+            &mut foreign,
+            Occasion::New,
+        );
+        assert!(verify_maximum(&project, "claude", &foreign)
+            .unwrap_err()
+            .contains("not a member"));
     }
 
     #[test]

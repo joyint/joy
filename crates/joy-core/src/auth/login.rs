@@ -196,6 +196,11 @@ fn finish_login(
 
     let relocked = relock_unlocked_files(root, view, &member_key, seed.as_bytes());
 
+    // A person is here with their key: a project from before the member
+    // files is brought over now, by whichever host this login runs in
+    // (JI-019D-46). It checked out above as what it was.
+    crate::member_migration::migrate_quietly(root, &member_key, &keypair);
+
     Ok(LoginOutcome {
         seed: *seed.as_bytes(),
         keypair,
