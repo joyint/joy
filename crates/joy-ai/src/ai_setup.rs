@@ -1413,6 +1413,7 @@ mod setup_tests {
                 .unwrap()
                 .with_timezone(&chrono::Utc),
             rotated: None,
+            grant: None,
         }
     }
 

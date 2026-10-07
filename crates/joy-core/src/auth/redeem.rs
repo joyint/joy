@@ -191,6 +191,7 @@ mod tests {
                 delegation_salt: Some("00".repeat(32)),
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
             },
         );
         project.register_member(HUMAN, human).unwrap();

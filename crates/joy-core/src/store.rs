@@ -473,7 +473,16 @@ pub fn read_project(
         path: project_path.to_path_buf(),
         source: e,
     })?;
-    parse_project(&content, project_path)
+    let (mut project, listed) = parse_project_and_member_ids(&content, project_path)?;
+    if let Some(ids) = listed {
+        // `<root>/.joy/project.yaml`: the member files sit next to it.
+        let root = project_path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        project.replace_members(crate::member_files::read(root, &ids)?);
+    }
+    Ok(project)
 }
 
 /// Parse the content of a project.yaml that did not come from a file on
@@ -484,11 +493,36 @@ pub fn parse_project(
     content: &str,
     origin: &Path,
 ) -> Result<crate::model::project::Project, crate::error::JoyError> {
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(content).map_err(|e| JoyError::YamlParse {
-            path: origin.to_path_buf(),
-            source: e,
-        })?;
+    parse_project_and_member_ids(content, origin).map(|(project, _)| project)
+}
+
+/// [`parse_project`], and the member ids project.yaml lists when the
+/// members are kept in files of their own (JI-019D-46). The project then
+/// comes back without members: reading the files is the caller's part,
+/// because only a caller with a checkout has them.
+fn parse_project_and_member_ids(
+    content: &str,
+    origin: &Path,
+) -> Result<(crate::model::project::Project, Option<Vec<String>>), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
+    let yaml_err = |e| JoyError::YamlParse {
+        path: origin.to_path_buf(),
+        source: e,
+    };
+    let mut value: Value = serde_yaml_ng::from_str(content).map_err(yaml_err)?;
+    // A list under `members` is the ids of the member files; a map is
+    // the members themselves, as every older project has them.
+    let listed: Option<Vec<String>> = match value.get("members") {
+        Some(Value::Sequence(_)) => {
+            let list = value
+                .as_mapping_mut()
+                .and_then(|map| map.remove("members"))
+                .unwrap_or(Value::Null);
+            Some(serde_yaml_ng::from_value(list).map_err(yaml_err)?)
+        }
+        _ => None,
+    };
     // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
     // never sent to project.yaml — they are not supposed to see that file
     // at all. `joy update` persists the migrated form when it runs; until
@@ -497,10 +531,12 @@ pub fn parse_project(
     // merely got its adapter pin backfilled, nagging about "legacy auth
     // field names" that never existed.
     let (value, _migrated) = crate::migrations::project_yaml::apply(value);
-    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
-        path: origin.to_path_buf(),
-        source: e,
-    })
+    let mut project: crate::model::project::Project =
+        serde_yaml_ng::from_value(value).map_err(yaml_err)?;
+    if listed.is_some() {
+        project.set_member_layout(crate::model::project::MemberLayout::Files);
+    }
+    Ok((project, listed))
 }
 
 /// Load the full project metadata from project.yaml under the given
@@ -543,6 +579,16 @@ pub fn save_project(
 
     let project_path = joy_dir(root).join(PROJECT_FILE);
     let mut value = serde_yaml_ng::to_value(project)?;
+    let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
+    if in_files {
+        let ids = crate::member_files::write(root, project.member_map())?;
+        if let Some(map) = value.as_mapping_mut() {
+            map.remove("members");
+            if !ids.is_empty() {
+                map.insert("members".into(), serde_yaml_ng::to_value(ids)?);
+            }
+        }
+    }
     if let (Some(map), Ok(existing)) = (
         value.as_mapping_mut(),
         std::fs::read_to_string(&project_path),
@@ -564,7 +610,12 @@ pub fn save_project(
         source: e,
     })?;
     let rel = format!("{JOY_DIR}/{PROJECT_FILE}");
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    let members = format!("{JOY_DIR}/{}", crate::member_files::MEMBERS_DIR);
+    if in_files {
+        crate::git_ops::auto_git_add(root, &[&rel, &members]);
+    } else {
+        crate::git_ops::auto_git_add(root, &[&rel]);
+    }
     Ok(())
 }
 

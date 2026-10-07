@@ -1199,6 +1199,7 @@ pub(crate) fn create_delegation_token(
                 delegation_salt: delegation_salt_hex.clone(),
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
             },
         );
     }

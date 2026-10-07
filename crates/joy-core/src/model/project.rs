@@ -68,6 +68,24 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "CryptConfig::is_empty")]
     pub crypt: CryptConfig,
     pub created: DateTime<Utc>,
+    /// How this project's members are kept on disk. Not part of the
+    /// file: [`crate::store`] reads it off what it finds and writes back
+    /// in the same shape.
+    #[serde(skip)]
+    layout: MemberLayout,
+}
+
+/// Where a project keeps its members.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemberLayout {
+    /// The whole member map inside project.yaml: every project written
+    /// before the member files (JI-019D-46), until a person brings it
+    /// over.
+    #[default]
+    InProject,
+    /// One file per member under `.joy/members/`; project.yaml lists
+    /// their ids.
+    Files,
 }
 
 /// Per-project member-PII privacy mode (ADR-042). Stored in project.yaml
@@ -241,6 +259,89 @@ pub struct Member {
     pub members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
+    /// The model an AI member runs on, as its adapter names it. None is
+    /// the adapter's own default. Member files only (JI-019D-46).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// What an AI member is for, in the project's words. Member files
+    /// only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The signature a manager put under an AI member's capabilities and
+    /// level: the project maximum. Member files only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted: Option<Granted>,
+    /// Who brought a person into the project. Member files only; the
+    /// attestation above is what older projects carry instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
+    /// The name of this member's file under `.joy/members/`, without the
+    /// extension. Never written into a file: the file name says it.
+    #[serde(skip)]
+    pub file_id: Option<String>,
+}
+
+/// The signature under an AI member's project maximum (JI-019D-46): a
+/// person with the manage capability signed the member's capabilities
+/// and level.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Granted {
+    pub by: crate::member_ref::MemberRef,
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`grant_text`].
+    pub signature: String,
+}
+
+/// Who brought a person into the project and when (JI-019D-46). It is
+/// made once, when the invitation is issued, and never touched again:
+/// what the person may do is not part of it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Origin {
+    pub attester: crate::member_ref::MemberRef,
+    pub signed_at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`origin_text`]. Absent on a
+    /// member that was in the project before the member files; `commit`
+    /// then names where the attestation of that time can be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+}
+
+/// What a person allows an AI member that acts for them: at most the
+/// project maximum, signed with the person's own key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelegationGrant {
+    pub capabilities: Vec<Capability>,
+    pub level: InteractionLevel,
+    pub signed_at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`grant_text`].
+    pub signature: String,
+}
+
+/// The text a grant signature covers: the AI member's name, its
+/// capabilities in their fixed order, the level, whose grant it is
+/// (`project` for the maximum, else the delegating member's id) and the
+/// project. A text, and not the YAML, so that no change to the file
+/// format ever touches a signature.
+pub fn grant_text(
+    name: &str,
+    capabilities: &[Capability],
+    level: InteractionLevel,
+    scope: &str,
+    project_id: &str,
+) -> String {
+    let mut caps: Vec<Capability> = capabilities.to_vec();
+    caps.sort();
+    caps.dedup();
+    let caps: Vec<String> = caps.iter().map(|c| c.to_string()).collect();
+    format!("{name}|{}|{level}|{scope}|{project_id}", caps.join(","))
+}
+
+/// The text an origin signature covers: the project, the member and the
+/// hash of the invitation's one-time password.
+pub fn origin_text(project_id: &str, member: &str, otp_hash: &str) -> String {
+    format!("{project_id}|{member}|{otp_hash}")
 }
 
 /// Per-member attestation: a signature by a manage member over a stable
@@ -320,6 +421,10 @@ pub struct AiDelegationEntry {
     /// When this delegation was last rotated, if ever.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotated: Option<chrono::DateTime<chrono::Utc>>,
+    /// What the delegating person allows this AI member (JI-019D-46).
+    /// None means the project maximum applies as it stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<DelegationGrant>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -532,6 +637,11 @@ impl Member {
             email_match: None,
             members_wrap: None,
             attestation: None,
+            model: None,
+            description: None,
+            granted: None,
+            origin: None,
+            file_id: None,
         }
     }
 
@@ -624,8 +734,16 @@ impl Member {
 }
 
 /// Check whether a member ID represents an AI member.
+///
+/// A person is known by an address, or in an anonymous project by an
+/// opaque `m-` id. An AI member is known by its name, which is neither
+/// (JI-019D-46): `claude`, `reviewer`. The form `ai:<name>@joy` that
+/// older projects carry counts as well.
 pub fn is_ai_member(id: &str) -> bool {
-    id.starts_with("ai:")
+    if id.starts_with("ai:") {
+        return true;
+    }
+    !id.is_empty() && !id.contains('@') && !crate::member_id::is_opaque_member_id(id)
 }
 
 /// One-line description for a `joy project get` key. Returned by
@@ -673,7 +791,19 @@ impl Project {
             members: BTreeMap::new(),
             crypt: CryptConfig::default(),
             created: Utc::now(),
+            layout: MemberLayout::default(),
         }
+    }
+
+    /// How the members are kept on disk.
+    pub fn member_layout(&self) -> MemberLayout {
+        self.layout
+    }
+
+    /// Privileged: only the store (reading what is on disk) and the
+    /// migration that moves a project over say how members are kept.
+    pub(crate) fn set_member_layout(&mut self, layout: MemberLayout) {
+        self.layout = layout;
     }
 
     /// The effective privacy mode: `Open` when unset (ADR-042).
@@ -813,6 +943,10 @@ impl Project {
                  anonymous human onboarding is not yet supported (JOY-01C3-A7)"
             )));
         }
+        let mut member = member;
+        if self.layout == MemberLayout::Files && member.file_id.is_none() {
+            member.file_id = Some(crate::member_id::new_member_file_id());
+        }
         self.members.insert(id.to_string(), member);
         Ok(())
     }
@@ -827,6 +961,11 @@ impl Project {
     /// every other caller uses the typed accessors above.
     pub(crate) fn take_members(&mut self) -> BTreeMap<String, Member> {
         std::mem::take(&mut self.members)
+    }
+
+    /// Privileged: the member map as it is, for the store that writes it.
+    pub(crate) fn member_map(&self) -> &BTreeMap<String, Member> {
+        &self.members
     }
 
     /// Privileged: replace the whole member map. See [`Self::take_members`].
@@ -922,6 +1061,7 @@ mod tests {
                 delegation_salt: None,
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
             },
         );
         assert!(!member.delegation_usable("ai:claude@joy"));
@@ -1052,6 +1192,7 @@ mod tests {
                     .unwrap()
                     .with_timezone(&chrono::Utc),
                 rotated: None,
+                grant: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
@@ -1087,6 +1228,7 @@ mod tests {
                 delegation_salt: None,
                 created,
                 rotated: Some(rotated),
+                grant: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();

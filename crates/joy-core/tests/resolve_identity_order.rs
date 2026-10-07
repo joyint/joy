@@ -212,6 +212,7 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
                 delegation_salt: Some("00".repeat(32)),
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
             },
         );
     }
