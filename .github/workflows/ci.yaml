@@ -157,7 +157,8 @@ jobs:
         run: |
           git config --global user.email "ci@joyint.dev"
           git config --global user.name "Joyint CI"
-      - run: cargo test --workspace --no-fail-fast
+      # joy-ai/acp as on the Linux leg: the ACP lane tests run here too.
+      - run: cargo test --workspace --no-fail-fast --features joy-ai/acp
         working-directory: joy
 
   # The Codeberg pin build step, run again: every
