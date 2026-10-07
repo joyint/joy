@@ -111,21 +111,30 @@ fn maximum(project: &Project, ai_key: &str) -> Result<Effective, String> {
     })
 }
 
-/// Sign a person's own grant for `ai`: at most the project maximum.
-///
-/// The capabilities and the level have to lie within what the project
-/// allows the AI member; the refusal names the maximum.
-pub fn sign_personal(
+/// The capabilities and the level a person's own grant for `ai` is to
+/// have, checked against the project maximum: what is not said stays
+/// what their grant says now, or what the project allows.
+fn personal_target(
     project: &Project,
     ai_key: &str,
     delegator: &Member,
-    keypair: &IdentityKeypair,
-    capabilities: &[Capability],
-    level: InteractionLevel,
-) -> Result<DelegationGrant, JoyError> {
+    capabilities: Option<&[Capability]>,
+    level: Option<InteractionLevel>,
+) -> Result<(Vec<Capability>, InteractionLevel), JoyError> {
     let name = ai_member_name(ai_key);
     let max = maximum(project, ai_key).map_err(JoyError::Other)?;
-    let beyond: Vec<String> = capabilities
+    let current = delegator
+        .delegation_to(ai_key)
+        .and_then(|d| d.grant.as_ref());
+    let mut caps: Vec<Capability> = match (capabilities, current) {
+        (Some(caps), _) => caps.to_vec(),
+        (None, Some(grant)) => grant.capabilities.clone(),
+        (None, None) => max.capabilities.clone(),
+    };
+    caps.sort();
+    caps.dedup();
+    let level = level.or(current.map(|g| g.level)).unwrap_or(max.level);
+    let beyond: Vec<String> = caps
         .iter()
         .filter(|cap| !max.allows(cap))
         .map(|cap| cap.to_string())
@@ -143,20 +152,188 @@ pub fn sign_personal(
             max.level
         )));
     }
-    let delegator_key = delegator
+    Ok((caps, level))
+}
+
+fn delegator_key_hex(delegator: &Member) -> Result<&str, JoyError> {
+    delegator
         .verify_key
         .as_deref()
-        .ok_or_else(|| JoyError::Other("you have no key yet: run `joy auth init`".into()))?;
-    let mut caps = capabilities.to_vec();
-    caps.sort();
-    caps.dedup();
-    let text = personal_text(project, ai_key, &caps, level, delegator_key);
-    Ok(DelegationGrant {
-        capabilities: caps,
+        .ok_or_else(|| JoyError::Other("you have no key yet: run `joy auth init`".into()))
+}
+
+fn not_delegated(name: &str) -> JoyError {
+    JoyError::Other(format!(
+        "you have not delegated to {name} yet: joy auth token add {name}"
+    ))
+}
+
+/// What a person signs to set their own grant for `ai`, for a host
+/// whose key is somewhere else (a browser): the bytes, and the
+/// capabilities and level they stand for. [`apply_personal`] takes the
+/// signature.
+pub fn personal_payload(
+    project: &Project,
+    ai_key: &str,
+    delegator_key: &str,
+    capabilities: Option<&[Capability]>,
+    level: Option<InteractionLevel>,
+) -> Result<(Vec<u8>, Vec<Capability>, InteractionLevel), JoyError> {
+    let delegator = project
+        .member_by_key(delegator_key)
+        .ok_or_else(|| JoyError::Other(format!("{delegator_key} is not a member")))?;
+    if delegator.delegation_to(ai_key).is_none() {
+        return Err(not_delegated(ai_member_name(ai_key)));
+    }
+    let (caps, level) = personal_target(project, ai_key, delegator, capabilities, level)?;
+    let text = personal_text(project, ai_key, &caps, level, delegator_key_hex(delegator)?);
+    Ok((text.into_bytes(), caps, level))
+}
+
+/// Record a person's own grant for `ai` with the signature they made
+/// over [`personal_payload`].
+pub fn apply_personal(
+    project: &mut Project,
+    ai_key: &str,
+    delegator_key: &str,
+    capabilities: Vec<Capability>,
+    level: InteractionLevel,
+    signature: &[u8],
+) -> Result<(), JoyError> {
+    let name = ai_member_name(ai_key).to_string();
+    let delegator = project
+        .member_by_key_mut(delegator_key)
+        .ok_or_else(|| JoyError::Other(format!("{delegator_key} is not a member")))?;
+    let entry = delegator
+        .ai_delegations
+        .iter_mut()
+        .find(|(key, _)| ai_member_name(key) == name)
+        .map(|(_, entry)| entry)
+        .ok_or_else(|| not_delegated(&name))?;
+    entry.grant = Some(DelegationGrant {
+        capabilities,
         level,
         signed_at: Utc::now(),
-        signature: hex::encode(keypair.sign(text.as_bytes())),
-    })
+        signature: hex::encode(signature),
+    });
+    Ok(())
+}
+
+/// Set what `ai` may do for the person `delegator_key`, signed with
+/// their key: at most the project maximum, and the refusal names it.
+/// What is `None` stays as it is.
+pub fn set_personal(
+    project: &mut Project,
+    ai_key: &str,
+    delegator_key: &str,
+    keypair: &IdentityKeypair,
+    capabilities: Option<&[Capability]>,
+    level: Option<InteractionLevel>,
+) -> Result<(), JoyError> {
+    let (bytes, caps, level) =
+        personal_payload(project, ai_key, delegator_key, capabilities, level)?;
+    let signature = keypair.sign(&bytes);
+    apply_personal(project, ai_key, delegator_key, caps, level, &signature)
+}
+
+/// Drop a person's own grant for `ai`: the project maximum applies to
+/// them again.
+pub fn clear_personal(project: &mut Project, ai_key: &str, delegator_key: &str) {
+    let name = ai_member_name(ai_key).to_string();
+    if let Some(delegator) = project.member_by_key_mut(delegator_key) {
+        for (key, entry) in delegator.ai_delegations.iter_mut() {
+            if ai_member_name(key) == name {
+                entry.grant = None;
+            }
+        }
+    }
+}
+
+/// Change what the project allows the AI member, before a person with
+/// the manage capability signs it ([`vouch::sign`] with
+/// [`vouch::Occasion::Changed`], or its payload and apply). What is
+/// `None` stays as it is. An AI member never holds manage.
+pub fn change_maximum(
+    member: &mut Member,
+    capabilities: Option<&[Capability]>,
+    level: Option<InteractionLevel>,
+) -> Result<(), JoyError> {
+    if let Some(caps) = capabilities {
+        if caps.contains(&Capability::Manage) {
+            return Err(JoyError::Other(
+                "an AI member never holds the manage capability".into(),
+            ));
+        }
+        member.set_capabilities(crate::model::project::MemberCapabilities::Specific(
+            caps.iter().map(|c| (*c, Default::default())).collect(),
+        ));
+    }
+    if let Some(level) = level {
+        member.interaction_level = Some(level);
+    }
+    Ok(())
+}
+
+/// What an AI member may do, as a person looking at it sees it: what
+/// the project allows, what they allow themselves, and what comes out.
+#[derive(Debug, Clone, PartialEq)]
+pub struct View {
+    /// The project maximum, or why there is none.
+    pub project: Result<Effective, String>,
+    /// The viewer's own grant, if they made one.
+    pub mine: Option<Effective>,
+    /// What the AI member may do for the viewer.
+    pub effective: Result<Effective, String>,
+}
+
+/// [`View`] of `ai` for the person `viewer_key` (nobody: the project's
+/// side alone, and the effective column is the maximum).
+pub fn view(project: &Project, ai_key: &str, viewer_key: Option<&str>) -> View {
+    let max = maximum(project, ai_key);
+    let viewer = viewer_key.and_then(|key| project.member_by_key(key).map(|m| (key, m)));
+    let mine = viewer
+        .and_then(|(_, member)| member.delegation_to(ai_key))
+        .and_then(|d| d.grant.as_ref())
+        .map(|g| Effective {
+            capabilities: g.capabilities.clone(),
+            level: g.level,
+        });
+    let effective = match viewer {
+        Some((key, _)) => effective_now(project, ai_key, key),
+        None => max.clone(),
+    };
+    View {
+        project: max,
+        mine,
+        effective,
+    }
+}
+
+/// What `ai` may do for `delegator_key` as the project stands right
+/// now, for a host that acts for a signed-in person and holds no token
+/// of theirs: their grant as it is in their entry, checked against its
+/// signature.
+pub fn effective_now(
+    project: &Project,
+    ai_key: &str,
+    delegator_key: &str,
+) -> Result<Effective, String> {
+    let issued = project
+        .member_by_key(delegator_key)
+        .map(|member| token_grant(member, ai_key));
+    effective(project, ai_key, delegator_key, issued.as_deref())
+}
+
+/// The level a turn of `ai` for `delegator_key` runs at: the one the
+/// person chose for it, never beyond what [`effective_now`] allows.
+pub fn turn_level(
+    project: &Project,
+    ai_key: &str,
+    delegator_key: &str,
+    chosen: Option<InteractionLevel>,
+) -> Result<InteractionLevel, String> {
+    let may = effective_now(project, ai_key, delegator_key)?;
+    Ok(more_oversight(may.level, chosen.unwrap_or(may.level)))
 }
 
 fn list(capabilities: &[Capability]) -> String {
@@ -301,17 +478,7 @@ mod tests {
         c: &[Capability],
         l: InteractionLevel,
     ) {
-        let signed = {
-            let delegator = project.member_by_key(who).unwrap();
-            sign_personal(project, "claude", delegator, kp, c, l).unwrap()
-        };
-        project
-            .member_by_key_mut(who)
-            .unwrap()
-            .ai_delegations
-            .get_mut("claude")
-            .unwrap()
-            .grant = Some(signed);
+        set_personal(project, "claude", who, kp, Some(c), Some(l)).unwrap();
     }
 
     #[test]
@@ -348,16 +515,80 @@ mod tests {
 
     #[test]
     fn a_grant_cannot_go_beyond_the_project_maximum() {
-        let (project, _, dev_kp) = project();
-        let dev = project.member_by_key(DEV).unwrap();
-        let more = sign_personal(&project, "claude", dev, &dev_kp, &[Plan, Create], Confirmed)
-            .unwrap_err()
-            .to_string();
+        let (mut project, _, dev_kp) = project();
+        let more = set_personal(
+            &mut project,
+            "claude",
+            DEV,
+            &dev_kp,
+            Some(&[Plan, Create]),
+            Some(Confirmed),
+        )
+        .unwrap_err()
+        .to_string();
         assert!(more.contains("does not allow claude: create"), "{more}");
-        let higher = sign_personal(&project, "claude", dev, &dev_kp, &[Plan], Autonomous)
+        let higher = set_personal(
+            &mut project,
+            "claude",
+            DEV,
+            &dev_kp,
+            Some(&[Plan]),
+            Some(Autonomous),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(higher.contains("at most confirmed"), "{higher}");
+    }
+
+    #[test]
+    fn what_is_not_said_stays_and_the_view_shows_all_three_sides() {
+        let (mut project, _, dev_kp) = project();
+        // only a level: the capabilities are the project's
+        set_personal(&mut project, "claude", DEV, &dev_kp, None, Some(Proposing)).unwrap();
+        let seen = view(&project, "claude", Some(DEV));
+        assert_eq!(seen.project.as_ref().unwrap().level, Confirmed);
+        assert_eq!(
+            seen.mine.as_ref().unwrap().capabilities,
+            [Plan, Implement, Review]
+        );
+        assert_eq!(seen.mine.as_ref().unwrap().level, Proposing);
+        assert_eq!(seen.effective.as_ref().unwrap().level, Proposing);
+        // only capabilities: the level stays proposing
+        set_personal(&mut project, "claude", DEV, &dev_kp, Some(&[Review]), None).unwrap();
+        let seen = view(&project, "claude", Some(DEV));
+        assert_eq!(seen.mine.unwrap().level, Proposing);
+        assert_eq!(seen.effective.unwrap().capabilities, [Review]);
+        // a turn never runs beyond it, and may run below
+        assert_eq!(
+            turn_level(&project, "claude", DEV, Some(Autonomous)),
+            Ok(Proposing)
+        );
+        assert_eq!(
+            turn_level(&project, "claude", FOUNDER, Some(Autonomous)),
+            Ok(Confirmed)
+        );
+        assert_eq!(
+            turn_level(&project, "claude", FOUNDER, Some(Proposing)),
+            Ok(Proposing)
+        );
+        assert_eq!(turn_level(&project, "claude", FOUNDER, None), Ok(Confirmed));
+        // dropped again: the project maximum
+        clear_personal(&mut project, "claude", DEV);
+        assert_eq!(view(&project, "claude", Some(DEV)).mine, None);
+    }
+
+    #[test]
+    fn a_person_who_has_not_delegated_is_told_how() {
+        let (mut project, _, dev_kp) = project();
+        project
+            .member_by_key_mut(DEV)
+            .unwrap()
+            .ai_delegations
+            .clear();
+        let why = set_personal(&mut project, "claude", DEV, &dev_kp, None, Some(Proposing))
             .unwrap_err()
             .to_string();
-        assert!(higher.contains("at most confirmed"), "{higher}");
+        assert!(why.contains("joy auth token add claude"), "{why}");
     }
 
     #[test]

@@ -23,3 +23,4 @@
 2026-10-07T19:33:04.415Z JOY-02C3-85 item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-10-07T20:33:03.666Z JOY-025E-FA comment.added [horst.schwarz@joydev.com]
 2026-10-07T20:33:09.120Z JOY-025E-FA item.status_changed "new -> closed" [horst.schwarz@joydev.com]
+2026-10-07T22:19:56.178Z JOY-02C8-20 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

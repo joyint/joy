@@ -1,8 +1,10 @@
 id: JOY-02C8-20
 title: 'CLI: joy project member edit with space separated capabilities, --level and --project, joy ai add with adapter and model'
 type: story
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:45.137364799Z
-updated: 2026-10-07T20:18:45.137364799Z
+updated: 2026-10-07T22:19:56.176771180Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 7 and 9.
