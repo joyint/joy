@@ -168,6 +168,17 @@ pub fn moderation_already_posted(chat: &Chat) -> bool {
         .any(|m| m.kind == MessageKind::Notice && m.text == MODERATION_NOTICE)
 }
 
+/// The closing line of every prompt: the LAST thing a model reads weighs
+/// most, and the small vibe models read a change request as a question
+/// unless the instruction to act stands right behind the request itself
+/// (WEB-KI-06: devstral-small described the tasks it was asked to create
+/// in two of three runs with the rule only in the preamble).
+const CLOSING: &str = "--- end ---\n\
+Your turn. If the last request asks to create, split, assign or change\n\
+items, run the joy commands NOW with your shell tool (`joy add ...`,\n\
+`joy edit ...`), then reply with what you did and the ids. Reply with your\n\
+next chat message only.\n";
+
 /// The prompt for one agent turn: the attributed transcript plus the role
 /// instruction. The chat itself IS the context — a fresh session with this
 /// prompt has everything either AI has said.
@@ -224,7 +235,7 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
             prompt.push_str(&format!("{}: {}\n", message.author.id(), message.text));
         }
     }
-    prompt.push_str("--- end ---\n");
+    prompt.push_str(CLOSING);
     prompt
 }
 
@@ -251,7 +262,7 @@ pub fn delta_prompt(chat: &Chat, ai_member: &str) -> Option<String> {
             prompt.push_str(&format!("{}: {}\n", message.author.id(), message.text));
         }
     }
-    prompt.push_str("--- end ---\nReply with your next chat message only.\n");
+    prompt.push_str(CLOSING);
     Some(prompt)
 }
 
