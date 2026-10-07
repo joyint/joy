@@ -741,8 +741,7 @@ pub fn token_session_rejection(
         ));
     }
     let registered = project.members().any(|(_, m)| {
-        m.ai_delegations
-            .get(&sess.claims.member)
+        m.delegation_to(&sess.claims.member)
             .is_some_and(|d| &d.delegation_verifier == verifier)
     });
     if !registered {

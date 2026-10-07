@@ -396,7 +396,7 @@ pub fn plan_member_reset(
     }
     let delegators: Vec<String> = project
         .members()
-        .filter(|(_, m)| m.ai_delegations.contains_key(member_id))
+        .filter(|(_, m)| m.delegation_to(member_id).is_some())
         .map(|(k, _)| k.clone())
         .collect();
     let drop_caller_delegation =
@@ -1281,7 +1281,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             if mp.drop_caller_delegation {
                 if let Some(ck) = caller_key.as_deref() {
                     if let Some(m) = p.member_by_key_mut(ck) {
-                        if m.ai_delegations.remove(&mp.member_id).is_some() {
+                        if m.drop_delegation(&mp.member_id).is_some() {
                             project_changed = true;
                         }
                     }
@@ -1296,7 +1296,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
                     let member_keys: Vec<String> = p.member_keys().cloned().collect();
                     for k in &member_keys {
                         if let Some(m) = p.member_by_key_mut(k) {
-                            m.ai_delegations.remove(&mp.member_id);
+                            m.drop_delegation(&mp.member_id);
                         }
                     }
                     report(format!("{} member removed", mp.member_id));
@@ -1471,7 +1471,7 @@ mod setup_tests {
             .unwrap();
         for d in delegators {
             let mut m = Member::new(MemberCapabilities::All);
-            m.ai_delegations.insert(ai.to_string(), deleg());
+            m.put_delegation(ai.to_string(), deleg());
             p.register_member(d, m).unwrap();
         }
         p

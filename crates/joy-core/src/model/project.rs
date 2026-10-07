@@ -639,6 +639,43 @@ impl Member {
         })
     }
 
+    /// [`Member::delegation_to`], to change the entry.
+    pub fn delegation_to_mut(&mut self, ai: &str) -> Option<&mut AiDelegationEntry> {
+        let key = self.delegation_key(ai)?;
+        self.ai_delegations.get_mut(&key)
+    }
+
+    /// Record this member's delegation to `ai`, in place of the one they
+    /// had, under whichever spelling of the AI member's name it stood.
+    pub fn put_delegation(
+        &mut self,
+        ai: impl Into<String>,
+        entry: AiDelegationEntry,
+    ) -> Option<AiDelegationEntry> {
+        let ai = ai.into();
+        let key = self.delegation_key(&ai).unwrap_or(ai);
+        self.ai_delegations.insert(key, entry)
+    }
+
+    /// Take this member's delegation to `ai` away.
+    pub fn drop_delegation(&mut self, ai: &str) -> Option<AiDelegationEntry> {
+        let key = self.delegation_key(ai)?;
+        self.ai_delegations.remove(&key)
+    }
+
+    /// The key this member's delegation to `ai` stands under, in either
+    /// spelling of the AI member's name.
+    fn delegation_key(&self, ai: &str) -> Option<String> {
+        if self.ai_delegations.contains_key(ai) {
+            return Some(ai.to_string());
+        }
+        let name = ai_member_name(ai);
+        self.ai_delegations
+            .keys()
+            .find(|key| ai_member_name(key) == name)
+            .cloned()
+    }
+
     /// Create a member with the given capabilities and no auth fields.
     pub fn new(capabilities: MemberCapabilities) -> Self {
         Self {
@@ -899,6 +936,28 @@ impl Project {
             MemberLayout::Files => name.to_string(),
             MemberLayout::InProject => format!("ai:{name}@joy"),
         }
+    }
+
+    /// Whether work can be assigned to `member` here, or in words why
+    /// not. A person is named by an address (or, in an anonymous
+    /// project, by their id) and need not be a member yet; an AI member
+    /// is named by its name and has to be one of this project's.
+    pub fn check_assignee(&self, member: &str) -> Result<(), String> {
+        if !is_ai_member(member) {
+            if member.contains('@') || crate::member_id::is_opaque_member_id(member) {
+                return Ok(());
+            }
+            return Err(format!(
+                "{member} is neither an address nor the name of an AI member"
+            ));
+        }
+        if self.member_key(member).is_some() {
+            return Ok(());
+        }
+        Err(format!(
+            "this project has no AI member named {}",
+            ai_member_name(member)
+        ))
     }
 
     /// The key a member is stored under, for a key as anybody may write

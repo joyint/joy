@@ -926,7 +926,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
         let _ = target; // target lookup was for existence check; not used further on AI path
         let mut wraps: Vec<(String, String)> = Vec::new();
         for (operator_email, member) in project.members() {
-            let Some(entry) = member.ai_delegations.get(ai_id) else {
+            let Some(entry) = member.delegation_to(ai_id) else {
                 continue;
             };
             let delegation_pk = joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;

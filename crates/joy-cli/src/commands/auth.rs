@@ -1197,7 +1197,7 @@ pub(crate) fn create_delegation_token(
         let m = project_mut
             .member_by_key_mut(&member_key)
             .ok_or_else(|| anyhow::anyhow!("{member_key} is not a registered project member."))?;
-        m.ai_delegations.insert(
+        m.put_delegation(
             ai_member.to_string(),
             joy_core::model::project::AiDelegationEntry {
                 delegation_verifier: delegation_keypair.public_key().to_hex(),
@@ -1611,7 +1611,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     // Rotation requires an existing delegation. Bootstrap (first-time
     // setup) goes through `joy auth token add`, where project.yaml writes
     // happen lazily on the very first issuance.
-    if !human.ai_delegations.contains_key(member) {
+    if human.delegation_to(member).is_none() {
         anyhow::bail!(
             "No delegation for {m} is recorded in project.yaml under {acting}. \
              Rotation replaces an existing keypair; to create the initial \
@@ -1641,7 +1641,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     let mut project_mut = store::load_project(&root)?;
     let entry = project_mut
         .member_by_key_mut(&acting)
-        .and_then(|m| m.ai_delegations.get_mut(member))
+        .and_then(|m| m.delegation_to_mut(member))
         .expect("delegation entry exists -- validated above");
     entry.delegation_verifier = new_kp.public_key().to_hex();
     entry.delegation_salt = Some(new_salt.to_hex());

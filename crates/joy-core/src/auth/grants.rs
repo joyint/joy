@@ -366,8 +366,14 @@ pub fn effective(
 ) -> Result<Effective, String> {
     let name = ai_member_name(ai_key);
     let max = maximum(project, ai_key)?;
+    // The person is named by their key, or by an address the project
+    // knows them under (an anonymous project keys them by an id).
     let delegator = project
         .member_by_key(delegator_key)
+        .or_else(|| {
+            let key = project.member_key_for_email(delegator_key)?;
+            project.member_by_key(&key)
+        })
         .ok_or_else(|| format!("{name} acts for someone who is not a member of this project"))?;
     let grant = delegator
         .delegation_to(ai_key)
@@ -494,8 +500,8 @@ mod tests {
     fn person(kp: &IdentityKeypair, capabilities: MemberCapabilities) -> Member {
         let mut member = Member::new(capabilities);
         member.verify_key = Some(kp.public_key().to_hex());
-        member.ai_delegations.insert(
-            "claude".into(),
+        member.put_delegation(
+            "claude",
             AiDelegationEntry {
                 delegation_verifier: "00".repeat(32),
                 delegation_salt: Some("11".repeat(32)),
@@ -689,8 +695,7 @@ mod tests {
         dropped
             .member_by_key_mut(DEV)
             .unwrap()
-            .ai_delegations
-            .get_mut("claude")
+            .delegation_to_mut("claude")
             .unwrap()
             .grant = None;
         let why = effective(&dropped, "claude", DEV, Some(&issued)).unwrap_err();
@@ -705,8 +710,7 @@ mod tests {
             let g = widened
                 .member_by_key_mut(DEV)
                 .unwrap()
-                .ai_delegations
-                .get_mut("claude")
+                .delegation_to_mut("claude")
                 .unwrap()
                 .grant
                 .as_mut()

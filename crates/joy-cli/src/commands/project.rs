@@ -1869,7 +1869,7 @@ fn member_auth_status(
     let has_delegation = is_ai
         && all_members
             .member_values()
-            .any(|m| m.ai_delegations.contains_key(id));
+            .any(|m| m.delegation_to(id).is_some());
     let has_auth = if is_ai {
         has_delegation
     } else {
@@ -1891,7 +1891,7 @@ fn member_auth_status(
         // straight lookup of the env-referenced session.
         let current_delegation_keys: Vec<&str> = all_members
             .member_values()
-            .filter_map(|m| m.ai_delegations.get(id))
+            .filter_map(|m| m.delegation_to(id))
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();
 

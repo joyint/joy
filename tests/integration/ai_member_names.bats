@@ -103,3 +103,27 @@ load setup
     joy project member edit claude --project --level proposing --passphrase "$TEST_PASSPHRASE"
     grep -q '"defaultMode": "plan"' .claude/settings.json
 }
+
+@test "work is assigned to an AI member by its name, and only to one this project has" {
+    setup_human_auth
+    joy project member add helper --passphrase "$TEST_PASSPHRASE"
+    run joy add task "Assignable"
+    local id; id="$(echo "$output" | grep -oE 'TP-[0-9A-F]{4}-[0-9A-F]{2}' | head -1)"
+    [ -n "$id" ]
+
+    run joy assign "$id" helper
+    [ "$status" -eq 0 ]
+
+    # a name nobody carries is no AI member, and the answer says so
+    run joy assign "$id" stranger
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"this project has no AI member named stranger"* ]]
+
+    # a person is named by an address and need not be a member yet
+    run joy assign "$id" someone@example.com
+    [ "$status" -eq 0 ]
+
+    # taking an assignment away asks nothing of the name
+    run joy assign "$id" helper --unassign
+    [ "$status" -eq 0 ]
+}

@@ -862,7 +862,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             if plan.drop_caller_delegation {
                 if let Some(ck) = caller_key.as_deref() {
                     if let Some(m) = p.member_by_key_mut(ck) {
-                        if m.ai_delegations.remove(&plan.member_id).is_some() {
+                        if m.drop_delegation(&plan.member_id).is_some() {
                             project_changed = true;
                         }
                     }
@@ -882,7 +882,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                     let member_keys: Vec<String> = p.member_keys().cloned().collect();
                     for k in &member_keys {
                         if let Some(m) = p.member_by_key_mut(k) {
-                            m.ai_delegations.remove(&plan.member_id);
+                            m.drop_delegation(&plan.member_id);
                         }
                     }
                     dprintln!(

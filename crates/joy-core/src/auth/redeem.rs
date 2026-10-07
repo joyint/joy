@@ -187,7 +187,7 @@ mod tests {
             .unwrap();
         let mut human = Member::new(MemberCapabilities::All);
         human.verify_key = Some(delegator.public_key().to_hex());
-        human.ai_delegations.insert(
+        human.put_delegation(
             AI.to_string(),
             AiDelegationEntry {
                 delegation_verifier: delegation.public_key().to_hex(),

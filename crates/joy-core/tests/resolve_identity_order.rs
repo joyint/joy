@@ -205,7 +205,7 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
             .member_by_key_mut(human)
             .expect("the human is already a member");
         founder.verify_key = Some(delegator.public_key().to_hex());
-        founder.ai_delegations.insert(
+        founder.put_delegation(
             ai.to_string(),
             AiDelegationEntry {
                 delegation_verifier: delegation.public_key().to_hex(),
