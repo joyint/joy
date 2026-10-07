@@ -13,6 +13,9 @@ pub const CONFIG_FILE: &str = "config.yaml";
 pub const CONFIG_DEFAULTS_FILE: &str = "config.defaults.yaml";
 pub const PROJECT_FILE: &str = "project.yaml";
 pub const PROJECT_DEFAULTS_FILE: &str = "project.defaults.yaml";
+/// joy's recommendation as it is written to [`PROJECT_DEFAULTS_FILE`] at
+/// init, for a checkout that has no such file.
+const EMBEDDED_PROJECT_DEFAULTS: &str = include_str!("../data/project.defaults.yaml");
 pub const CREDENTIALS_FILE: &str = "credentials.yaml";
 pub const ITEMS_DIR: &str = "items";
 /// Job items live apart from product items: deletable without touching
@@ -655,8 +658,14 @@ pub fn load_raw_interaction_level_defaults(
 /// Load AI defaults (capabilities granted to AI members) from project.defaults.yaml,
 /// with project.yaml ai-defaults overlay.
 pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
+    // The defaults file is joy's own recommendation, written at `joy
+    // init` and not committed. A checkout that never saw an init (a
+    // clone, the platform's) has none, and gets the same recommendation
+    // from the copy joy carries: an AI member registered there may do
+    // what one registered at home may, create and assign included.
     let defaults_path = project_defaults_path(root);
     let mut base = read_yaml_value(&defaults_path)
+        .or_else(|| serde_yaml_ng::from_str::<serde_json::Value>(EMBEDDED_PROJECT_DEFAULTS).ok())
         .and_then(|v| v.get("ai-defaults").cloned())
         .unwrap_or(serde_json::json!({}));
 
@@ -961,6 +970,29 @@ interaction-level:
             raw.capabilities[&Capability::Implement],
             InteractionLevel::Proposing
         );
+    }
+
+    /// A checkout that never saw `joy init` (a clone, the platform's) has
+    /// no defaults file; an AI member registered there gets joy's own
+    /// recommendation all the same, create and assign included, so it
+    /// can write an item or a comment like one registered at home.
+    #[test]
+    fn load_ai_defaults_without_a_file_is_joys_own_recommendation() {
+        use crate::model::item::Capability;
+        let dir = tempdir().unwrap();
+        setup_project_dir(dir.path());
+        let _ = std::fs::remove_file(dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE));
+        let defaults = load_ai_defaults(dir.path());
+        for cap in [
+            Capability::Implement,
+            Capability::Review,
+            Capability::Create,
+            Capability::Assign,
+        ] {
+            assert!(defaults.capabilities.contains(&cap), "{cap}");
+        }
+        assert!(!defaults.capabilities.contains(&Capability::Manage));
+        assert!(!defaults.capabilities.contains(&Capability::Delete));
     }
 
     #[test]
