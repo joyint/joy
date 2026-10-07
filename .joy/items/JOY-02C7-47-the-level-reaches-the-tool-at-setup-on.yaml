@@ -1,0 +1,24 @@
+id: JOY-02C7-47
+title: The level reaches the tool at setup, on every chat turn and in jobs
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 5
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:45.087142966Z
+updated: 2026-10-07T20:18:45.087142966Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Delivery 2 of JI-019E-40, decided in JI-019D-46 section 3.
+
+  Setup: joy ai init, joy ai add and joy update write the tool's native mode (level_enforcement.rs: Claude permissions.defaultMode, Qwen approvalMode, Vibe bash permission) from the member's effective maximum; the per-capability resolution and managed_block_section go; is_tool_stale compares the written mode so joy update --check reports a change after joy project member edit --level.
+
+  Chat turns: the turn carries the level chosen with the composer pills (JI-018C-06, JOY-0280-A5); joy clamps it to the effective maximum of (project maximum, the delegator's grant) and sets the session mode on every turn as today. host_turn_level and turn_meta::resolve_effective_level collapse into one function in joy-ai that both hosts call; the personal config layer and the member default drop out of the chain.
+
+  Jobs: the job item gets a level field, set at joy add job (--level, default the assignee's effective level, never above it), validated again at joy approve and snapshotted there (JI-0166-D8 section 6). The job runner receives the job's level instead of always autonomous; confirmed in the job context keeps running over the feedback axis as decided. joy add job refuses an assignee that does not hold the job's capability.
+
+  Tests: the lane test of the safety net extended with the clamp, a setup test per tool for the three levels, a job created above the assignee's level is refused, and a job runs with its own level in the mock adapter.

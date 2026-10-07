@@ -1,0 +1,24 @@
+id: JOY-02C8-20
+title: 'CLI: joy project member edit with space separated capabilities, --level and --project, joy ai add with adapter and model'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:45.137364799Z
+updated: 2026-10-07T20:18:45.137364799Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 7 and 9.
+
+  joy project member edit <id> --capabilities plan implement review: space separated values, no commas; --add-capability and --rm-capability stay. --level <proposing|confirmed|autonomous> and --project exist for AI members only: without --project the command writes the caller's personal grant (signed with the caller's key, within the project maximum, refused above it with the maximum named), with --project the project maximum (needs manage). --interaction-level and --max-interaction-level are removed. joy project member show <ai> prints capabilities and level in three columns: project, mine, effective; for humans the capabilities only. The members table shows all twelve capabilities.
+
+  joy ai add <name> [--adapter A] [--model M]: registers the AI member with the project's default capabilities and the default level as a project maximum signed by the caller (needs manage), infers the adapter when the name is an adapter name, takes the adapter's default model when --model is absent (the model list comes from the adapter as today), writes the tool's instruction and settings files like joy ai init does for one tool, and ends with the token line (joy auth token add <name>) or, when a session exists, the token itself. The model is a field of the member file; joy project member edit --model changes it (manage).
+
+  Help texts are one short sentence each, like their neighbours. The old forms (ai:<name>@joy, comma separated capabilities) are accepted and normalised with the note line during the window.
+
+  Tests: bats cases for every flag, the refusal above the maximum, joy ai add with and without --adapter, and the three-column show.

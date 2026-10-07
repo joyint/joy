@@ -1,0 +1,28 @@
+id: JOY-02C6-25
+title: 'Two signed layers for an AI member: project maximum and personal grant, verified by Guard on every action'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 7
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:45.024451369Z
+updated: 2026-10-07T20:18:45.024451369Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 1 and 2.
+
+  Model: an AI member has capabilities (flat list of the Capability enum) and one interaction level. CapabilityConfig with interaction-level, max-interaction-level and max-cost-per-job goes, as do the member default interaction_level, project.defaults.yaml per-capability levels as member input, interaction-level.default in config.yaml and config.defaults.yaml (the project default stays as the value for new grants), capabilities.rs warn_unless_capable, data/capabilities/*.md, the AiConfig ai.* keys and Action::StartJob's budget branch. Human members have capabilities only.
+
+  Project maximum: stored in the AI member's file as { capabilities, level, signed_by, signed_at, signature }. Signed text: name|capabilities sorted comma separated|level|project|project id. Writing it needs manage; the signer is any human member with manage, the signature is made with that member's identity key.
+
+  Personal grant: stored in the delegating human's ai_delegations[<name>] as { capabilities, level, signed_at, signature }, signed text name|capabilities|level|delegator id|project id, signed with the delegator's identity key, at most the project maximum at signing time. joy auth token add puts the hash of the grant text into the token claims (grant_hash, or none when the human has no grant); the redeemed session keeps it.
+
+  Guard (guard.rs): for an AI session, on every action, verify the project maximum signature against a human member with manage, verify the personal grant against the delegator, require the grant hash to match the session, take the intersection of capabilities and the lower level. Missing project maximum = no capabilities. No grant and the token says none = the project maximum. Any signature made with an AI member's key is invalid. An AI member without the required capability is denied, work and management alike (the safety net test flips to Deny). Humans keep today's verdicts. The AI-never-manage rule stays.
+
+  Level in joy show and joy project member show: the effective maximum and, for the caller's own delegation, the effective level.
+
+  Tests: signature round trip for both layers, Guard matrix (missing maximum, missing grant with and without hash, hand-edited member file, hand-edited grant, AI-signed maximum), and the fixture AI member acting after migration with the migrated maximum.

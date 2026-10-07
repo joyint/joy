@@ -1,0 +1,18 @@
+id: JOY-02C3-46
+title: Lane test pinning the session mode per level per turn, guard test pinning today's warn
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:44.844839533Z
+updated: 2026-10-07T20:18:44.844839533Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Safety net for JI-019E-40 (delivery 0), against today's code.
+
+  Lane: a test with the mock adapter that drives one chat turn per interaction level and asserts the ACP session mode the lane sets for that turn (joy-ai acp_lane.rs, pick_session_mode, JOY-0280-A5): proposing sets plan, confirmed sets the accept-edits candidate, autonomous the bypass candidate, and the mode is set on every turn, not only on change.
+
+  Guard: a test that an AI member without a work capability moving an item to in-progress today gets Verdict::Warn and the action runs (joy-core guard.rs), and without a management capability gets Deny. Named so that JI-019D-46 section 2 flips the first assertion to Deny deliberately.
