@@ -80,25 +80,25 @@ pub fn redeem_ai_session(
 
     // The stable delegation entry for this AI member under that operator.
     let ai_member_id = &delegation.claims.ai_member;
-    let delegation_entry = human_member
-        .ai_delegations
-        .get(ai_member_id)
-        .ok_or_else(|| {
-            JoyError::AuthFailed(format!(
-                "no delegation registered for {ai_member_id} by {human}"
-            ))
-        })?;
+    let delegation_entry = human_member.delegation_to(ai_member_id).ok_or_else(|| {
+        JoyError::AuthFailed(format!(
+            "no delegation registered for {ai_member_id} by {human}"
+        ))
+    })?;
     let delegation_pk = PublicKey::from_hex(&delegation_entry.delegation_verifier)?;
 
     // Dual signatures + project + expiry. Tokens are multi-use within TTL.
     let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
 
-    if !project.has_member_key(&claims.ai_member) {
-        return Err(JoyError::AuthFailed(format!(
+    // The member the token is for, under the id this project knows it
+    // by: a token issued before the project was brought over to member
+    // files still says `ai:<name>@joy` (JI-019D-46).
+    let ai_member = project.member_key(&claims.ai_member).ok_or_else(|| {
+        JoyError::AuthFailed(format!(
             "AI member {} is not registered in this project",
             claims.ai_member
-        )));
-    }
+        ))
+    })?;
 
     // Ephemeral per-session keypair (ADR-033): its private half rides only
     // in JOY_SESSION and proves possession; its public half is recorded in
@@ -141,7 +141,7 @@ pub fn redeem_ai_session(
     let delegated_by_at_rest = crate::privacy::delegated_by_at_rest(project, human);
     let token_obj = session::create_session_for_ai(
         &ephemeral_keypair,
-        &claims.ai_member,
+        &ai_member,
         project_id,
         None,
         &delegation_entry.delegation_verifier,
@@ -156,7 +156,7 @@ pub fn redeem_ai_session(
     Ok(RedeemedSession {
         token: token_obj,
         session_env,
-        member: claims.ai_member.clone(),
+        member: ai_member,
         delegated_by: claims.delegated_by.clone(),
     })
 }

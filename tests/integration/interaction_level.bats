@@ -63,8 +63,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy project member show displays levels for AI member" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --capabilities conceive,plan,implement,review --passphrase "$TEST_PASSPHRASE"
-    run joy project member show ai:test@joy
+    joy project member add testai --capabilities conceive,plan,implement,review --passphrase "$TEST_PASSPHRASE"
+    run joy project member show testai
     [ "$status" -eq 0 ]
     [[ "$output" == *"proposing"* ]]
     [[ "$output" == *"confirmed"* ]]
@@ -74,8 +74,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy project member show displays levels for all-capabilities member" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy project member show ai:test@joy
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    run joy project member show testai
     [ "$status" -eq 0 ]
     [[ "$output" == *"conceive"* ]]
     [[ "$output" == *"proposing"* ]]
@@ -86,7 +86,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "project.yaml interaction-level section overrides defaults" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
     # Override the implement level in project.yaml
     cat >> .joy/project.yaml <<EOF
@@ -95,7 +95,7 @@ interaction-level:
   implement: proposing
 EOF
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     # implement should now be proposing [project], not confirmed [default]
     [[ "$output" == *"implement"*"proposing"*"[project]"* ]]
@@ -103,13 +103,13 @@ EOF
 
 @test "member edit --interaction-level sets the member default" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --interaction-level autonomous --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --interaction-level autonomous --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    grep -q "interaction-level: autonomous" .joy/project.yaml
+    members_grep -q "interaction-level: autonomous"
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     # Both held capabilities resolve to the member default now
     [[ "$output" == *"autonomous"*"[member]"* ]]
@@ -117,12 +117,12 @@ EOF
 
 @test "member edit --interaction-level CAP=LEVEL beats the member global" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --interaction-level autonomous --interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --interaction-level autonomous --interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     [[ "$output" == *"implement"*"autonomous"*"[member]"* ]]
     [[ "$output" == *"review"*"proposing"*"[member]"* ]]
@@ -130,14 +130,14 @@ EOF
 
 @test "max-interaction-level clamps the effective level" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities test --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities test --passphrase "$TEST_PASSPHRASE"
 
     # Set the floor via the CLI (JI-0161-C2); the command re-signs the
     # member's attestation over the new fields.
-    run joy project member edit ai:test@joy --max-interaction-level test=confirmed --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --max-interaction-level test=confirmed --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     # Default for test is autonomous, but the floor demands confirmed
     # (more oversight), so it gets clamped up to confirmed
@@ -146,21 +146,21 @@ EOF
 
 @test "member edit --max-interaction-level on an unheld capability fails" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --max-interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --max-interaction-level review=proposing --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"does not have capability"* ]]
 }
 
 @test "member edit --capabilities replaces the set and re-signs" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement,review --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --capabilities plan,implement --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --capabilities plan,implement --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     # plan is now held (shows a level), review is dropped (shows the deny mark)
     [[ "$output" == *"plan"* ]]
@@ -168,20 +168,20 @@ EOF
 
     # The re-signed attestation still covers the new capability set: the
     # signed_fields block in project.yaml now lists plan, not review.
-    run grep -A20 "signed_fields:" .joy/project.yaml
+    run members_grep -A20 "signed_fields:"
     [[ "$output" == *"plan"* ]]
 }
 
 @test "member edit --add-capability and --rm-capability are incremental" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities implement --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities implement --passphrase "$TEST_PASSPHRASE"
 
-    run joy project member edit ai:test@joy --add-capability review --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --add-capability review --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    run joy project member edit ai:test@joy --rm-capability implement --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit testai --rm-capability implement --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    run joy project member show ai:test@joy
+    run joy project member show testai
     [ "$status" -eq 0 ]
     [[ "$output" == *"review"* ]]
 }
@@ -238,8 +238,8 @@ EOF
     grep -q "interaction-level:" .joy/config.yaml
     grep -q "default: proposing" .joy/config.yaml
     ! grep -q "^interaction:" .joy/config.yaml
-    grep -q "interaction-level:" .joy/project.yaml
-    grep -q "implement: confirmed" .joy/project.yaml
+    members_grep -q "interaction-level:"
+    members_grep -q "implement: confirmed"
     for f in ".joy/items/${ITEM_ID}-"*.yaml; do
         grep -q "interaction-level: proposing" "$f"
         ! grep -q "^mode:" "$f"
@@ -263,7 +263,7 @@ EOF
 @test "joy project shows hint for member levels" {
     joy init --name "Test Project"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     run joy project
     [ "$status" -eq 0 ]
     [[ "$output" == *"joy project member show"* ]]

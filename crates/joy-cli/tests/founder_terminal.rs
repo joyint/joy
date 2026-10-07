@@ -170,7 +170,7 @@ fn init_on_a_terminal_asks_for_the_address_and_completes() {
         "the person was asked: {seen}"
     );
     assert!(seen.contains("Address:"), "the person was asked: {seen}");
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(
         project.contains("typed@example.com"),
         "the typed address founded the project: {project}"
@@ -255,7 +255,7 @@ fn a_live_session(home: &Path) -> String {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--passphrase",
             passphrase,
         ],
@@ -263,14 +263,7 @@ fn a_live_session(home: &Path) -> String {
         let (ok, seen) = joy(&args);
         assert!(ok, "{args:?}: {seen}");
     }
-    let (ok, token) = joy(&[
-        "auth",
-        "token",
-        "add",
-        "ai:claude@joy",
-        "--passphrase",
-        passphrase,
-    ]);
+    let (ok, token) = joy(&["auth", "token", "add", "claude", "--passphrase", passphrase]);
     assert!(ok, "{token}");
     // The token is the quoted line among the instructions.
     let token = token

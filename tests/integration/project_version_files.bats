@@ -24,7 +24,7 @@ load setup
     [ "$status" -ne 0 ]
 
     # `release:` block is removed from the YAML when it becomes empty.
-    run grep -q "^release:" .joy/project.yaml
+    run members_grep -q "^release:"
     [ "$status" -ne 0 ]
 }
 
@@ -99,12 +99,12 @@ EOF
     joy project set release.version-files --add crates/new.toml >/dev/null
 
     # mapping-form entry still has its `extra` field after the add
-    grep -A1 "path: crates/mapped.toml" .joy/project.yaml | grep -q "extra: keep-me"
+    members_grep -A1 "path: crates/mapped.toml" | grep -q "extra: keep-me"
 
     # rm by path matches mapping-form entries
     run joy project set release.version-files --rm crates/mapped.toml
     [ "$status" -eq 0 ]
-    run grep -q "path: crates/mapped.toml" .joy/project.yaml
+    run members_grep -q "path: crates/mapped.toml"
     [ "$status" -ne 0 ]
 }
 

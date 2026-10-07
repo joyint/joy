@@ -69,9 +69,9 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     setup_human_auth
     _go_anonymous
 
-    run grep -q "$TEST_EMAIL" .joy/project.yaml
+    run members_grep -q "$TEST_EMAIL"
     [ "$status" -ne 0 ]
-    run grep -q "email_match" .joy/project.yaml
+    run members_grep -q "email_match"
     [ "$status" -eq 0 ]
 }
 
@@ -161,7 +161,7 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [[ "$output" == *"Authenticated as dev@example.com"* ]]
 
     # No member e-mail leaked into project.yaml.
-    run grep -cE 'test@example|dev@example' .joy/project.yaml
+    run members_grep -cE 'test@example|dev@example'
     [ "$output" = "0" ]
 }
 
@@ -178,13 +178,13 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     setup_human_auth
     _go_anonymous
 
-    run joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
+    run joy project member add copilot --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" != *"not a registered project member"* ]]
 
     # The AI member is registered ...
     run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project member
-    [[ "$output" == *"ai:copilot@joy"* ]]
+    [[ "$output" == *"copilot"* ]]
 
     # ... and the founder's e-mail never appears anywhere under .joy/ -- in
     # particular not as the attester inside project.yaml's attestation block.
@@ -208,14 +208,14 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     # After erasure it resolves nowhere anymore.
     run joy project
     [[ "$output" != *"dev@example.com"* ]]
-    # But both opaque member entries remain in project.yaml (audit trail intact).
-    run grep -cE '^  m-[a-z2-7]{10}:' .joy/project.yaml
+    # But both members keep their files (audit trail intact).
+    run bash -c "ls .joy/members | grep -cE '^m-[a-z2-7]{10}\.yaml$'"
     [ "$output" -ge 2 ]
 }
 
 @test "anonymous: switching to anonymous requires the manage capability" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project set privacy anonymous
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]

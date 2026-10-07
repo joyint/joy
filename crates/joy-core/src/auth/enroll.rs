@@ -165,6 +165,11 @@ pub fn founder_needing_reverse_attestation(project: &Project) -> Option<String> 
 /// no manage capability, only a key that verifies the signature, so any
 /// redeemer can close it (JOY-00FD-93).
 pub fn reverse_attest_founder(project: &mut Project, redeemer: &str, keypair: &IdentityKeypair) {
+    // With member files the founder is the one person without an origin
+    // and stays that; nobody signs for them after the fact.
+    if project.member_layout() == crate::model::project::MemberLayout::Files {
+        return;
+    }
     let Some(founder) = founder_needing_reverse_attestation(project) else {
         return;
     };

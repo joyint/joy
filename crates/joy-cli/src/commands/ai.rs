@@ -707,7 +707,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
         // Canonical tool members (ai:<tool>@joy).
         let member_ids: Vec<String> = tools
             .iter()
-            .map(|(_, id, _)| format!("ai:{id}@joy"))
+            .map(|(_, id, _)| joy_ai::naming::member_id(p, id))
             .collect();
         for member_id in &member_ids {
             if let Some(plan) = plan_member_reset(p, &root, member_id, caller_key.as_deref()) {
@@ -945,7 +945,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
         }
         let already = is_tool_configured(root, id);
-        let member_id = format!("ai:{id}@joy");
+        let member_id = joy_ai::naming::member_id(&project, id);
         let should_register;
 
         if already {
@@ -1009,16 +1009,15 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
             let (attester_id, attester_kp) = acting.as_ref().unwrap();
 
-            let signed_fields =
-                joy_core::auth::attestation::signed_fields_for(&member_id, &capabilities, None);
-            let attestation = joy_core::auth::attestation::sign_attestation(
+            let mut new_member = joy_core::model::project::Member::new(capabilities);
+            joy_core::auth::vouch::sign(
+                &project,
                 attester_id,
                 attester_kp,
-                signed_fields,
+                &member_id,
+                &mut new_member,
+                joy_core::auth::vouch::Occasion::New,
             );
-
-            let mut new_member = joy_core::model::project::Member::new(capabilities);
-            new_member.attestation = Some(attestation);
             // Record the ACP adapter on the member (JI-0164): the adapter lives
             // in project.yaml now, so the platform can route turns without a
             // per-member agent file.

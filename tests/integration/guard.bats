@@ -8,7 +8,7 @@ load setup
 setup_team_project() {
     setup_human_auth
     DEV_OTP=$(joy project member add dev@example.com --capabilities "implement,test,create" --passphrase "$TEST_PASSPHRASE" | extract_otp)
-    joy project member add ai:test@joy --capabilities "implement,review,create" --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities "implement,review,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Test item"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test item" | awk '{print $1}')
 }
@@ -35,7 +35,7 @@ setup_team_project() {
 
 @test "AI member can close items without gate config" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
     joy status "$ITEM_ID" review
     run joy status "$ITEM_ID" closed
@@ -44,7 +44,7 @@ setup_team_project() {
 
 @test "AI member can submit for review" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
     run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]
@@ -52,7 +52,7 @@ setup_team_project() {
 
 @test "AI member can start work" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy status "$ITEM_ID" in-progress
     [ "$status" -eq 0 ]
 }
@@ -71,7 +71,7 @@ setup_team_project() {
 
 @test "AI member cannot add project members" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project member add someone@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]
@@ -79,7 +79,7 @@ setup_team_project() {
 
 @test "AI member cannot set project properties" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project set description "AI edited"
     [ "$status" -ne 0 ]
     [[ "$output" == *"manage"* ]]
@@ -97,7 +97,7 @@ status_rules:
   review -> closed:
     allow_ai: false
 EOF
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
     joy status "$ITEM_ID" review
     run joy status "$ITEM_ID" closed
@@ -127,7 +127,7 @@ status_rules:
     allow_ai: false
 EOF
     # new->open is gated, but in-progress->review is not
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
     run joy status "$ITEM_ID" review
     [ "$status" -eq 0 ]
@@ -214,7 +214,7 @@ EOF
 @test "denied action produces guard.denied event in log" {
     setup_team_project
     # AI trying to manage (always denied) should produce guard.denied event
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project set description "AI edit"
     [ "$status" -ne 0 ]
     grep -q "guard.denied" .joy/logs/*.log
@@ -304,14 +304,14 @@ EOF
 
 @test "joy start shortcut is guarded for AI session" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy start "$ITEM_ID"
     [ "$status" -eq 0 ]
 }
 
 @test "joy submit shortcut is guarded for AI session" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy start "$ITEM_ID"
     run joy submit "$ITEM_ID"
     [ "$status" -eq 0 ]
@@ -319,7 +319,7 @@ EOF
 
 @test "joy close shortcut works for AI without gate config" {
     setup_team_project
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy start "$ITEM_ID"
     joy submit "$ITEM_ID"
     run joy close "$ITEM_ID"
@@ -332,7 +332,7 @@ EOF
 
 @test "unauthenticated write blocked when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Auth test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Auth test" | awk '{print $1}')
     # Remove human session to become unauthenticated. The auth gate
@@ -346,7 +346,7 @@ EOF
 
 @test "unauthenticated read allowed when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Read test"
     # Remove human session
     joy deauth
@@ -358,7 +358,7 @@ EOF
 
 @test "authenticated human can write when AI members exist" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Human write test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Human write" | awk '{print $1}')
     run joy comment "$ITEM_ID" "Human comment"
@@ -375,10 +375,10 @@ EOF
 # then this case says what happens today (JOY-02C3-46).
 @test "an AI without implement starts an item all the same and is only warned" {
     setup_human_auth
-    joy project member add ai:test@joy --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Not the AI's to implement"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Not the AI's to implement" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
 
     run joy start "$ITEM_ID"
     [ "$status" -eq 0 ]

@@ -44,7 +44,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
     // Validate format. In anonymous mode the acting member resolves to an opaque
     // id (e.g. self-assign), so accept that shape too alongside e-mail / ai: ids.
     if !member.contains('@')
-        && !member.starts_with("ai:")
+        && !joy_core::model::project::is_ai_member(&member)
         && !joy_core::member_id::is_opaque_member_id(&member)
     {
         bail!("invalid member format: expected email or ai:tool@joy");

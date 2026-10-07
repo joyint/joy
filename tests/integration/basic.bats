@@ -7,7 +7,7 @@ load setup
     run joy init --name "Test Project"
     [ "$status" -eq 0 ]
     [ -f ".joy/project.yaml" ]
-    grep -q "name: Test Project" .joy/project.yaml
+    members_grep -q "name: Test Project"
 }
 
 # bats test_tags=smoke
@@ -32,9 +32,9 @@ load setup
 
 @test "joy add sets created_by field" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy add task "Created by AI"
-    grep -q "created_by: ai:test@joy" .joy/items/*.yaml
+    grep -q "created_by: testai" .joy/items/*.yaml
 }
 
 @test "joy comment adds a comment" {

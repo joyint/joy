@@ -32,7 +32,7 @@ load setup
     # founder_terminal.rs; what this case adds is that the whole chain
     # (a live session, a fresh checkout, no git identity) refuses by name.
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
 
     mkdir -p "$TEST_DIR/delegated"
     cd "$TEST_DIR/delegated"
@@ -57,7 +57,7 @@ load setup
     git config user.name "Test User"
     run joy init --name "Late Identity"
     [ "$status" -eq 0 ]
-    grep -q "test@example.com" .joy/project.yaml
+    members_grep -q "test@example.com"
 }
 
 @test "joy init --user registers the founder without any git identity" {
@@ -66,7 +66,7 @@ load setup
 
     run joy init --name "By Flag" --user "founder@example.com"
     [ "$status" -eq 0 ]
-    grep -q "founder@example.com" .joy/project.yaml
+    members_grep -q "founder@example.com"
 }
 
 @test "joy init self-heals a member-less project on re-init" {
@@ -77,19 +77,21 @@ load setup
     # (everything from `members:` up to the next top-level key `created:`).
     awk '/^members:/{skip=1} /^created:/{skip=0} !skip' .joy/project.yaml > .joy/project.yaml.tmp
     mv .joy/project.yaml.tmp .joy/project.yaml
-    ! grep -q "test@example.com" .joy/project.yaml
+    rm -rf .joy/members
+    ! members_grep -q "test@example.com"
 
     # Re-running init registers the founder from the available git identity.
     run joy init
     [ "$status" -eq 0 ]
     [[ "$output" == *"founding member"* ]]
-    grep -q "test@example.com" .joy/project.yaml
+    members_grep -q "test@example.com"
 }
 
 @test "joy init warns when re-init cannot heal a member-less project" {
     joy init --name "Healme" >/dev/null
     awk '/^members:/{skip=1} /^created:/{skip=0} !skip' .joy/project.yaml > .joy/project.yaml.tmp
     mv .joy/project.yaml.tmp .joy/project.yaml
+    rm -rf .joy/members
 
     # No identity available and none on disk: re-init sets up the local
     # environment but cannot register a founder, so it warns instead of healing.
@@ -98,7 +100,7 @@ load setup
     run joy init
     [ "$status" -eq 0 ]
     [[ "$output" == *"no founding member"* ]]
-    ! grep -q "@example.com" .joy/project.yaml
+    ! members_grep -q "@example.com"
 }
 
 @test "joy init needs no git binary" {
@@ -107,7 +109,7 @@ load setup
     # can create a project: founder, staged store and per-clone config.
     run env PATH="$(dirname "$JOY_BIN")" joy init --name "No Git" --acronym NG
     [ "$status" -eq 0 ]
-    grep -q "@example.com" .joy/project.yaml
+    members_grep -q "@example.com"
     [ "$(git config --local core.hooksPath)" = ".joy/hooks" ]
     git config --local merge.joy-yaml.driver | grep -q "joy merge driver"
     git diff --cached --name-only | grep -qx ".joy/project.yaml"

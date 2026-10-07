@@ -203,6 +203,23 @@ macro_rules! isolate {
     };
 }
 
+/// Everything joy keeps about the project at `root` and its members, as
+/// one text: project.yaml and the member files under `.joy/members`
+/// (JI-019D-46). A case that asks "is this recorded for a member" reads
+/// this and does not have to know which file holds it.
+pub fn project_text(root: &std::path::Path) -> String {
+    let joy = root.join(".joy");
+    let mut text = std::fs::read_to_string(joy.join("project.yaml")).unwrap_or_default();
+    let mut files: Vec<_> = std::fs::read_dir(joy.join("members"))
+        .map(|dir| dir.flatten().map(|entry| entry.path()).collect())
+        .unwrap_or_default();
+    files.sort();
+    for file in files {
+        text.push_str(&std::fs::read_to_string(file).unwrap_or_default());
+    }
+    text
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -16,7 +16,7 @@ pub use joy_chat::turns::*;
 
 /// Same question as the pure rules ask, one line, no import dance.
 fn is_ai(id: &str) -> bool {
-    id.starts_with("ai:")
+    joy_core::model::project::is_ai_member(id)
 }
 
 /// A human's LEADING @mention of a PROJECT AI that is not a participant

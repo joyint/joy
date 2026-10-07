@@ -25,7 +25,7 @@ load setup
     # (identity::check_session) and would not match the non-TTY
     # context we just used to drive the init through its [Y/n]
     # prompts. The auth-bootstrap claim is fully tied to verify_key.
-    grep -q "^    verify_key:" .joy/project.yaml
+    members_grep -q "^verify_key:"
 }
 
 @test "joy ai init skips auth section when caller is already authenticated" {
@@ -64,9 +64,9 @@ load setup
     # section must be skipped.
     [[ "$output" != *"Setting up authentication"* ]]
     # The detected AI member was registered despite the anonymous keying.
-    [[ "$output" == *"ai:copilot@joy"* ]]
+    [[ "$output" == *"copilot"* ]]
     # The cleartext e-mail must never appear in the committed project.yaml.
-    ! grep -q "test@example.com" .joy/project.yaml
+    ! members_grep -q "test@example.com"
 }
 
 @test "joy ai init fails clearly when nobody on this machine has said who acts" {
@@ -86,5 +86,5 @@ load setup
     [[ "$output" == *"--user <address>"* ]]
     # And it refused BEFORE registering anything: no AI member was
     # written by a command that could not name its attester.
-    ! grep -q "ai:" .joy/project.yaml
+    ! members_grep -q "ai:"
 }

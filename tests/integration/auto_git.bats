@@ -120,7 +120,7 @@ load setup
     setup_human_auth
     git add -A && git commit -m "init [no-item]" --quiet
     joy config set workflow.auto-git commit
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy add task "AI commit"
     last_body=$(git log -1 --format=%b)
     [[ "$last_body" == *"Delegated-By: test@example.com"* ]]

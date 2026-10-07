@@ -787,7 +787,10 @@ fn show_project(project: &Project, root: &std::path::Path) {
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 
     // Hint about member modes if AI members exist
-    if project.member_keys().any(|id| id.starts_with("ai:")) {
+    if project
+        .member_keys()
+        .any(|id| joy_core::model::project::is_ai_member(id))
+    {
         println!(
             "{}",
             color::label("Use `joy project member show <ID>` to see interaction levels")
@@ -944,7 +947,9 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // project.yaml. Until that flow lands, refuse rather than leak; the
             // documented path is to add the member in open mode and switch back.
             // AI members carry no PII and keep their readable id, so they are fine.
-            if project.privacy_mode() == PrivacyMode::Anonymous && !a.id.starts_with("ai:") {
+            if project.privacy_mode() == PrivacyMode::Anonymous
+                && !joy_core::model::project::is_ai_member(&a.id)
+            {
                 bail!(
                     "cannot add a human member while privacy is anonymous: it would write \
                      the e-mail in cleartext.\nAdd them in open mode and switch back:\n  \
@@ -973,7 +978,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // identity key will sign the attestation placed on the new
             // member's entry (JOY-00FC-1D).
             let attester_key = joy_core::identity::acting_human_key(&ctx.root)?;
-            let is_ai = a.id.starts_with("ai:");
+            let is_ai = joy_core::model::project::is_ai_member(&a.id);
 
             // One unlock serves the attestation and, with `--with-token`,
             // the delegation token too (JOY-0185-66): the gate answers
@@ -994,25 +999,18 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 (Some(otp), Some(otp_hash))
             };
 
-            // Construct and sign the attestation over (email, capabilities,
-            // otp_hash). public_key is intentionally not covered.
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &a.id,
-                &capabilities,
-                otp_hash_opt.as_deref(),
-            );
-            // The attester is referenced by their on-disk member key, so
-            // anonymous mode (ADR-042) records the opaque id and never a
-            // cleartext address.
-            let attestation = joy_core::auth::attestation::sign_attestation(
-                &attester_key,
-                attester_kp,
-                signed_fields,
-            );
-
+            // The acting manager signs for the new entry (JOY-00FC-1D);
+            // what exactly is signed is joy-core's to say.
             let mut new_member = Member::new(capabilities);
             new_member.enrollment_verifier = otp_hash_opt;
-            new_member.attestation = Some(attestation);
+            joy_core::auth::vouch::sign(
+                project,
+                &attester_key,
+                attester_kp,
+                &a.id,
+                &mut new_member,
+                joy_core::auth::vouch::Occasion::New,
+            );
             project.register_member(&a.id, new_member)?;
 
             store::save_project(&ctx.root, project)?;
@@ -1215,16 +1213,14 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             //    acting manage member re-signs over the new fields.
             let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
             let acting_kp = derive_acting_keypair(&ctx.root, project, &acting_key)?;
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &key,
-                &member.capabilities,
-                member.enrollment_verifier.as_deref(),
-            );
-            member.attestation = Some(joy_core::auth::attestation::sign_attestation(
+            joy_core::auth::vouch::sign(
+                project,
                 &acting_key,
                 &acting_kp,
-                signed_fields,
-            ));
+                &key,
+                &mut member,
+                joy_core::auth::vouch::Occasion::Changed,
+            );
 
             // 5. Apply + persist + audit (mirrors add/rm).
             *project
@@ -1290,17 +1286,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // removed; they need to be re-attested by the acting manage
             // member so the attestation chain stays intact.
             let removed_id = a.id.clone();
-            let orphans: Vec<String> = project
-                .members()
-                .filter(|(email, m)| {
-                    **email != removed_id
-                        && m.attestation
-                            .as_ref()
-                            .map(|att| att.attester == removed_id.as_str())
-                            .unwrap_or(false)
-                })
-                .map(|(email, _)| email.clone())
-                .collect();
+            let orphans = joy_core::auth::vouch::signed_by(project, &removed_id);
 
             let acting_kp = if orphans.is_empty() {
                 None
@@ -1320,18 +1306,16 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                         .member_by_key(orphan_email)
                         .cloned()
                         .expect("orphan exists - just collected");
-                    let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                        orphan_email,
-                        &orphan.capabilities,
-                        orphan.enrollment_verifier.as_deref(),
-                    );
-                    let new_attestation = joy_core::auth::attestation::sign_attestation(
+                    let mut orphan = orphan;
+                    joy_core::auth::vouch::sign(
+                        project,
                         &acting_key,
                         &kp,
-                        signed_fields,
+                        orphan_email,
+                        &mut orphan,
+                        joy_core::auth::vouch::Occasion::SignerLeft,
                     );
-                    project.member_by_key_mut(orphan_email).unwrap().attestation =
-                        Some(new_attestation);
+                    *project.member_by_key_mut(orphan_email).unwrap() = orphan;
                 }
             }
 

@@ -140,7 +140,7 @@ setup_project_with_alice() {
     git config user.email "777+alice-login@users.noreply.github.com"
     joy init --name "Legacy Alias" --acronym LA
     joy auth init --passphrase "$FOUNDER_PASSPHRASE"
-    grep -q "777+alice-login@users.noreply.github.com" .joy/project.yaml
+    members_grep -q "777+alice-login@users.noreply.github.com"
 
     # Later the repo gets its GitHub remote and the person's clone uses
     # the PRIMARY address. Direction two: the plugin ATTRIBUTES the alias

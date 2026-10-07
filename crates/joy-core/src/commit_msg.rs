@@ -68,7 +68,10 @@ fn scope_for_crate(krate: &str) -> String {
 
 /// Delegation trailer for an authenticated AI commit, not for a human commit.
 fn trailer_lines(c: &Committer) -> Vec<String> {
-    if let (true, Some(op)) = (c.member.starts_with("ai:"), &c.delegated_by) {
+    if let (true, Some(op)) = (
+        crate::model::project::is_ai_member(&c.member),
+        &c.delegated_by,
+    ) {
         return vec![format!("Delegated-By: {op}")];
     }
     Vec::new()

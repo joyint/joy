@@ -304,6 +304,11 @@ pub struct Origin {
     /// then names where the attestation of that time can be read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
+    /// The hash of the invitation's one-time password the signature
+    /// covers. Kept here because the member's own copy is cleared once
+    /// the invitation is redeemed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invitation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit: Option<String>,
 }
@@ -616,9 +621,22 @@ impl Member {
     /// member and offers Delegate, which rewrites the entry properly.
     /// THE one predicate for every surface; hosts never re-derive it.
     pub fn delegation_usable(&self, ai: &str) -> bool {
-        self.ai_delegations
-            .get(ai)
+        self.delegation_to(ai)
             .is_some_and(|entry| entry.delegation_salt.is_some())
+    }
+
+    /// This member's delegation to the AI member `ai`, whichever way the
+    /// AI member's id is written (its name, or the older
+    /// `ai:<name>@joy`): a token issued before a project was brought
+    /// over names it the old way.
+    pub fn delegation_to(&self, ai: &str) -> Option<&AiDelegationEntry> {
+        self.ai_delegations.get(ai).or_else(|| {
+            let name = ai_member_name(ai);
+            self.ai_delegations
+                .iter()
+                .find(|(key, _)| ai_member_name(key) == name)
+                .map(|(_, entry)| entry)
+        })
     }
 
     /// Create a member with the given capabilities and no auth fields.
@@ -733,34 +751,7 @@ impl Member {
     }
 }
 
-/// Check whether a member ID represents an AI member.
-///
-/// A person is known by an address, or in an anonymous project by an
-/// opaque `m-` id. An AI member is known by its name, which is neither
-/// (JI-019D-46): `claude`, `reviewer`. `m-` is reserved, so no name
-/// starts with it. The form `ai:<name>@joy` that older projects carry
-/// counts as well.
-pub fn is_ai_member(id: &str) -> bool {
-    if id.starts_with("ai:") {
-        return true;
-    }
-    !id.is_empty() && !id.contains('@') && !id.starts_with("m-")
-}
-
-#[cfg(test)]
-mod ai_member_ids {
-    use super::is_ai_member;
-
-    #[test]
-    fn a_name_is_an_ai_member_an_address_and_an_m_id_are_people() {
-        for ai in ["claude", "reviewer", "ai:claude@joy", "ai:vibe@joy"] {
-            assert!(is_ai_member(ai), "{ai}");
-        }
-        for person in ["horst@joydev.com", "m-nl6ts2ldoc", "m-abc", ""] {
-            assert!(!is_ai_member(person), "{person:?}");
-        }
-    }
-}
+pub use joy_model::{ai_member_name, is_ai_member};
 
 /// One-line description for a `joy project get` key. Returned by
 /// `--describe` so the CLI is the single source of truth for what
@@ -899,21 +890,53 @@ impl Project {
         self.members.get_mut(&key)
     }
 
-    /// Look up a member by their at-rest map key (an `ai:` id, or an already
-    /// resolved key). Use [`Self::member_by_email`] when you only have an
-    /// e-mail.
+    /// The id an AI member called `name` has in this project: the name
+    /// itself with member files (JI-019D-46), `ai:<name>@joy` in a
+    /// project from before. Either spelling may be handed in.
+    pub fn ai_member_id(&self, name: &str) -> String {
+        let name = ai_member_name(name);
+        match self.layout {
+            MemberLayout::Files => name.to_string(),
+            MemberLayout::InProject => format!("ai:{name}@joy"),
+        }
+    }
+
+    /// The key a member is stored under, for a key as anybody may write
+    /// it. A person's key is taken as it is. An AI member is found under
+    /// its name and under `ai:<name>@joy` alike, whichever of the two
+    /// this project uses: a command typed the old way, a token issued
+    /// before the project was brought over and a chat written back then
+    /// all keep meaning the same member.
+    pub fn member_key(&self, key: &str) -> Option<String> {
+        if self.members.contains_key(key) {
+            return Some(key.to_string());
+        }
+        if !is_ai_member(key) {
+            return None;
+        }
+        let name = ai_member_name(key);
+        [name.to_string(), format!("ai:{name}@joy")]
+            .into_iter()
+            .find(|candidate| self.members.contains_key(candidate))
+    }
+
+    /// Look up a member by their at-rest map key (an AI member's name, or
+    /// an already resolved key). Use [`Self::member_by_email`] when you
+    /// only have an e-mail.
     pub fn member_by_key(&self, key: &str) -> Option<&Member> {
-        self.members.get(key)
+        let key = self.member_key(key)?;
+        self.members.get(&key)
     }
 
     /// Mutable lookup by at-rest map key.
     pub fn member_by_key_mut(&mut self, key: &str) -> Option<&mut Member> {
-        self.members.get_mut(key)
+        let key = self.member_key(key)?;
+        self.members.get_mut(&key)
     }
 
     /// Whether a member with this at-rest map key exists.
     pub fn has_member_key(&self, key: &str) -> bool {
-        self.members.contains_key(key)
+        self.member_key(key).is_some()
     }
 
     /// Iterate `(key, member)` pairs. Keys are raw at-rest ids; wrap them in a
@@ -963,13 +986,21 @@ impl Project {
         if self.layout == MemberLayout::Files && member.file_id.is_none() {
             member.file_id = Some(crate::member_id::new_member_file_id());
         }
-        self.members.insert(id.to_string(), member);
+        // An AI member is stored under the spelling this project uses,
+        // however the caller wrote it.
+        let key = if is_ai_member(id) {
+            self.ai_member_id(id)
+        } else {
+            id.to_string()
+        };
+        self.members.insert(key, member);
         Ok(())
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.
     pub fn remove_member(&mut self, key: &str) -> Option<Member> {
-        self.members.remove(key)
+        let key = self.member_key(key)?;
+        self.members.remove(&key)
     }
 
     /// Privileged: take the whole member map out, leaving it empty. Only the

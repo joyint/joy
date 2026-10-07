@@ -27,6 +27,7 @@ pub mod redeem;
 pub mod seed;
 pub mod session;
 pub mod token;
+pub mod vouch;
 
 // Re-export joy-crypt primitives under joy-domain names. Callers within
 // joy-core/auth and joy-cli use these names; the underlying

@@ -36,7 +36,7 @@ pub enum TurnDecision {
 }
 
 fn is_ai(id: &str) -> bool {
-    id.starts_with("ai:")
+    joy_model::is_ai_member(id)
 }
 
 pub use crate::mentions::{

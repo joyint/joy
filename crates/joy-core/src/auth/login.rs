@@ -176,7 +176,9 @@ fn finish_login(
         PrivacyMode::Open => email.to_string(),
         _ => attested_id.clone(),
     };
-    if let Some(att) = member.attestation.as_ref() {
+    if view.member_layout() == crate::model::project::MemberLayout::Files {
+        super::vouch::verify_origin(view, &attested_id, &member_key, member)?;
+    } else if let Some(att) = member.attestation.as_ref() {
         verify_member_attestation(view, &attested_id, member, att)?;
     } else if attestation::founder_must_be_attested(view) {
         return Err(JoyError::AuthFailed(format!(
@@ -299,6 +301,11 @@ pub fn maybe_auto_seal(
     acting_email: &str,
     acting_keypair: &IdentityKeypair,
 ) -> Result<Option<Project>, JoyError> {
+    // Member files carry origins, made when a person is invited; there
+    // is nothing to seal after the fact.
+    if project.member_layout() == crate::model::project::MemberLayout::Files {
+        return Ok(None);
+    }
     let has_any_attestation = project.member_values().any(|m| m.attestation.is_some());
     if has_any_attestation || project.member_count() < 2 {
         return Ok(None);

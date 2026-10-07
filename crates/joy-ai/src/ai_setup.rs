@@ -953,7 +953,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
 /// marker still counts on its own, so a tool set up before it was
 /// registered as a member keeps working.
 pub fn is_tool_active(root: &Path, tool: &str) -> bool {
-    let member = format!("ai:{tool}@joy");
+    let member = crate::naming::member_id_at(root, tool);
     joy_core::store::load_project(root)
         .map(|p| p.has_member_key(&member))
         .unwrap_or(false)
@@ -1039,12 +1039,15 @@ pub fn register_tool_member(
         joy_core::model::project::MemberCapabilities::Specific(map)
     };
     let (attester_id, attester_kp) = attester;
-    let signed_fields =
-        joy_core::auth::attestation::signed_fields_for(member_id, &capabilities, None);
-    let attestation =
-        joy_core::auth::attestation::sign_attestation(attester_id, attester_kp, signed_fields);
     let mut new_member = joy_core::model::project::Member::new(capabilities);
-    new_member.attestation = Some(attestation);
+    joy_core::auth::vouch::sign(
+        project,
+        attester_id,
+        attester_kp,
+        member_id,
+        &mut new_member,
+        joy_core::auth::vouch::Occasion::New,
+    );
     project
         .register_member(member_id, new_member)
         .map_err(|e| JoyError::Other(e.to_string()))?;
@@ -1057,7 +1060,7 @@ pub fn configure_tool(root: &Path, tool: &str, report: Report) -> Result<bool, J
         .iter()
         .find(|(_, id, _, _)| *id == tool)
         .ok_or_else(|| JoyError::Other(format!("unknown tool: {tool}")))?;
-    let member_id = format!("ai:{tool}@joy");
+    let member_id = crate::naming::member_id_at(root, tool);
     (spec.3)(root, &member_id, report)
 }
 
@@ -1073,7 +1076,7 @@ pub fn init_tool(
     configure_tool(root, tool, report)?;
 
     let mut project = joy_core::store::load_project(root)?;
-    let member_id = format!("ai:{tool}@joy");
+    let member_id = crate::naming::member_id(&project, tool);
     if !project.has_member_key(&member_id) {
         // The attester is the human this device acts for (JOY-02AE-1A):
         // the operator behind a delegation session,
@@ -1194,7 +1197,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
     let mut member_plans = Vec::new();
     if let Some(ref p) = project {
         for (_, id, _) in &tools {
-            let member_id = format!("ai:{id}@joy");
+            let member_id = crate::naming::member_id(p, id);
             if let Some(plan) = plan_member_reset(p, root, &member_id, caller_key.as_deref()) {
                 if plan.drop_caller_delegation || plan.remove_member {
                     member_plans.push(plan);

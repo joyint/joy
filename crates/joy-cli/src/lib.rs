@@ -15,6 +15,7 @@ mod crypt_session;
 mod editor;
 mod effort;
 mod forge;
+mod member_names;
 mod member_resolver;
 mod output;
 mod prompt;
@@ -477,7 +478,7 @@ pub fn cli_main() -> anyhow::Result<()> {
 
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let raw: Vec<String> = std::env::args().collect();
+    let raw: Vec<String> = member_names::modernise(std::env::args().collect());
     // Use try_parse_from so we can append the Windows PowerShell alias tip to
     // the very end of `joy help` / `joy -h` output (JOY-01C3-90). clap prints
     // help/version and would otherwise exit before we get a chance.

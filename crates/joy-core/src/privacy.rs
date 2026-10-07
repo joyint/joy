@@ -33,7 +33,7 @@ use joy_crypt::zone::{unwrap_for_member, wrap_for_member, ZoneKey};
 /// Only human members carry PII and get anonymized; AI members keep their
 /// readable synthetic id.
 fn is_human_key(key: &str) -> bool {
-    !key.starts_with("ai:")
+    !crate::model::project::is_ai_member(key)
 }
 
 /// Resolve the member-map key for a git e-mail, honoring the privacy mode. In
@@ -62,7 +62,7 @@ pub fn member_key_owned_by(
     project
         .members()
         .map(|(key, _)| key)
-        .filter(|key| !key.starts_with("ai:"))
+        .filter(|key| !crate::model::project::is_ai_member(key))
         .find(|key| {
             crate::forge_plugins::resolve(spec, key, ctx).is_some_and(|owner| {
                 match (&owner.user_id, &acting.user_id) {
@@ -310,6 +310,28 @@ fn rewrite_file(path: &Path, replacements: &[(String, String)]) -> Result<(), Jo
     Ok(())
 }
 
+/// [`rewrite_file`] for a project.yaml that lists member files: the rest
+/// of the file may name people (a crypt zone records who delegated to
+/// which AI member), the list under `members` names files, and a file
+/// keeps its name whichever way the project is switched.
+fn rewrite_project_keeping_the_member_list(
+    path: &Path,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
+    use serde_yaml_ng::Value;
+    let read = || -> Result<Value, JoyError> {
+        let content = std::fs::read_to_string(path).map_err(|e| io_err("read", e))?;
+        Ok(serde_yaml_ng::from_str(&content)?)
+    };
+    let list = read()?.get("members").cloned();
+    rewrite_file(path, replacements)?;
+    let mut value = read()?;
+    if let (Some(map), Some(list)) = (value.as_mapping_mut(), list) {
+        map.insert("members".into(), list);
+    }
+    std::fs::write(path, serde_yaml_ng::to_string(&value)?).map_err(|e| io_err("write", e))
+}
+
 /// Replace each `from -> to` across every `*.<ext>` file in `dir`.
 fn rewrite_dir(dir: &Path, ext: &str, replacements: &[(String, String)]) -> Result<(), JoyError> {
     if !dir.exists() {
@@ -328,12 +350,44 @@ fn rewrite_dir(dir: &Path, ext: &str, replacements: &[(String, String)]) -> Resu
 /// Used to scrub residual e-mails (attestation `attester` / `signed_fields`,
 /// item `created_by` / `assignees` / comment authors, log actors) on switch in,
 /// and to restore them on switch out.
-fn rewrite_working_tree(root: &Path, replacements: &[(String, String)]) -> Result<(), JoyError> {
+fn rewrite_working_tree(
+    root: &Path,
+    project: &Project,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
     let joy = store::joy_dir(root);
-    rewrite_file(&joy.join(store::PROJECT_FILE), replacements)?;
+    let project_file = joy.join(store::PROJECT_FILE);
+    if project.member_layout() == crate::model::project::MemberLayout::InProject {
+        rewrite_file(&project_file, replacements)?;
+    } else {
+        rewrite_project_keeping_the_member_list(&project_file, replacements)?;
+    }
     rewrite_dir(&joy.join(store::ITEMS_DIR), "yaml", replacements)?;
     rewrite_dir(&joy.join(store::LOG_DIR), "log", replacements)?;
     Ok(())
+}
+
+/// Who signed for a member is named by member id, and the ids of people
+/// have just changed: name them by the new one (`renamed` is old to new).
+fn rename_signers(members: &mut BTreeMap<String, Member>, renamed: &[(String, String)]) {
+    let new_id = |old: &str| {
+        renamed
+            .iter()
+            .find(|(from, _)| from == old)
+            .map(|(_, to)| to.as_str().into())
+    };
+    for member in members.values_mut() {
+        if let Some(origin) = &mut member.origin {
+            if let Some(id) = new_id(origin.attester.id()) {
+                origin.attester = id;
+            }
+        }
+        if let Some(granted) = &mut member.granted {
+            if let Some(id) = new_id(granted.by.id()) {
+                granted.by = id;
+            }
+        }
+    }
 }
 
 /// Switch a project from `open` to `anonymous`.
@@ -356,6 +410,7 @@ pub fn switch_to_anonymous(
     let mut renamed: Vec<(String, String)> = Vec::new();
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
     let mut mf = MembersFile::default();
+    let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
 
     for (key, mut member) in project.take_members() {
         if !is_human_key(&key) {
@@ -374,8 +429,14 @@ pub fn switch_to_anonymous(
             .clone()
             .ok_or_else(|| JoyError::Other(format!("member {email} has no kdf_nonce")))?;
 
-        let id = opaque_member_id(&verify_key)
-            .map_err(|e| JoyError::Other(format!("bad verify_key for {email}: {e}")))?;
+        // With member files the id a person is known by from here on is
+        // the one their file already has: random, derived from nothing
+        // (JI-019D-46). A project from before derives it from the key.
+        let id = match (&member.file_id, in_files) {
+            (Some(file_id), true) => file_id.clone(),
+            _ => opaque_member_id(&verify_key)
+                .map_err(|e| JoyError::Other(format!("bad verify_key for {email}: {e}")))?,
+        };
         let verifier = email_match(&email, &kdf_nonce)
             .map_err(|e| JoyError::Other(format!("bad kdf_nonce for {email}: {e}")))?;
 
@@ -402,6 +463,7 @@ pub fn switch_to_anonymous(
         new_members.insert(id, member);
     }
 
+    rename_signers(&mut new_members, &renamed);
     project.replace_members(new_members);
     project.set_privacy_mode(Some(PrivacyMode::Anonymous));
 
@@ -409,7 +471,7 @@ pub fn switch_to_anonymous(
     // fields in project.yaml, item bodies, logs) by textual substitution.
     store::save_project(root, project)?;
     members_file::write(root, &zone_key, &mf)?;
-    rewrite_working_tree(root, &renamed)?;
+    rewrite_working_tree(root, project, &renamed)?;
 
     Ok(renamed)
 }
@@ -460,6 +522,7 @@ pub fn switch_to_open(
         }
     }
 
+    rename_signers(&mut new_members, &renamed);
     project.replace_members(new_members);
     project.set_privacy_mode(None);
 
@@ -469,7 +532,7 @@ pub fn switch_to_open(
     if mp.exists() {
         std::fs::remove_file(&mp).map_err(|e| io_err("remove members.yaml", e))?;
     }
-    rewrite_working_tree(root, &renamed)?;
+    rewrite_working_tree(root, project, &renamed)?;
 
     Ok(renamed)
 }

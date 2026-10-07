@@ -320,6 +320,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     embedded::sync_files(root, PROJECT_FILES)?;
 
     let mut project = Project::new(name, Some(acronym));
+    project.set_member_layout(crate::model::project::MemberLayout::Files);
     if let Some(lang) = options.language.filter(|s| !s.is_empty()) {
         project.language = lang;
     }
@@ -332,11 +333,10 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
         crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
     )?;
 
-    store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
+    store::save_project(root, &project)?;
 
-    let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     let defaults_rel = format!("{}/{}", store::JOY_DIR, store::CONFIG_DEFAULTS_FILE);
-    crate::git_ops::auto_git_add(root, &[&project_rel, &defaults_rel]);
+    crate::git_ops::auto_git_add(root, &[&defaults_rel]);
 
     // Ensure .joy/credentials.yaml is in .gitignore
     ensure_gitignore(root)?;
@@ -481,7 +481,6 @@ pub fn ensure_founder(
     host: HostKind,
     ask: Option<&mut (dyn AskFounderAddress + 'static)>,
 ) -> Result<FounderHeal, JoyError> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::load_project(root)?;
     if project.has_members() {
         return Ok(FounderHeal::AlreadyPresent);
@@ -500,9 +499,7 @@ pub fn ensure_founder(
         &email,
         crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
     )?;
-    store::write_yaml(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &project)?;
     Ok(FounderHeal::Registered(email))
 }
 
@@ -1200,8 +1197,7 @@ mod tests {
         })
         .unwrap();
 
-        let project: Project =
-            store::read_yaml(&store::joy_dir(dir.path()).join(store::PROJECT_FILE)).unwrap();
+        let project: Project = store::load_project(dir.path()).unwrap();
         assert_eq!(project.name, "My App");
         assert_eq!(project.acronym.as_deref(), Some("MA"));
     }
@@ -1217,8 +1213,7 @@ mod tests {
         })
         .unwrap();
 
-        let project: Project =
-            store::read_yaml(&store::joy_dir(dir.path()).join(store::PROJECT_FILE)).unwrap();
+        let project: Project = store::load_project(dir.path()).unwrap();
         // tempdir names vary, just check it's not empty
         assert!(!project.name.is_empty());
         assert!(project.acronym.is_some());
