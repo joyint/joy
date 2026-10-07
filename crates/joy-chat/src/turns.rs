@@ -208,7 +208,9 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
          command (`joy ls --tree`, `joy show <id> --json`): a bare joy command is\n\
          always allowed, while a piped, redirected or chained line (`| head`,\n\
          `2>&1`, `&&`) counts as an arbitrary shell command and is refused below\n\
-         the autonomous level.\n\n\
+         the autonomous level. A request to create, split, assign or change\n\
+         items is a request to DO it with the joy CLI (`joy add`, `joy edit`)\n\
+         and then report what you did, never to describe what could be done.\n\n\
          --- conversation ---\n",
     );
     for message in &chat.messages {
