@@ -1068,6 +1068,7 @@ pub(crate) fn create_delegation_token(
         member: member_key.clone().into(),
         delegated_by: None,
         authenticated: true,
+        grant: None,
     };
     joy_core::guard::Guard::load(root)?
         .check(&joy_core::guard::Action::ManageProject, &identity)
@@ -1081,7 +1082,8 @@ pub(crate) fn create_delegation_token(
     //     project.yaml write. Verifier double-checked.
     //   - entry has no delegation_salt (legacy random keypair) -> bail
     //     with a rotate-first message; the original seed is unrecoverable.
-    let existing_entry = member.ai_delegations.get(ai_member);
+    let token_grant = joy_core::auth::grants::token_grant(member, ai_member);
+    let existing_entry = member.delegation_to(ai_member);
     let existing_public = existing_entry.map(|e| e.delegation_verifier.clone());
     let existing_salt = existing_entry.and_then(|e| e.delegation_salt.clone());
 
@@ -1166,6 +1168,9 @@ pub(crate) fn create_delegation_token(
             human: &member_key,
             project_id: &project_id,
             ttl,
+            // What this person allows the AI member right now, so the
+            // grant cannot be dropped behind the token's back.
+            grant: Some(&token_grant),
         },
     );
 

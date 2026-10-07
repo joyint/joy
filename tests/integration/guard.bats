@@ -366,14 +366,13 @@ EOF
 }
 
 # ============================================================
-# The validation case APP-KI-05, pinned before JI-019D-46 changes it
+# The validation case APP-KI-05
 # ============================================================
 
-# An AI whose capabilities do not include the work it is asked to do
-# carried on regardless: joy warns and writes. This is what Roland saw
-# with Vibe. JOY-02C6-25 turns the two status lines into refusals; until
-# then this case says what happens today (JOY-02C3-46).
-@test "an AI without implement starts an item all the same and is only warned" {
+# An AI whose capabilities do not include the work it is asked to do used
+# to carry on regardless: joy warned and wrote. This is what Roland saw
+# with Vibe. Since JI-019D-46 it is refused, and the item stays as it was.
+@test "an AI without implement is refused when it starts an item" {
     setup_human_auth
     joy project member add testai --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
     joy add task "Not the AI's to implement"
@@ -381,7 +380,28 @@ EOF
     setup_ai_session testai
 
     run joy start "$ITEM_ID"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"testai does not have 'implement' capability"* ]]
+    ! grep -q "^status: in-progress" .joy/items/"$ITEM_ID"-*.yaml
+    grep -q "guard.denied" .joy/logs/*.log
+}
+
+# What an AI member may do is what a person signed. Capabilities written
+# into its file by hand count for nothing, and take what it had with them.
+@test "an AI member's capabilities changed by hand leave it with none" {
+    setup_human_auth
+    joy project member add testai --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
+    joy add task "Wanted by the AI"
+    ITEM_ID=$(joy ls 2>/dev/null | grep "Wanted by the AI" | awk '{print $1}')
+    setup_ai_session testai
+    run joy comment "$ITEM_ID" "this I may write"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"does not have 'implement' capability"* ]]
-    grep -q "^status: in-progress" .joy/items/"$ITEM_ID"-*.yaml
+
+    # the AI gives itself implement
+    sed_inplace 's/^- review$/- review\n- implement/' "$(member_file testai)"
+    run joy start "$ITEM_ID"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"changed without a signature"* ]]
+    run joy comment "$ITEM_ID" "and now not even this"
+    [ "$status" -ne 0 ]
 }

@@ -220,22 +220,25 @@ EOF
     JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot item"
     CLAUDE_ID=$(joy ls 2>/dev/null | grep "Claude item" | awk '{print $1}')
     COPILOT_ID=$(joy ls 2>/dev/null | grep "Copilot item" | awk '{print $1}')
-    # Claude can start work (implement), Copilot cannot (warn)
+    # Claude starts work (implement); copilot is refused (JI-019D-46: an
+    # AI without the capability does not act, and the log says so).
     run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" in-progress
     [ "$status" -eq 0 ]
     run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" in-progress
-    # Copilot lacks implement -> warn (still succeeds, but warning logged)
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"copilot does not have 'implement' capability"* ]]
+    grep -q "guard.denied.*copilot.*implement" .joy/logs/*.log
+    # Claude hands its item to review and may not close it (lacks
+    # review); copilot may close one that is in review.
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" review
+    [ "$status" -ne 0 ]
+    switch_to_human
+    joy status "$CLAUDE_ID" review
+    run env JOY_SESSION="$SESSION_COPILOT" joy status "$CLAUDE_ID" closed
     [ "$status" -eq 0 ]
-    grep -q "guard.warned.*copilot.*implement" .joy/logs/*.log
-    # Claude cannot close (lacks review), Copilot can close (has review)
-    JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" review
-    JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" review
-    run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" closed
-    [ "$status" -eq 0 ]
-    # Claude closing warns (lacks review)
-    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" closed
-    [ "$status" -eq 0 ]
-    grep -q "guard.warned.*claude.*review" .joy/logs/*.log
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$COPILOT_ID" closed
+    [ "$status" -ne 0 ]
+    grep -q "guard.denied.*claude.*review" .joy/logs/*.log
 }
 
 # ============================================================

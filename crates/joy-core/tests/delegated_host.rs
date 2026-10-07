@@ -37,6 +37,7 @@ fn live_session(member: &str, ttl: Duration) -> String {
         &ephemeral.public_key().to_hex(),
         None,
         Some("human@example.com".to_string()),
+        None,
     );
     session::save_session("DLG", &token).unwrap();
     let sid = session::session_storage_id("DLG", &token.claims);

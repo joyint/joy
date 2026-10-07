@@ -147,6 +147,7 @@ pub fn redeem_ai_session(
         &delegation_entry.delegation_verifier,
         claims.expires,
         delegated_by_at_rest,
+        token::grant_scope(&claims).map(str::to_string),
     );
 
     let sid = session::session_storage_id(project_id, &token_obj.claims);
@@ -211,6 +212,7 @@ mod tests {
                 human: HUMAN,
                 project_id: PID,
                 ttl: None,
+                grant: None,
             },
         );
         encode_token(&token)
@@ -238,6 +240,7 @@ mod tests {
                 human: HUMAN, // the at-rest key of the human member
                 project_id: PID,
                 ttl: None,
+                grant: None,
             },
         ));
         let redeemed = redeem_ai_session(&project, PID, &token).expect("redeems by key");
@@ -255,6 +258,7 @@ mod tests {
                 human: "nobody@example.com",
                 project_id: PID,
                 ttl: None,
+                grant: None,
             },
         ));
         assert!(redeem_ai_session(&project, PID, &bogus).is_err());

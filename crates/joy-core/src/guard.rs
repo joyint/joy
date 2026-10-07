@@ -143,6 +143,7 @@ pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyErro
         member: "unknown".into(),
         delegated_by: None,
         authenticated: false,
+        grant: None,
     });
     Guard::load(root)?
         .check(action, &identity)
@@ -160,6 +161,9 @@ pub struct GateConfig {
 pub struct Guard {
     members: BTreeMap<String, Member>,
     gates: BTreeMap<String, GateConfig>,
+    /// The project as it was loaded: what an AI member may do is worked
+    /// out from two signed entries in it ([`crate::auth::grants`]).
+    project: Project,
 }
 
 impl Guard {
@@ -171,6 +175,7 @@ impl Guard {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             gates: BTreeMap::new(),
+            project: project.clone(),
         }
     }
 
@@ -182,6 +187,7 @@ impl Guard {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             gates,
+            project: project.clone(),
         }
     }
 
@@ -317,6 +323,32 @@ impl Guard {
                 "{} must authenticate to perform {what}. Run `joy auth`.",
                 identity.member
             ));
+        }
+
+        // An AI member of a project with member files may do what two
+        // people signed for it, and nothing else (JI-019D-46): the
+        // project maximum and what its delegator allows. No signature,
+        // no capability; no capability, no action, whichever kind.
+        if is_ai_member(&identity.member) && crate::auth::grants::applies(&self.project) {
+            let required = action.required_capability();
+            let delegator = identity
+                .delegated_by
+                .as_ref()
+                .map(|d| d.id())
+                .unwrap_or_default();
+            return match crate::auth::grants::effective(
+                &self.project,
+                identity.member.id(),
+                delegator,
+                identity.grant.as_deref(),
+            ) {
+                Err(reason) => Verdict::Deny(reason),
+                Ok(may) if may.allows(&required) => Verdict::Allow,
+                Ok(_) => Verdict::Deny(format!(
+                    "{} does not have '{}' capability",
+                    identity.member, required
+                )),
+            };
         }
 
         // Fast path: capabilities: all allows everything
@@ -472,6 +504,7 @@ mod tests {
             member: member.into(),
             delegated_by: None,
             authenticated: true,
+            grant: None,
         }
     }
 
@@ -480,6 +513,7 @@ mod tests {
             member: member.into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         }
     }
 
@@ -488,6 +522,7 @@ mod tests {
             member: member.into(),
             delegated_by: Some(delegated_by.into()),
             authenticated: true,
+            grant: None,
         }
     }
 
@@ -588,12 +623,11 @@ mod tests {
         }
     }
 
-    /// What an AI member without the capability gets today, pinned
-    /// before JI-019D-46 changes it (JOY-02C3-46): a missing MANAGEMENT
-    /// capability refuses, a missing WORK capability only warns and the
-    /// action runs. The validation saw exactly this (an AI restricted in
-    /// its capabilities carried on). The second half of this case is the
-    /// one JOY-02C6-25 turns into a refusal.
+    /// In a project from before the member files an AI member without
+    /// the capability is refused for a MANAGEMENT action and only warned
+    /// for WORK, and the action runs: the validation saw exactly this.
+    /// It stays that way until a person brings the project over; with
+    /// member files the next case holds (JI-019D-46).
     #[test]
     fn an_ai_without_the_capability_is_refused_for_management_and_only_warned_for_work() {
         let project = project_with_members(vec![
@@ -616,6 +650,52 @@ mod tests {
             Verdict::Warn(reason) => assert!(reason.contains("'implement'"), "{reason}"),
             other => panic!("start without implement: {other:?}"),
         }
+    }
+
+    /// With member files an AI member does what two people signed for
+    /// it and nothing else: no capability, no action, work or not.
+    #[test]
+    fn with_member_files_an_ai_without_the_capability_is_refused_whatever_the_action() {
+        use crate::auth::vouch::{self, Occasion};
+        use crate::auth::IdentityKeypair;
+        use crate::model::project::MemberLayout;
+
+        let mut project = Project::new("Test".into(), Some("TST".into()));
+        project.set_member_layout(MemberLayout::Files);
+        let kp = IdentityKeypair::from_seed(&[7; 32]);
+        let mut dev = Member::new(MemberCapabilities::All);
+        dev.verify_key = Some(kp.public_key().to_hex());
+        project.register_member("dev@example.com", dev).unwrap();
+        let mut claude = Member::new(specific_caps(&[Capability::Review]));
+        vouch::sign(
+            &project,
+            "dev@example.com",
+            &kp,
+            "claude",
+            &mut claude,
+            Occasion::New,
+        );
+        project.register_member("claude", claude).unwrap();
+
+        let guard = Guard::new(&project);
+        let ai = ai_identity("claude", "dev@example.com");
+        let start = Action::ChangeStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+        };
+        match guard.check(&start, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'implement'"), "{reason}"),
+            other => panic!("start without implement: {other:?}"),
+        }
+        match guard.check(&Action::CreateItem, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'create'"), "{reason}"),
+            other => panic!("create without the capability: {other:?}"),
+        }
+        let close = Action::ChangeStatus {
+            from: Status::Review,
+            to: Status::Closed,
+        };
+        assert_eq!(guard.check(&close, &ai), Verdict::Allow);
     }
 
     #[test]

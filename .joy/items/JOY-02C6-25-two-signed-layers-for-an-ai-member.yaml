@@ -1,8 +1,10 @@
 id: JOY-02C6-25
 title: 'Two signed layers for an AI member: project maximum and personal grant, verified by Guard on every action'
 type: story
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,7 @@ capabilities:
 effort: 7
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:45.024451369Z
-updated: 2026-10-07T20:18:45.024451369Z
+updated: 2026-10-07T22:08:13.680297475Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 1 and 2.

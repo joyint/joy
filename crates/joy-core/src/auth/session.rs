@@ -64,6 +64,12 @@ pub struct SessionClaims {
     /// behind the AI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegated_by: Option<String>,
+    /// What the token this session was redeemed from says its delegator
+    /// allows the AI member (JI-019D-46): the hash of their signed
+    /// grant, or `none`. The guard holds the delegator's entry against
+    /// it on every action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<String>,
 }
 
 /// A session token: claims + Ed25519 signature.
@@ -156,6 +162,7 @@ pub fn create_session_for_ai(
     delegation_key: &str,
     token_expires: Option<DateTime<Utc>>,
     delegated_by: Option<String>,
+    grant: Option<String>,
 ) -> SessionToken {
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -179,6 +186,7 @@ pub fn create_session_for_ai(
         // now travels in the signed claims so `delegated-by:` is correct
         // wherever the session runs.
         delegated_by,
+        grant,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
@@ -211,6 +219,7 @@ fn create_session_with_delegation_key(
         session_public_key: None,
         tty,
         delegated_by: None,
+        grant: None,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = keypair.sign(claims_json.as_bytes());
@@ -851,8 +860,16 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token =
-            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let token = create_session_for_ai(
+            &ephemeral,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
@@ -876,6 +893,7 @@ mod tests {
             "dkey",
             Some(token_expires),
             None,
+            None,
         );
         // Session expiry should equal token_expires (within a tiny window).
         let delta = (token.claims.expires - token_expires).num_seconds().abs();
@@ -893,6 +911,7 @@ mod tests {
             Some(Duration::hours(1)),
             "dkey",
             Some(token_expires),
+            None,
             None,
         );
         // Session expiry should be ~1h, not 7 days.
@@ -1000,10 +1019,26 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first =
-            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
-        let second =
-            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let first = create_session_for_ai(
+            &first_kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
+        let second = create_session_for_ai(
+            &second_kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 
@@ -1057,12 +1092,21 @@ mod tests {
             "dkey",
             None,
             None,
+            None,
         );
         save_session("TST", &expired).unwrap();
 
         let fresh_kp = IdentityKeypair::from_random();
-        let fresh =
-            create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let fresh = create_session_for_ai(
+            &fresh_kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
         save_session("TST", &fresh).unwrap();
 
         let sessions = list_member_sessions("TST", "ai:claude@joy").unwrap();
@@ -1114,7 +1158,8 @@ mod tests {
         unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
 
         let kp = IdentityKeypair::from_random();
-        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let token =
+            create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None, None);
         let dir = session_dir().unwrap();
         std::fs::create_dir_all(&dir).unwrap();
         let legacy_sid = session_id("TST", "ai:claude@joy");
@@ -1148,10 +1193,26 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first =
-            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
-        let second =
-            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let first = create_session_for_ai(
+            &first_kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
+        let second = create_session_for_ai(
+            &second_kp,
+            "ai:claude@joy",
+            "TST",
+            None,
+            "dkey",
+            None,
+            None,
+            None,
+        );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 

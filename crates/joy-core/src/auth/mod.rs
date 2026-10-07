@@ -21,6 +21,7 @@
 pub mod attestation;
 pub mod delegation;
 pub mod enroll;
+pub mod grants;
 pub mod login;
 pub mod otp;
 pub mod redeem;
