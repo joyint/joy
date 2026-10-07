@@ -1,0 +1,18 @@
+id: JOY-02C3-85
+title: One member resolver for every host, built from the session
+type: story
+status: new
+priority: high
+tags:
+- core
+- privacy
+- identity
+capabilities:
+- plan
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T19:33:04.413400684Z
+updated: 2026-10-07T19:33:04.413400684Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'ADR-042 says no Joy output ever shows a raw member id. The CLI builds the resolver per command (joy-cli member_resolver.rs: project privacy, then members.yaml decrypted with the members-zone key cached in the session, else locked). The desktop app never installed one and showed opaque ids in an anonymous project (operator validation 2026-10-07). Move the session-based construction into joy-core (member_ref::resolver_for(root) and install_for(root)) so the CLI and every host call the one function; the CLI keeps its JOY_PASSPHRASE fallback on top. Companion: the app item for the desktop and shell.'
