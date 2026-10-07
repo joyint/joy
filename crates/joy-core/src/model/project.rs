@@ -737,13 +737,29 @@ impl Member {
 ///
 /// A person is known by an address, or in an anonymous project by an
 /// opaque `m-` id. An AI member is known by its name, which is neither
-/// (JI-019D-46): `claude`, `reviewer`. The form `ai:<name>@joy` that
-/// older projects carry counts as well.
+/// (JI-019D-46): `claude`, `reviewer`. `m-` is reserved, so no name
+/// starts with it. The form `ai:<name>@joy` that older projects carry
+/// counts as well.
 pub fn is_ai_member(id: &str) -> bool {
     if id.starts_with("ai:") {
         return true;
     }
-    !id.is_empty() && !id.contains('@') && !crate::member_id::is_opaque_member_id(id)
+    !id.is_empty() && !id.contains('@') && !id.starts_with("m-")
+}
+
+#[cfg(test)]
+mod ai_member_ids {
+    use super::is_ai_member;
+
+    #[test]
+    fn a_name_is_an_ai_member_an_address_and_an_m_id_are_people() {
+        for ai in ["claude", "reviewer", "ai:claude@joy", "ai:vibe@joy"] {
+            assert!(is_ai_member(ai), "{ai}");
+        }
+        for person in ["horst@joydev.com", "m-nl6ts2ldoc", "m-abc", ""] {
+            assert!(!is_ai_member(person), "{person:?}");
+        }
+    }
 }
 
 /// One-line description for a `joy project get` key. Returned by
