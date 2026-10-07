@@ -61,12 +61,28 @@ pub struct AiArgs {
 enum AiCommand {
     /// Initialize AI tool integration for new tools
     Init(InitArgs),
+    /// Add one AI member, set its tool up and issue its token
+    Add(AddArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
     /// Rotate the (operator, AI) delegation keypair
     Rotate(RotateArgs),
     /// Read the AI operational guide (CLI reference for AI assistants)
     Tutorial(AiTutorialArgs),
+}
+
+#[derive(clap::Args)]
+struct AddArgs {
+    /// Name of the AI member, e.g. claude or reviewer
+    name: String,
+
+    /// The tool that runs it (claude, qwen, vibe, copilot). Default: the tool the name names.
+    #[arg(long)]
+    adapter: Option<String>,
+
+    /// The model it runs on. Default: the tool's own.
+    #[arg(long)]
+    model: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -117,6 +133,7 @@ struct RotateArgs {
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
+        AiCommand::Add(a) => add(a),
         AiCommand::Reset(a) => reset(a),
         AiCommand::Rotate(a) => crate::commands::auth::run_ai_rotate(&a.member),
         AiCommand::Tutorial(a) => ai_tutorial(a),
@@ -158,6 +175,42 @@ fn in_crate_ai_tutorial_matches_canonical() {
 
 /// Run the AI init flow with default prompts. Used by the `joy` welcome
 /// wizard after a fresh `joy init`.
+/// `joy ai add <name>`: one AI member, ready to work. It is registered
+/// with what the project gives a new AI member, the tool that runs it is
+/// set up in this checkout, and its token is printed, all with one
+/// passphrase.
+fn add(args: AddArgs) -> anyhow::Result<()> {
+    let name = joy_core::model::project::ai_member_name(&args.name).to_string();
+    let adapter = match args.adapter.as_deref() {
+        Some(adapter) => joy_ai::naming::tool_adapter(adapter)
+            .ok_or_else(|| anyhow::anyhow!("unknown adapter: {adapter}"))?,
+        None => joy_ai::naming::tool_adapter(&name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{name} is not the name of a tool: say which tool runs it with --adapter"
+            )
+        })?,
+    };
+    crate::commands::project::add_ai_member(&name, Some(adapter.to_string()), args.model)?;
+
+    // The tool's own files (instructions, settings, the joy skill), the
+    // way `joy ai init --tool` writes them. A tool joy only runs through
+    // an adapter and writes no files for is fine as it is.
+    let ctx = joy_core::context::Context::load()?;
+    if joy_ai::ai_setup::TOOLS
+        .iter()
+        .any(|(_, id, _, _)| *id == adapter)
+    {
+        joy_core::embedded::sync_files(&ctx.root, joy_core::init::PROJECT_FILES)?;
+        joy_ai::ai_setup::configure_tool(&ctx.root, adapter, &mut |_| {})?;
+        if !crate::output::is_json() {
+            let tool = tool_display_name(adapter).unwrap_or(adapter);
+            println!();
+            println!("{tool} is set up in this checkout.");
+        }
+    }
+    Ok(())
+}
+
 pub fn run_init_default() -> anyhow::Result<()> {
     ai_init(InitArgs::default())
 }

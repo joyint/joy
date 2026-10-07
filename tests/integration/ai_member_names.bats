@@ -57,3 +57,49 @@ load setup
     [ "$status" -eq 0 ]
     [[ "$output" == *'"member":"helper"'* ]]
 }
+
+# ---------------------------------------------------------------
+# joy ai add: one AI member, ready to work, with one passphrase
+# ---------------------------------------------------------------
+
+@test "joy ai add registers the member, sets its tool up and prints its token" {
+    setup_human_auth
+    run joy ai add claude --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Added member claude"* ]]
+    [[ "$output" == *"joy_t_"* ]]
+    [[ "$output" == *"Claude Code is set up in this checkout."* ]]
+    grep -q "^adapter: claude" "$(member_file claude)"
+    [ -f .claude/CLAUDE.md ]
+    # the tool starts in the mode the member's level means
+    grep -q '"defaultMode": "bypassPermissions"' .claude/settings.json
+
+    # the printed token redeems, and the AI acts
+    TOKEN=$(printf '%s\n' "$output" | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
+    eval "$(joy auth --token "$TOKEN")"
+    run joy add task "Written by the new member"
+    [ "$status" -eq 0 ]
+}
+
+@test "joy ai add gives a member of its own name the tool and model it is told" {
+    setup_human_auth
+    run joy ai add reviewer --adapter claude --model opus --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    grep -q "^adapter: claude" "$(member_file reviewer)"
+    grep -q "^model: opus" "$(member_file reviewer)"
+}
+
+@test "joy ai add asks which tool runs a member that is not named after one" {
+    setup_human_auth
+    run joy ai add reviewer --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"say which tool runs it with --adapter"* ]]
+    [ -z "$(member_file reviewer)" ]
+}
+
+@test "a level lowered for the project reaches the tool's own settings at once" {
+    setup_human_auth
+    joy ai add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy project member edit claude --project --level proposing --passphrase "$TEST_PASSPHRASE"
+    grep -q '"defaultMode": "plan"' .claude/settings.json
+}

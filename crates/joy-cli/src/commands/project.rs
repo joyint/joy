@@ -853,6 +853,34 @@ fn show_project(project: &Project, root: &std::path::Path) {
     }
 }
 
+/// Register an AI member and issue its token: what `joy ai add` does
+/// before it sets the tool up, and the same thing `joy project member
+/// add <name> --with-token` does.
+pub(crate) fn add_ai_member(
+    name: &str,
+    adapter: Option<String>,
+    model: Option<String>,
+) -> Result<()> {
+    let mut ctx = Context::load()?;
+    let mut project = store::load_project(&ctx.root)?;
+    let add = MemberAddArgs {
+        id: name.to_string(),
+        capabilities: Vec::new(),
+        level: None,
+        adapter,
+        model,
+        description: None,
+        with_token: true,
+    };
+    run_member(
+        MemberArgs {
+            command: Some(MemberCommand::Add(add)),
+        },
+        &mut project,
+        &mut ctx,
+    )
+}
+
 fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Result<()> {
     match args.command {
         None => {

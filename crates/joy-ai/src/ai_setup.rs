@@ -246,7 +246,49 @@ fn existing_managed_block_entries(root: &Path) -> Vec<String> {
 /// One line per touched file/action, for the caller to render.
 pub type Report<'a> = &'a mut dyn FnMut(String);
 
-pub fn is_tool_stale(root: &Path, tool: &str, _member_id: &str) -> Result<bool, JoyError> {
+/// Whether the tool's own settings still say the native mode the
+/// member's level means. They do not after the level was changed, and a
+/// tool left in the old mode would run less carefully than it was told.
+fn native_mode_is_current(root: &Path, tool: &str, member_id: &str) -> bool {
+    use crate::level_enforcement as le;
+    let level = le::setup_level(root, member_id);
+    let json_value = |path: &str, pointer: &str| -> Option<String> {
+        let content = fs::read_to_string(root.join(path)).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+        value.pointer(pointer)?.as_str().map(str::to_string)
+    };
+    match tool {
+        "claude" => {
+            json_value(".claude/settings.json", "/permissions/defaultMode").as_deref()
+                == Some(le::claude_permission_mode(level))
+        }
+        "qwen" => {
+            json_value(".qwen/settings.json", "/approvalMode").as_deref()
+                == Some(le::qwen_approval_mode(level))
+        }
+        "vibe" => {
+            fs::read_to_string(root.join(".vibe/config.toml"))
+                .ok()
+                .and_then(|content| content.parse::<toml_edit::DocumentMut>().ok())
+                .and_then(|doc| {
+                    doc.get("tools")?
+                        .get("bash")?
+                        .get("permission")?
+                        .as_str()
+                        .map(str::to_string)
+                })
+                .as_deref()
+                == Some(le::vibe_bash_permission(level))
+        }
+        // no native mode is written for the others
+        _ => true,
+    }
+}
+
+pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, JoyError> {
+    if !native_mode_is_current(root, tool, member_id) {
+        return Ok(true);
+    }
     let workflow = crate::ai_templates::load_workflow()?;
     let agents = crate::ai_templates::load_agents()?;
 
