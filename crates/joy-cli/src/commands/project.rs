@@ -15,8 +15,8 @@ use joy_core::model::Project;
 // the platform server share it; this file keeps the CLI-only pieces
 // (clap args, editor flows, printing, privacy switch, member flows).
 use joy_core::project_meta::{
-    current_scalar_value, is_list_key, project_value_tree, prune_docs_yaml, prune_yaml_key,
-    scalar_str, set_value, value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
+    current_scalar_value, is_list_key, project_value_tree, scalar_str, set_value,
+    value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
 };
 use joy_core::store;
 use joy_core::version_files::{
@@ -198,8 +198,7 @@ struct MemberEditArgs {
 pub fn run(args: ProjectArgs) -> Result<()> {
     let mut ctx = Context::load()?;
 
-    let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
-    let mut project: Project = store::read_yaml(&project_path)?;
+    let mut project: Project = store::load_project(&ctx.root)?;
 
     match args.command {
         Some(ProjectCommand::Get(a)) => {
@@ -207,10 +206,10 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         Some(ProjectCommand::Set(a)) => {
             crate::auth_gate::enforce(&mut ctx, &Action::ManageProject, "project")?;
-            return set_command(&ctx, &project_path, &mut project, a);
+            return set_command(&ctx, &mut project, a);
         }
         Some(ProjectCommand::Member(a)) => {
-            return run_member(a, &mut project, &project_path, &mut ctx);
+            return run_member(a, &mut project, &mut ctx);
         }
         None => {}
     }
@@ -233,9 +232,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         if let Some(language) = args.language {
             project.language = language;
         }
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        store::save_project(&ctx.root, &project)?;
         println!("Project updated.");
         let log_user = ctx.log_user();
         joy_core::git_ops::auto_git_post_command(&ctx.root, "project edit", &log_user);
@@ -445,12 +442,7 @@ fn get_list_value(root: &std::path::Path, key: &str, describe: bool) -> Result<(
 /// existing set_value() path and list keys (`release.version-files`)
 /// via the dedicated version-files helpers that operate on raw YAML so
 /// mapping-form entries round-trip cleanly.
-fn set_command(
-    ctx: &Context,
-    project_path: &std::path::Path,
-    project: &mut Project,
-    args: SetArgs,
-) -> Result<()> {
+fn set_command(ctx: &Context, project: &mut Project, args: SetArgs) -> Result<()> {
     let key = &args.key;
 
     if is_list_key(key) {
@@ -472,7 +464,7 @@ fn set_command(
     }
 
     if key == "privacy" {
-        return set_privacy(ctx, project_path, project, &args);
+        return set_privacy(ctx, project, &args);
     }
 
     let value = match args.value.as_deref() {
@@ -487,21 +479,7 @@ fn set_command(
     };
 
     set_value(project, key, &value)?;
-    store::write_yaml_preserve(project_path, project)?;
-    if key.starts_with("docs.") {
-        prune_docs_yaml(project_path, &project.docs)?;
-    }
-    if key == "forge" && project.forge.is_none() {
-        prune_yaml_key(project_path, "forge")?;
-    }
-    if key == "privacy" && project.privacy().is_none() {
-        prune_yaml_key(project_path, "privacy")?;
-    }
-    if key == "description" && project.description.is_none() {
-        prune_yaml_key(project_path, "description")?;
-    }
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+    store::save_project(&ctx.root, project)?;
     if key == "acronym" {
         let stored = project.acronym.as_deref().unwrap_or(&value);
         println!("{key} = {stored}");
@@ -529,12 +507,7 @@ fn set_command(
 /// operator's unlocked seed; the manage capability is already enforced by the
 /// caller. `open`/`none` on a project that is not anonymous is a plain field
 /// normalization.
-fn set_privacy(
-    ctx: &Context,
-    project_path: &std::path::Path,
-    project: &mut Project,
-    args: &SetArgs,
-) -> Result<()> {
+fn set_privacy(ctx: &Context, project: &mut Project, args: &SetArgs) -> Result<()> {
     let target = args.value.as_deref().map(str::trim).unwrap_or_default();
     let want_anon = match target {
         "anonymous" => true,
@@ -550,12 +523,7 @@ fn set_privacy(
     if !want_anon && !is_anon {
         // Plain field normalization, no migration.
         set_value(project, "privacy", target)?;
-        store::write_yaml_preserve(project_path, project)?;
-        if project.privacy().is_none() {
-            prune_yaml_key(project_path, "privacy")?;
-        }
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        store::save_project(&ctx.root, project)?;
         println!("privacy = {target}");
         return Ok(());
     }
@@ -827,12 +795,7 @@ fn show_project(project: &Project, root: &std::path::Path) {
     }
 }
 
-fn run_member(
-    args: MemberArgs,
-    project: &mut Project,
-    project_path: &std::path::Path,
-    ctx: &mut Context,
-) -> Result<()> {
+fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Result<()> {
     match args.command {
         None => {
             if crate::output::is_json() {
@@ -1052,9 +1015,7 @@ fn run_member(
             new_member.attestation = Some(attestation);
             project.register_member(&a.id, new_member)?;
 
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            store::save_project(&ctx.root, project)?;
 
             // Optional immediate token issuance for AI members
             // (JOY-0185-66): the same unlocked operator signs it, so
@@ -1269,9 +1230,7 @@ fn run_member(
             *project
                 .member_by_key_mut(&key)
                 .expect("member key resolved above") = member;
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            store::save_project(&ctx.root, project)?;
 
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
@@ -1376,9 +1335,7 @@ fn run_member(
                 }
             }
 
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            store::save_project(&ctx.root, project)?;
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
                 struct RmPayload<'a> {

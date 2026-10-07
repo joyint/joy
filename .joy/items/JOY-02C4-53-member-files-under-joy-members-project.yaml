@@ -1,8 +1,10 @@
 id: JOY-02C4-53
 title: Member files under .joy/members, project.yaml as head with the member list, migration by the first unlocked human
 type: story
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: ai:claude@joy
 capabilities:
 - plan
 - implement
@@ -10,7 +12,7 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:44.898508829Z
-updated: 2026-10-07T20:18:44.898508829Z
+updated: 2026-10-07T21:00:29.412870130Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 1 of JI-019E-40, decided in JI-019D-46 sections 4, 5 and 8.

@@ -482,7 +482,7 @@ pub fn ensure_founder(
     ask: Option<&mut (dyn AskFounderAddress + 'static)>,
 ) -> Result<FounderHeal, JoyError> {
     let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(root)?;
     if project.has_members() {
         return Ok(FounderHeal::AlreadyPresent);
     }

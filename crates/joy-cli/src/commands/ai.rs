@@ -231,8 +231,7 @@ struct AiInitPayload {
 /// attestations in `setup_new_tools` without re-prompting. Returns `None`
 /// if auth was already initialised.
 fn ensure_human_auth_initialized(root: &Path) -> anyhow::Result<Option<String>> {
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let project = joy_core::store::read_project(&project_path)?;
+    let project = joy_core::store::load_project(root)?;
     // The human this command sets authentication up for: the name given
     // to this call (`--user`), else the operator behind a delegation
     // session, else the person signed in at this terminal, else this
@@ -404,8 +403,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
 
     dprintln!("{}", color::section("Documentation"));
 
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project: Project = joy_core::store::read_yaml(&project_path)?;
+    let mut project: Project = joy_core::store::load_project(root)?;
     let mut project_changed = false;
     let mut all_found = true;
     let mut any_auto_detected = false;
@@ -515,13 +513,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     }
 
     if project_changed {
-        joy_core::store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!(
-            "{}/{}",
-            joy_core::store::JOY_DIR,
-            joy_core::store::PROJECT_FILE
-        );
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        joy_core::store::save_project(root, &project)?;
     }
 
     if any_auto_detected {
@@ -704,8 +696,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     // from deleting per-developer config files: a member is only ever removed
     // when it is orphaned (no operator still delegates it), never merely because
     // the local config happens to be gone (JOY-01CD-D5).
-    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path).ok();
+    let mut project = joy_core::store::load_project(&root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(&root)
             .ok()
@@ -862,13 +853,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             }
         }
         if project_changed {
-            joy_core::store::write_yaml_preserve(&project_path, p)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(&root, &[&rel]);
+            joy_core::store::save_project(&root, p)?;
         }
     }
 
@@ -935,8 +920,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
     let mut newly_configured = 0;
 
     // Load project for member registration
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path)?;
+    let mut project = joy_core::store::load_project(root)?;
     let mut project_changed = false;
 
     // The acting human's identity keypair, derived lazily on the first
@@ -1052,13 +1036,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
     }
 
     if project_changed {
-        joy_core::store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!(
-            "{}/{}",
-            joy_core::store::JOY_DIR,
-            joy_core::store::PROJECT_FILE
-        );
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        joy_core::store::save_project(root, &project)?;
     }
 
     if configured_tools.is_empty() {

@@ -14,3 +14,4 @@
 2026-10-07T20:30:20.693Z JOY-02C3-46 item.status_changed "in-progress -> closed" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-10-07T20:30:27.347Z JOY-02C2-F3 item.status_changed "closed -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
 2026-10-07T20:30:27.387Z JOY-02C3-46 item.status_changed "closed -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-07T21:00:29.415Z JOY-02C4-53 item.status_changed "new -> in-progress" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]

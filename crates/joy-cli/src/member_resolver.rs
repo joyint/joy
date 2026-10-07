@@ -26,7 +26,7 @@ pub fn install_member_resolver() {
 fn build() -> Option<MemberResolver> {
     let cwd = std::env::current_dir().ok()?;
     let root = store::find_project_root(&cwd)?;
-    let project = store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE)).ok()?;
+    let project = store::load_project(&root).ok()?;
     if project.privacy_mode() != PrivacyMode::Anonymous {
         return Some(MemberResolver::open());
     }

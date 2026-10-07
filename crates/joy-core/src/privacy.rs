@@ -336,22 +336,6 @@ fn rewrite_working_tree(root: &Path, replacements: &[(String, String)]) -> Resul
     Ok(())
 }
 
-/// Remove a top-level key from project.yaml. Needed because
-/// `write_yaml_preserve` keeps keys present in the original file but absent from
-/// the serialized struct (so a `privacy` field cleared to `None` would otherwise
-/// linger as the stale `anonymous` value).
-fn prune_yaml_key(path: &Path, key: &str) -> Result<(), JoyError> {
-    use serde_yaml_ng::Value;
-    let raw = std::fs::read_to_string(path).map_err(|e| io_err("read", e))?;
-    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
-    if let Some(map) = value.as_mapping_mut() {
-        map.remove(Value::String(key.to_string()));
-    }
-    let yaml = serde_yaml_ng::to_string(&value)?;
-    std::fs::write(path, yaml).map_err(|e| io_err("write", e))?;
-    Ok(())
-}
-
 /// Switch a project from `open` to `anonymous`.
 ///
 /// `operator_seed` is the unlocked identity seed of the manage member running
@@ -423,8 +407,7 @@ pub fn switch_to_anonymous(
 
     // Persist the structural changes, then scrub residual e-mails (attestation
     // fields in project.yaml, item bodies, logs) by textual substitution.
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, project)?;
+    store::save_project(root, project)?;
     members_file::write(root, &zone_key, &mf)?;
     rewrite_working_tree(root, &renamed)?;
 
@@ -480,9 +463,7 @@ pub fn switch_to_open(
     project.replace_members(new_members);
     project.set_privacy_mode(None);
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, project)?;
-    prune_yaml_key(&project_path, "privacy")?;
+    store::save_project(root, project)?;
     // Remove the encrypted members file and restore e-mails in the working tree.
     let mp = members_file::members_path(root);
     if mp.exists() {

@@ -1072,8 +1072,7 @@ pub fn init_tool(
     joy_core::embedded::sync_files(root, joy_core::init::PROJECT_FILES)?;
     configure_tool(root, tool, report)?;
 
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path)?;
+    let mut project = joy_core::store::load_project(root)?;
     let member_id = format!("ai:{tool}@joy");
     if !project.has_member_key(&member_id) {
         // The attester is the human this device acts for (JOY-02AE-1A):
@@ -1084,13 +1083,7 @@ pub fn init_tool(
         let attester_key = joy_core::identity::acting_human_key(root)?;
         let attester = unlock_acting_keypair(&project, &attester_key, passphrase)?;
         if register_tool_member(&mut project, root, &member_id, &attester)? {
-            joy_core::store::write_yaml_preserve(&project_path, &project)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::save_project(root, &project)?;
             report(format!("{member_id} registered as member"));
         }
     }
@@ -1192,10 +1185,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
             }
         }
     }
-    let project = joy_core::store::read_project(
-        &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
-    )
-    .ok();
+    let project = joy_core::store::load_project(root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(root)
             .ok()
@@ -1221,8 +1211,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
 
 /// Execute a consented reset plan. Returns the number of tools touched.
 pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usize, JoyError> {
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path).ok();
+    let mut project = joy_core::store::load_project(root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(root)
             .ok()
@@ -1274,13 +1263,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             }
         }
         if project_changed {
-            joy_core::store::write_yaml_preserve(&project_path, p)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::save_project(root, p)?;
         }
     }
     // Shrink the managed block to base-only when the project itself has no

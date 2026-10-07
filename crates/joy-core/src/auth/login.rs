@@ -304,8 +304,7 @@ pub fn maybe_auto_seal(
         return Ok(None);
     }
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut sealed = store::read_project(&project_path)?;
+    let mut sealed = store::load_project(root)?;
 
     let targets: Vec<String> = sealed
         .member_keys()
@@ -323,9 +322,7 @@ pub fn maybe_auto_seal(
         sealed.member_by_key_mut(&target_email).unwrap().attestation = Some(att);
     }
 
-    store::write_yaml_preserve(&project_path, &sealed)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &sealed)?;
 
     Ok(Some(sealed))
 }

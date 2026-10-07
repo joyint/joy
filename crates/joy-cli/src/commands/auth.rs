@@ -297,8 +297,7 @@ pub(crate) fn run_init(
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
     // Determine who we are. The member is NAMED here (JOY-02AE-1A):
     // `--user`, else this repository's own git config,
@@ -391,9 +390,7 @@ pub(crate) fn run_init(
             .map(|(_, id)| id)
             .unwrap_or_else(|| email.clone())
     } else {
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        store::save_project(&root, &project)?;
         email.clone()
     };
 
@@ -562,8 +559,7 @@ fn migrate_to_wrapped_seed(
     kdf_nonce: &Salt,
     _passphrase: &str,
 ) -> Result<()> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(root)?;
 
     let seed = seed_mod::Seed::from_derived_key(derived_key);
     let recovery = seed_mod::RecoveryKey::generate();
@@ -579,9 +575,7 @@ fn migrate_to_wrapped_seed(
     m.seed_wrap_passphrase = Some(wrap_passphrase);
     m.seed_wrap_recovery = Some(wrap_recovery);
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &project)?;
 
     println!();
     println!("Auth schema upgraded to the wrapped-seed identity model.");
@@ -905,8 +899,7 @@ fn run_reset(args: ResetArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
     // The acting member is resolve_identity's own answer (the delegation
     // session, then git config, then the forge account, since the
     // operator's 2026-09-19 correction, JOY-02AE-1A), and it is already
@@ -952,9 +945,7 @@ fn run_reset(args: ResetArgs) -> Result<()> {
     m.seed_wrap_recovery = None;
     m.enrollment_verifier = None;
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
 
     // Remove own session if resetting self
     let project_id = session::project_id(&root)?;
@@ -1181,8 +1172,7 @@ pub(crate) fn create_delegation_token(
     // Persist the delegation public key on first issuance. Subsequent
     // issuances for the same (human, AI) pair produce no project.yaml
     // write since the key is stable (ADR-033).
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project_mut = store::read_project(&project_path)?;
+    let mut project_mut = store::load_project(root)?;
     if new_entry {
         // By the operator's at-rest KEY, the one resolved at the top of
         // this function, and never by their address again. The lookup
@@ -1232,9 +1222,7 @@ pub(crate) fn create_delegation_token(
     }
 
     if new_entry || set_ai_verify {
-        store::write_yaml_preserve(&project_path, &project_mut)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        store::save_project(root, &project_mut)?;
     }
 
     let encoded = token::encode_token(&token_obj);
@@ -1335,8 +1323,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
     let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
@@ -1415,9 +1402,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
 
     let m = project.member_by_key_mut(&acting).unwrap();
     m.seed_wrap_passphrase = Some(new_wrap_passphrase);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
 
     let project_id = session::project_id(&root)?;
     let _ = session::remove_session(&project_id, &acting);
@@ -1450,8 +1435,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
     let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
@@ -1491,9 +1475,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
         let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_passphrase = Some(new_wrap_passphrase);
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        store::save_project(&root, &project)?;
 
         let project_id = session::project_id(&root)?;
         let _ = session::remove_session(&project_id, &acting);
@@ -1522,9 +1504,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         let new_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &new_recovery, &salt)?;
         let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_recovery = Some(new_wrap_recovery);
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        store::save_project(&root, &project)?;
 
         println!("Recovery key rotated for {}.", color::user(&acting));
         println!();
@@ -1652,8 +1632,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     // this point. Legacy entries (no delegation_salt under ADR-033 §1) gain
     // the salt here, which unblocks future multi-machine bootstrap on
     // every machine downstream.
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut = store::read_project(&project_path)?;
+    let mut project_mut = store::load_project(&root)?;
     let entry = project_mut
         .member_by_key_mut(&acting)
         .and_then(|m| m.ai_delegations.get_mut(member))
@@ -1661,9 +1640,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     entry.delegation_verifier = new_kp.public_key().to_hex();
     entry.delegation_salt = Some(new_salt.to_hex());
     entry.rotated = Some(Utc::now());
-    store::write_yaml_preserve(&project_path, &project_mut)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project_mut)?;
 
     // Clear any local session file for the AI member. If the AI runs on a
     // different machine this is a no-op; if it shares the machine, the

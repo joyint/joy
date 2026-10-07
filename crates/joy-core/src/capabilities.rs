@@ -30,8 +30,7 @@ pub fn warn_unless_capable(root: &Path, required: Capability) -> bool {
         return false;
     }
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let project = match store::read_project(&project_path) {
+    let project = match store::load_project(root) {
         Ok(p) => p,
         Err(_) => return true, // No project.yaml, allow
     };

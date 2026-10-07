@@ -506,8 +506,66 @@ pub fn parse_project(
 /// Load the full project metadata from project.yaml under the given
 /// project root. Applies migrations via [`read_project`].
 pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate::error::JoyError> {
+    read_project(&joy_dir(root).join(PROJECT_FILE))
+}
+
+/// The top-level keys of project.yaml that [`Project`] models. What it
+/// says about them is the whole truth: one it leaves out is gone from
+/// the file. Every other top-level key (gates, defaults a newer joy
+/// wrote) is carried over untouched.
+///
+/// [`Project`]: crate::model::project::Project
+const MODELED_PROJECT_KEYS: &[&str] = &[
+    "name",
+    "acronym",
+    "description",
+    "language",
+    "forge",
+    "privacy",
+    "docs",
+    "members",
+    "crypt",
+    "created",
+];
+
+/// Write the project back and stage what was written.
+///
+/// THE way a changed [`Project`](crate::model::project::Project) reaches
+/// the disk: every caller hands over the root and the project, and where
+/// the project lives under `.joy/` is this module's business alone. The
+/// written paths are staged like every other joy write (`auto_git_add`,
+/// which the `workflow.auto-git` setting governs).
+pub fn save_project(
+    root: &Path,
+    project: &crate::model::project::Project,
+) -> Result<(), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    read_project(&project_path)
+    let mut value = serde_yaml_ng::to_value(project)?;
+    if let (Some(map), Ok(existing)) = (
+        value.as_mapping_mut(),
+        std::fs::read_to_string(&project_path),
+    ) {
+        if let Ok(Value::Mapping(existing)) = serde_yaml_ng::from_str::<Value>(&existing) {
+            for (key, val) in existing {
+                let modeled = key
+                    .as_str()
+                    .is_some_and(|k| MODELED_PROJECT_KEYS.contains(&k));
+                if !modeled && !map.contains_key(&key) {
+                    map.insert(key, val);
+                }
+            }
+        }
+    }
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(&project_path, yaml).map_err(|e| JoyError::WriteFile {
+        path: project_path.clone(),
+        source: e,
+    })?;
+    let rel = format!("{JOY_DIR}/{PROJECT_FILE}");
+    crate::git_ops::auto_git_add(root, &[&rel]);
+    Ok(())
 }
 
 /// Load interaction-level defaults by merging project.defaults.yaml with the
@@ -563,8 +621,7 @@ pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
 
 /// Load the project acronym from project.yaml.
 pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
-    let project_path = joy_dir(root).join(PROJECT_FILE);
-    let project = read_project(&project_path)?;
+    let project = load_project(root)?;
     project.acronym.ok_or_else(|| {
         crate::error::JoyError::Other(
             "project acronym not set -- run: joy project --acronym <ACRONYM>".to_string(),
@@ -575,6 +632,34 @@ pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What the project says about its own keys is the whole truth, and
+    /// what it does not model is left alone: a cleared description is
+    /// gone from the file, a gate written by hand stays.
+    #[test]
+    fn save_project_drops_a_cleared_modeled_key_and_keeps_an_unmodeled_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(joy_dir(root)).unwrap();
+        let mut project = crate::model::project::Project::new("Shop".into(), Some("SH".into()));
+        project.description = Some("sells things".into());
+        save_project(root, &project).unwrap();
+
+        let path = joy_dir(root).join(PROJECT_FILE);
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str("status_rules:\n  review -> closed:\n    allow_ai: false\n");
+        std::fs::write(&path, raw).unwrap();
+
+        let mut reread = load_project(root).unwrap();
+        assert_eq!(reread.description.as_deref(), Some("sells things"));
+        reread.description = None;
+        save_project(root, &reread).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains("description"), "{written}");
+        assert!(written.contains("review -> closed"), "{written}");
+        assert_eq!(load_project(root).unwrap(), reread);
+    }
     use crate::model::Config;
     use tempfile::tempdir;
 

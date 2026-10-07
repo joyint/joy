@@ -188,7 +188,7 @@ impl Guard {
     /// Load project.yaml and create a Guard, including gate config.
     pub fn load(root: &Path) -> Result<Self, JoyError> {
         let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-        let project = store::read_project(&project_path)?;
+        let project = store::load_project(root)?;
         let gates = load_gates(&project_path)?;
         Ok(Self::with_gates(&project, gates))
     }

@@ -774,8 +774,7 @@ fn ephemeral_public_matches(
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::read_project(&project_path).ok()
+    store::load_project(root).ok()
 }
 
 #[allow(dead_code)]
