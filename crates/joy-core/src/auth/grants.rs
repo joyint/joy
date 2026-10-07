@@ -410,6 +410,64 @@ pub fn applies(project: &Project) -> bool {
     project.member_layout() == MemberLayout::Files
 }
 
+/// The level a job is released with, said when a person approves it.
+///
+/// A job with an AI assignee runs at the level it asks for, and at most
+/// at the assignee's project maximum: a job that asks for more is not
+/// approved, a job that says nothing gets the maximum written in. From
+/// here on the level is the job's own, and a maximum lowered later does
+/// not reach into a job that was already approved (JI-0166-D8). A job
+/// with no AI assignee, or in a project from before the member files,
+/// keeps what it has.
+pub fn job_level_at_approval(
+    project: &Project,
+    job: &crate::model::item::Item,
+) -> Result<Option<InteractionLevel>, String> {
+    let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
+        return Ok(job.interaction_level);
+    };
+    if !applies(project) || !crate::model::project::is_ai_member(assignee) {
+        return Ok(job.interaction_level);
+    }
+    let name = ai_member_name(assignee);
+    let max = maximum(project, assignee)?;
+    match job.interaction_level {
+        None => Ok(Some(max.level)),
+        Some(wanted) if more_oversight(wanted, max.level) == wanted => Ok(Some(wanted)),
+        Some(wanted) => Err(format!(
+            "this job asks for {wanted}, and the project allows {name} at most {}",
+            max.level
+        )),
+    }
+}
+
+/// [`turn_level`] for a host that holds the project's root: THE level a
+/// chat turn of `ai` for `delegator_key` runs at, on the desktop, on
+/// the platform and in the CLI alike.
+///
+/// A project from before the member files has no signed maximum; there
+/// the turn runs at what the person chose, else at the AI member's own
+/// level, else at the project default, as it did before.
+pub fn turn_level_at(
+    root: &std::path::Path,
+    ai_key: &str,
+    delegator_key: &str,
+    chosen: Option<InteractionLevel>,
+) -> Result<InteractionLevel, String> {
+    let project = crate::store::load_project(root).ok();
+    if let Some(project) = project.as_ref().filter(|p| applies(p)) {
+        return turn_level(project, ai_key, delegator_key, chosen);
+    }
+    Ok(chosen
+        .or_else(|| {
+            project
+                .as_ref()
+                .and_then(|p| p.member_by_key(ai_key))
+                .and_then(|m| m.interaction_level)
+        })
+        .unwrap_or_else(|| crate::store::load_interaction_level_defaults(root).default))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

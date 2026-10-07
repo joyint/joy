@@ -91,6 +91,10 @@ pub struct AddArgs {
     /// Skip the duplicate-title check (rare; allows two items with the same title).
     #[arg(long)]
     allow_duplicate: bool,
+
+    /// The level an AI assignee works a job at: proposing, confirmed or autonomous.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -218,6 +222,18 @@ pub fn run(args: AddArgs) -> Result<()> {
             base_branch: None,
             result_branch: None,
         });
+    }
+
+    if let Some(level) = args.level.as_deref() {
+        if item_type != ItemType::Job {
+            bail!("--level is for a job");
+        }
+        item.interaction_level = Some(
+            level
+                .trim()
+                .parse()
+                .map_err(|e: String| anyhow::anyhow!("{}", e))?,
+        );
     }
 
     item.priority = priority;

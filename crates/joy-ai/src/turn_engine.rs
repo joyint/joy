@@ -288,12 +288,14 @@ pub struct HostTurnSpec<'a> {
     pub turn_id: &'a str,
     pub prompt: String,
     pub prompt_delta: Option<String>,
-    /// The caller's per-chat level choice (ADR-025 rank 1); only the
-    /// client can read it, so it sends it.
+    /// The level the person chose for this turn (JI-018C-06); only the
+    /// client knows it, so it sends it. It never reaches beyond what the
+    /// AI member may do for them.
     pub level_override: Option<InteractionLevel>,
-    /// The caller's personal overall level for this member, when the
-    /// host stores one (platform DB); None on the desktop.
-    pub personal_level: Option<InteractionLevel>,
+    /// The person the turn runs for, by member id: what the AI member
+    /// may do is what the project and this person allow it
+    /// (JI-019D-46).
+    pub delegator: &'a str,
 }
 
 /// What the client gets back from one host turn: either the reply with
@@ -312,27 +314,6 @@ pub struct HostTurnOutcome {
     pub model: String,
 }
 
-/// The host-side share of the ADR-025 level order: chat override (from
-/// the client) > the caller's personal overall > the member's default >
-/// the project default. The chat-scoped rank lives with the key holder;
-/// everything below is store state both hosts can read — and used to
-/// resolve DIFFERENTLY per host until JOY-0249-D2's audit.
-pub fn host_turn_level(
-    root: &Path,
-    member: &str,
-    level_override: Option<InteractionLevel>,
-    personal_level: Option<InteractionLevel>,
-) -> InteractionLevel {
-    level_override
-        .or(personal_level)
-        .or_else(|| {
-            joy_core::store::load_project(root)
-                .ok()
-                .and_then(|p| p.member_by_key(member).and_then(|m| m.interaction_level))
-        })
-        .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(root).default)
-}
-
 /// Run ONE host turn: resolve the level, run the agent, assemble the
 /// outcome. The choreography both hosts used to copy by hand — level
 /// fallback, timing, execution record, error wording — lives here
@@ -344,12 +325,23 @@ pub fn run_host_turn(
     run_agent: impl FnOnce(&TurnRequest) -> Result<TurnOutcome, String>,
 ) -> HostTurnOutcome {
     let alias = chat_turns::alias(spec.member);
-    let level = host_turn_level(
+    // The level is joy-core's to say, the same on every host: what the
+    // person chose, within what the AI member may do for them. A member
+    // whose grants do not hold does not run at all.
+    let level = match joy_core::auth::grants::turn_level_at(
         spec.root,
         spec.member,
+        spec.delegator,
         spec.level_override,
-        spec.personal_level,
-    );
+    ) {
+        Ok(level) => level,
+        Err(why) => {
+            return HostTurnOutcome {
+                notice: format!("@{alias} did not run: {why}"),
+                ..Default::default()
+            }
+        }
+    };
     let request = TurnRequest {
         member: spec.member,
         turn_id: spec.turn_id,
@@ -483,7 +475,7 @@ mod tests {
             prompt: "full".into(),
             prompt_delta: Some("delta".into()),
             level_override: Some(InteractionLevel::Autonomous),
-            personal_level: None,
+            delegator: "dev@example.com",
         };
         let outcome = run_host_turn(spec, |req| {
             // the choreography hands the agent everything resolved, the
@@ -521,7 +513,7 @@ mod tests {
             prompt: "full".into(),
             prompt_delta: None,
             level_override: None,
-            personal_level: None,
+            delegator: "dev@example.com",
         };
         let outcome = run_host_turn(spec, |_req| {
             Err("chat turn in joyint-project-x: <err>connection reset by peer</err>".into())
@@ -534,32 +526,74 @@ mod tests {
     }
 
     #[test]
-    fn the_level_order_is_override_personal_member_project() {
+    fn a_member_whose_grants_do_not_hold_does_not_run() {
+        use joy_core::auth::vouch::{self, Occasion};
+        use joy_core::auth::IdentityKeypair;
+        use joy_core::model::project::{Member, MemberCapabilities};
+
         let dir = tempfile::tempdir().expect("tempdir");
-        // no project store at all: the project default is the floor
-        let floor = host_turn_level(dir.path(), "ai:vibe@joy", None, None);
-        assert_eq!(
-            floor,
-            joy_core::store::load_interaction_level_defaults(dir.path()).default
+        joy_core::init::init(joy_core::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Turns".into()),
+            acronym: Some("TU".into()),
+            user: Some("dev@example.com".into()),
+            language: None,
+            host: joy_core::host::HostKind::Background,
+            ask: None,
+        })
+        .unwrap();
+        let kp = IdentityKeypair::from_seed(&[5; 32]);
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project
+            .member_by_key_mut("dev@example.com")
+            .unwrap()
+            .verify_key = Some(kp.public_key().to_hex());
+        let mut vibe = Member::new(MemberCapabilities::Specific(
+            [(joy_core::model::item::Capability::Plan, Default::default())].into(),
+        ));
+        vibe.interaction_level = Some(InteractionLevel::Confirmed);
+        vouch::sign(
+            &project,
+            "dev@example.com",
+            &kp,
+            "vibe",
+            &mut vibe,
+            Occasion::New,
         );
-        // personal beats the defaults, the chat override beats personal
-        assert_eq!(
-            host_turn_level(
-                dir.path(),
-                "ai:vibe@joy",
-                None,
-                Some(InteractionLevel::Autonomous)
-            ),
-            InteractionLevel::Autonomous
-        );
-        assert_eq!(
-            host_turn_level(
-                dir.path(),
-                "ai:vibe@joy",
-                Some(InteractionLevel::Proposing),
-                Some(InteractionLevel::Autonomous)
-            ),
-            InteractionLevel::Proposing
+        project.register_member("vibe", vibe).unwrap();
+        joy_core::store::save_project(dir.path(), &project).unwrap();
+
+        let spec = |chosen| HostTurnSpec {
+            root: dir.path(),
+            member: "vibe",
+            turn_id: "m-3",
+            prompt: "full".into(),
+            prompt_delta: None,
+            level_override: chosen,
+            delegator: "dev@example.com",
+        };
+        // the person asks for more than the project allows: clamped
+        let outcome = run_host_turn(spec(Some(InteractionLevel::Autonomous)), |req| {
+            assert_eq!(req.level, InteractionLevel::Confirmed);
+            Ok(TurnOutcome::default())
+        });
+        assert!(outcome.notice.is_empty(), "{}", outcome.notice);
+        // and for less: as asked
+        run_host_turn(spec(Some(InteractionLevel::Proposing)), |req| {
+            assert_eq!(req.level, InteractionLevel::Proposing);
+            Ok(TurnOutcome::default())
+        });
+
+        // the level is raised by hand, without a signature
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project.member_by_key_mut("vibe").unwrap().interaction_level =
+            Some(InteractionLevel::Autonomous);
+        joy_core::store::save_project(dir.path(), &project).unwrap();
+        let outcome = run_host_turn(spec(None), |_req| panic!("the agent must not run"));
+        assert!(
+            outcome.notice.contains("@vibe did not run") && outcome.notice.contains("signature"),
+            "{}",
+            outcome.notice
         );
     }
 

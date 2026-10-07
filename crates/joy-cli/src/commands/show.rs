@@ -105,39 +105,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
         println!("{} {}", color::label("Capabilities:"), caps.join(", "));
     }
 
-    // Show the item-level interaction-level override (only if explicitly set)
     if let Some(ref level) = item.interaction_level {
-        // Check if clamped by max-interaction-level of first assignee
-        let clamped = item.assignees.first().and_then(|a| {
-            let project = joy_core::store::load_project(&root).ok()?;
-            let member = project.member_by_key(a.member.id())?;
-            match &member.capabilities {
-                joy_core::model::project::MemberCapabilities::Specific(map) => {
-                    // Find the capability for the current status
-                    item.capabilities.iter().find_map(|cap| {
-                        let config = map.get(cap)?;
-                        let max = config.max_interaction_level?;
-                        if level < &max {
-                            Some((max, *level))
-                        } else {
-                            None
-                        }
-                    })
-                }
-                _ => None,
-            }
-        });
-
-        if let Some((effective, original)) = clamped {
-            println!(
-                "{} {} {}",
-                color::label("Interaction level:"),
-                effective,
-                color::inactive(&format!("[project max, item: {original}]"))
-            );
-        } else {
-            println!("{} {}", color::label("Interaction level:"), level);
-        }
+        println!("{} {}", color::label("Interaction level:"), level);
     }
 
     if !item.deps.is_empty() {

@@ -127,10 +127,10 @@ fn update_qwen_permissions(root: &Path, member_id: &str, report: Report) -> Resu
 
     // Enforced level -> native approval mode (JOY-0222-4E). Overwrites a
     // hand-edited value on purpose: project.yaml is the authority here.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let level = crate::level_enforcement::setup_level(root, member_id);
     settings.as_object_mut().unwrap().insert(
         "approvalMode".into(),
-        serde_json::json!(crate::level_enforcement::qwen_approval_mode(levels.global)),
+        serde_json::json!(crate::level_enforcement::qwen_approval_mode(level)),
     );
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -172,8 +172,8 @@ fn ensure_vibe_bash_permission(
     // autonomous member, everyone else confirms each shell command. This
     // overwrites a hand-edited value on purpose (project.yaml is the
     // authority), which replaces the old keep-if-present behavior.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
-    let permission = crate::level_enforcement::vibe_bash_permission(levels.global);
+    let level = crate::level_enforcement::setup_level(root, member_id);
+    let permission = crate::level_enforcement::vibe_bash_permission(level);
     if bash.get("permission").and_then(|i| i.as_str()) == Some(permission) {
         return Ok(false);
     }
@@ -600,12 +600,10 @@ fn update_claude_permissions(
 
     // Enforced level -> native permission mode (JOY-0222-4E). Overwrites a
     // hand-edited value on purpose: project.yaml is the authority here.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let level = crate::level_enforcement::setup_level(root, member_id);
     permissions.as_object_mut().unwrap().insert(
         "defaultMode".into(),
-        serde_json::json!(crate::level_enforcement::claude_permission_mode(
-            levels.global
-        )),
+        serde_json::json!(crate::level_enforcement::claude_permission_mode(level)),
     );
 
     let json = serde_json::to_string_pretty(&settings)?;

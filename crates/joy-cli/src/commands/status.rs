@@ -118,6 +118,16 @@ pub fn run(args: StatusArgs) -> Result<()> {
     };
     crate::auth_gate::enforce(&mut ctx, &action, &item.id)?;
 
+    // Approving a job releases it at a level: the one it asks for, at
+    // most what the project allows its AI assignee (JI-019D-46).
+    if matches!(item.item_type, ItemType::Job)
+        && matches!((&old_status, &new_status), (Status::New, Status::Open))
+    {
+        let project = store::load_project(&ctx.root)?;
+        item.interaction_level = joy_core::auth::grants::job_level_at_approval(&project, &item)
+            .map_err(|why| anyhow::anyhow!(why))?;
+    }
+
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)
         && !matches!(new_status, Status::Closed | Status::Deferred)

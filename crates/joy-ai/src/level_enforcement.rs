@@ -3,66 +3,46 @@
 
 //! Interaction-level enforcement for `joy ai setup` (JI-0166-D8, JOY-0222-4E).
 //!
-//! Resolves an AI member's effective interaction levels from project data
-//! and derives each tool's NATIVE agent mode from them. The derivation is
-//! strictly one-way: a native mode is never parsed back into a level and
-//! never persisted in joy data; it exists only inside the generated tool
-//! configuration files.
+//! Says which interaction level a tool is set up with and derives each
+//! tool's NATIVE agent mode from it. The derivation is strictly one-way:
+//! a native mode is never parsed back into a level and never persisted
+//! in joy data; it exists only inside the generated tool configuration
+//! files.
 //!
-//! The resolution deliberately skips the personal-config layer: setup
-//! artifacts are shared project truth, a developer's private preference in
-//! `.joy/config.yaml` must not leak into them.
+//! The level is the AI member's project maximum (JI-019D-46): setup
+//! artifacts are shared project truth, so what one person allows the
+//! member for themselves does not go into them. A chat turn and a job
+//! set their own level on the session when they start.
 
 use joy_core::model::config::InteractionLevel;
-use joy_core::model::item::Capability;
-use joy_core::model::project::MemberCapabilities;
 use std::path::Path;
 
-/// The member's effective levels as far as setup enforcement needs them.
-pub struct EnforcedLevels {
-    /// The member's global effective level (member entry, else project
-    /// defaults). Drives the tool-wide native mode.
-    pub global: InteractionLevel,
-    /// Effective level per held work capability, in `Capability::ALL` order.
-    pub per_capability: Vec<(Capability, InteractionLevel)>,
-}
-
-/// Resolve the enforced levels for `member_id` in the project at `root`.
-/// Falls back to the project defaults when the member does not exist yet
-/// (initial `joy ai init` configures tools before registration completes).
-pub fn resolve_for_member(root: &Path, member_id: &str) -> EnforcedLevels {
-    let raw = joy_core::store::load_raw_interaction_level_defaults(root);
-    let effective = joy_core::store::load_interaction_level_defaults(root);
-    let project = joy_core::store::load_project(root).ok();
-    let member = project.as_ref().and_then(|p| p.member_by_key(member_id));
-
-    let member_global = member.and_then(|m| m.interaction_level);
-    let global = member_global.unwrap_or(effective.default);
-
-    let per_capability = Capability::ALL
-        .iter()
-        .filter(|c| c.is_work_capability())
-        .filter(|c| member.is_none_or(|m| m.has_capability(c)))
-        .map(|cap| {
-            let cap_config = member.and_then(|m| match &m.capabilities {
-                MemberCapabilities::Specific(map) => map.get(cap),
-                MemberCapabilities::All => None,
-            });
-            let (level, _source) = joy_core::model::project::resolve_interaction_level(
-                cap,
-                &raw,
-                &effective,
-                member_global,
-                None, // no personal layer in shared setup artifacts
-                cap_config,
-            );
-            (*cap, level)
-        })
-        .collect();
-
-    EnforcedLevels {
-        global,
-        per_capability,
+/// The level the tool of `member_id` is set up with in the project at
+/// `root`.
+///
+/// With member files that is the level a manager signed for the member.
+/// A member that is not registered yet (`joy ai init` writes the tool's
+/// files first) gets the level a new AI member starts with; one whose
+/// signature does not hold gets the most careful level. A project from
+/// before the member files answers with the member's own level, else
+/// the project default, as it did.
+pub fn setup_level(root: &Path, member_id: &str) -> InteractionLevel {
+    use joy_core::auth::{grants, vouch};
+    let Ok(project) = joy_core::store::load_project(root) else {
+        return joy_core::store::load_interaction_level_defaults(root).default;
+    };
+    let member = project.member_by_key(member_id);
+    if !grants::applies(&project) {
+        return member
+            .and_then(|m| m.interaction_level)
+            .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(root).default);
+    }
+    match member {
+        None => vouch::DEFAULT_AI_LEVEL,
+        Some(member) => match vouch::verify_maximum(&project, member_id, member) {
+            Ok(()) => vouch::maximum_level(member),
+            Err(_) => InteractionLevel::Proposing,
+        },
     }
 }
 
@@ -136,56 +116,6 @@ pub fn level_meaning(level: InteractionLevel) -> &'static str {
     }
 }
 
-/// The terse "Interaction levels" section of the managed instruction block.
-/// Names the member's enforced global level, the native mode it derives for
-/// the tool (when the tool has an enforceable surface), and per-capability
-/// deviations from the global level.
-pub fn managed_block_section(levels: &EnforcedLevels, tool: &str) -> String {
-    let mut out = String::from("## Interaction levels\n\n");
-    out.push_str(&format!(
-        "Your interaction level: {} ({}).",
-        levels.global,
-        level_meaning(levels.global)
-    ));
-    let native = match tool {
-        "claude" => Some(format!(
-            " Enforced as Claude Code permission mode `{}`.",
-            claude_permission_mode(levels.global)
-        )),
-        "qwen" => Some(format!(
-            " Enforced as Qwen Code approval mode `{}`.",
-            qwen_approval_mode(levels.global)
-        )),
-        "vibe" => Some(format!(
-            " Enforced as Vibe bash permission `{}`.",
-            vibe_bash_permission(levels.global)
-        )),
-        _ => None,
-    };
-    if let Some(native) = native {
-        out.push_str(&native);
-    }
-    out.push('\n');
-
-    let deviations: Vec<String> = levels
-        .per_capability
-        .iter()
-        .filter(|(_, level)| *level != levels.global)
-        .map(|(cap, level)| format!("{cap}: {level}"))
-        .collect();
-    if !deviations.is_empty() {
-        out.push_str(&format!(
-            "Per-capability deviations: {}.\n",
-            deviations.join(", ")
-        ));
-    }
-    out.push_str(
-        "Levels: autonomous = gates only; confirmed = confirm irreversible actions; \
-         proposing = human decides.\n",
-    );
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,77 +169,58 @@ mod tests {
         assert_eq!(vibe_bash_permission(Autonomous), "always");
     }
 
+    /// The tool is set up with what a manager signed for the member; a
+    /// member that is not there yet starts where a new one starts, and a
+    /// level raised by hand sets the tool up as carefully as it gets.
     #[test]
-    fn managed_block_section_names_global_and_deviations() {
-        let levels = EnforcedLevels {
-            global: Confirmed,
-            per_capability: vec![
-                (joy_core::model::item::Capability::Implement, Confirmed),
-                (joy_core::model::item::Capability::Test, Autonomous),
-            ],
-        };
-        let s = managed_block_section(&levels, "claude");
-        assert!(s.contains("Your interaction level: confirmed"));
-        assert!(s.contains("permission mode `acceptEdits`"));
-        assert!(s.contains("test: autonomous"));
-        assert!(!s.contains("implement: confirmed"), "no non-deviations");
-    }
+    fn the_setup_level_is_the_signed_maximum() {
+        use joy_core::auth::vouch::{self, Occasion};
+        use joy_core::auth::IdentityKeypair;
+        use joy_core::model::project::{Member, MemberCapabilities};
 
-    #[test]
-    fn resolve_prefers_member_entry_over_defaults() {
-        let tmp = tempfile::tempdir().unwrap();
-        let joy = joy_core::store::joy_dir(tmp.path());
-        std::fs::create_dir_all(&joy).unwrap();
-        std::fs::write(
-            joy.join("project.defaults.yaml"),
-            "interaction-level:\n  default: proposing\n  test: autonomous\n",
-        )
+        let dir = tempfile::tempdir().unwrap();
+        joy_core::init::init(joy_core::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Setup".into()),
+            acronym: Some("SU".into()),
+            user: Some("dev@example.com".into()),
+            language: None,
+            host: joy_core::host::HostKind::Background,
+            ask: None,
+        })
         .unwrap();
-        std::fs::write(
-            joy.join("project.yaml"),
-            "name: T\nlanguage: en\ncreated: \"2026-01-01T00:00:00+00:00\"\nmembers:\n  \
-             ai:test@joy:\n    interaction-level: confirmed\n    capabilities:\n      \
-             implement: {}\n      test: {}\n",
-        )
-        .unwrap();
+        assert_eq!(setup_level(dir.path(), "claude"), vouch::DEFAULT_AI_LEVEL);
 
-        let levels = resolve_for_member(tmp.path(), "ai:test@joy");
-        assert_eq!(levels.global, Confirmed);
-        // Member global (confirmed) beats the project default (proposing)
-        // for implement; the per-capability project default for test
-        // (autonomous)... is itself overridden by the member global.
-        let by_cap: std::collections::BTreeMap<_, _> =
-            levels.per_capability.iter().cloned().collect();
-        assert_eq!(
-            by_cap[&joy_core::model::item::Capability::Implement],
-            Confirmed
+        let kp = IdentityKeypair::from_seed(&[9; 32]);
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project
+            .member_by_key_mut("dev@example.com")
+            .unwrap()
+            .verify_key = Some(kp.public_key().to_hex());
+        let mut claude = Member::new(MemberCapabilities::Specific(
+            [(joy_core::model::item::Capability::Plan, Default::default())].into(),
+        ));
+        claude.interaction_level = Some(Confirmed);
+        vouch::sign(
+            &project,
+            "dev@example.com",
+            &kp,
+            "claude",
+            &mut claude,
+            Occasion::New,
         );
-        assert_eq!(by_cap[&joy_core::model::item::Capability::Test], Confirmed);
-    }
+        project.register_member("claude", claude).unwrap();
+        joy_core::store::save_project(dir.path(), &project).unwrap();
+        assert_eq!(setup_level(dir.path(), "claude"), Confirmed);
+        // the older spelling names the same member
+        assert_eq!(setup_level(dir.path(), "ai:claude@joy"), Confirmed);
 
-    #[test]
-    fn resolve_without_member_falls_back_to_defaults() {
-        let tmp = tempfile::tempdir().unwrap();
-        let joy = joy_core::store::joy_dir(tmp.path());
-        std::fs::create_dir_all(&joy).unwrap();
-        std::fs::write(
-            joy.join("project.defaults.yaml"),
-            "interaction-level:\n  default: confirmed\n",
-        )
-        .unwrap();
-        let levels = resolve_for_member(tmp.path(), "ai:absent@joy");
-        assert_eq!(levels.global, Confirmed);
-        assert!(!levels.per_capability.is_empty());
-    }
-
-    #[test]
-    fn copilot_has_no_native_enforcement_line() {
-        let levels = EnforcedLevels {
-            global: Proposing,
-            per_capability: vec![],
-        };
-        let s = managed_block_section(&levels, "copilot");
-        assert!(!s.contains("Enforced as"));
-        assert!(s.contains("Your interaction level: proposing"));
+        let mut project = joy_core::store::load_project(dir.path()).unwrap();
+        project
+            .member_by_key_mut("claude")
+            .unwrap()
+            .interaction_level = Some(Autonomous);
+        joy_core::store::save_project(dir.path(), &project).unwrap();
+        assert_eq!(setup_level(dir.path(), "claude"), Proposing);
     }
 }

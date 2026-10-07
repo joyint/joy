@@ -1323,6 +1323,15 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     .expect("member key resolved above") = member;
             }
             store::save_project(&ctx.root, project)?;
+            // The tool a member is named after is set up with the member's
+            // level: bring its files along, so the change holds the next
+            // time the tool starts and not only after `joy update`.
+            if is_ai && a.project {
+                let tool = joy_core::model::project::ai_member_name(&key);
+                if joy_ai::ai_setup::is_tool_configured(&ctx.root, tool) {
+                    joy_ai::ai_setup::configure_tool(&ctx.root, tool, &mut |_| {})?;
+                }
+            }
 
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]

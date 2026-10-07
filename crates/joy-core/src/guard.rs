@@ -331,6 +331,22 @@ impl Guard {
         // no capability; no capability, no action, whichever kind.
         if is_ai_member(&identity.member) && crate::auth::grants::applies(&self.project) {
             let required = action.required_capability();
+            // Starting its own job and handing it to review is the
+            // assignee's by being the assignee (checked above): it needs
+            // no `jobs` capability, which is about releasing and
+            // accepting other members' jobs.
+            let own_job_step = matches!(
+                action,
+                Action::ChangeJobStatus {
+                    from: Status::Open,
+                    to: Status::InProgress,
+                    ..
+                } | Action::ChangeJobStatus {
+                    from: Status::InProgress,
+                    to: Status::Review,
+                    ..
+                }
+            );
             let delegator = identity
                 .delegated_by
                 .as_ref()
@@ -343,6 +359,7 @@ impl Guard {
                 identity.grant.as_deref(),
             ) {
                 Err(reason) => Verdict::Deny(reason),
+                Ok(_) if own_job_step => Verdict::Allow,
                 Ok(may) if may.allows(&required) => Verdict::Allow,
                 Ok(_) => Verdict::Deny(format!(
                     "{} does not have '{}' capability",
