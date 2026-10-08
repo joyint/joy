@@ -282,3 +282,35 @@ EOF
     [ "$status" -eq 0 ]
     [[ "$output" != *"joy project member show"* ]]
 }
+
+@test "redeeming its token tells an AI member its level and what it may do" {
+    setup_human_auth
+    joy project member add helper --capabilities implement review create --level confirmed \
+        --passphrase "$TEST_PASSPHRASE"
+    TOKEN=$(joy auth token add helper --passphrase "$TEST_PASSPHRASE" 2>/dev/null | tr -d '"' | tail -1)
+
+    run --separate-stderr joy auth --token "$TOKEN" --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.data.member == "helper"' >/dev/null
+    echo "$output" | jq -e '.data.level == "confirmed"' >/dev/null
+    echo "$output" | jq -e '.data.capabilities == ["implement","review","create"]' >/dev/null
+    SESSION=$(echo "$output" | jq -r '.data.session_env')
+    run joy add task "With the first token" --session "$SESSION"
+    [ "$status" -eq 0 ]
+
+    # what I allow it for myself narrows what it is told; the token that
+    # names my grant is the one issued after it
+    run joy project member edit helper --capabilities review --level proposing \
+        --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -eq 0 ]
+    # the token from before is not good any more, and the answer says so
+    [[ "$output" == *"Issue a new one: joy auth token add helper"* ]]
+    run joy add task "With the old token" --session "$SESSION"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"has changed since its token was issued"* ]]
+    TOKEN=$(joy auth token add helper --passphrase "$TEST_PASSPHRASE" 2>/dev/null | tr -d '"' | tail -1)
+    run --separate-stderr joy auth --token "$TOKEN" --json
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.data.level == "proposing"' >/dev/null
+    echo "$output" | jq -e '.data.capabilities == ["review"]' >/dev/null
+}

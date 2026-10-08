@@ -1369,6 +1369,16 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 crate::output::emit(EditPayload { member: &key })?;
             } else {
                 println!("Updated member {}", color::user(&a.id));
+                // A token names what the AI member may do for the person
+                // who issued it, so one issued before this change is
+                // refused from now on: say how to get it working again
+                // instead of leaving that to the first refusal.
+                if is_ai && !a.project {
+                    let name = joy_core::model::project::ai_member_name(&key);
+                    println!(
+                        "Its token names what it may do for you. Issue a new one: joy auth token add {name}"
+                    );
+                }
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
