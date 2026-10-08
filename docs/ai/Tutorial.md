@@ -92,10 +92,10 @@ Run this yourself to check if you are already a member:
 joy project member
 ```
 
-If you see your `ai:...@joy` row, you are registered. Ask the operator to create a token. The operator runs:
+If you see a row with your name, you are registered. Ask the operator to create a token. The operator runs:
 
 ```
-joy auth token add ai:<name>@joy
+joy auth token add <name>
 ```
 
 If you do not see your row, you are not registered. Ask the operator to register you. The operator runs one of these:
@@ -109,7 +109,7 @@ joy project member add <name> --with-token
 
 `member add --with-token` is for an AI Joy cannot detect at all. It registers you and prints a token in one step, but writes no instruction files.
 
-Suggest a name based on the tool you are, for example `cursor`. This is only a suggestion. The real ID is returned with the token. (An AI member used to be written `ai:cursor@joy`; that spelling still works.)
+Suggest a name based on the tool you are, for example `cursor`. This is only a suggestion. The real ID is returned with the token.
 
 The operator gives you a token starting with `joy_t_`. Redeem it yourself, one time:
 

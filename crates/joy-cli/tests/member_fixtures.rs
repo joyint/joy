@@ -153,6 +153,20 @@ fn text(out: &Output) -> String {
     )
 }
 
+/// Every file under `dir`.
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(files_under(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}
+
 /// The questions, the same for every fixture and every host.
 fn still_works(fixture: &str, host: Host) {
     let project = Project::clone_of(fixture);
@@ -223,7 +237,18 @@ fn still_works(fixture: &str, host: Host) {
         .unwrap_or(0);
     assert_eq!(files, 3, "{ctx}: three member files");
     assert!(members.contains("name: claude"), "{ctx}: {members}");
-    assert!(!members.contains("ai:claude@joy"), "{ctx}: {members}");
+    // Nothing the project keeps says the AI member's legacy form any more:
+    // not its members, not an item, not a line of the log.
+    let older = joy_core::migrations::ai_member_name::legacy_form("claude");
+    assert!(!members.contains(&older), "{ctx}: {members}");
+    for kept in files_under(&project.root.join(".joy")) {
+        let body = std::fs::read_to_string(&kept).unwrap_or_default();
+        assert!(
+            !body.contains(&older),
+            "{ctx}: {} still says it",
+            kept.display()
+        );
+    }
     assert!(!members.contains("attestation:"), "{ctx}: {members}");
     assert!(members.contains("granted:"), "{ctx}: {members}");
     let item = std::fs::read_dir(project.root.join(".joy/items"))
@@ -240,7 +265,7 @@ fn still_works(fixture: &str, host: Host) {
     // The delegation from before is still the founder's to use: a new
     // token for the AI member is issued without a new delegation, under
     // its name, and redeems. The key behind it was derived when the
-    // member was `ai:claude@joy`, and it is the same key now.
+    // member was written by its legacy form, and it is the same key now.
     let issued = project.joy(&[
         "auth",
         "token",

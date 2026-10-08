@@ -842,20 +842,20 @@ mod tests {
     #[test]
     fn identity_log_user_delegated() {
         let id = Identity {
-            member: "ai:claude@joy".into(),
+            member: "claude".into(),
             delegated_by: Some("horst@joydev.com".into()),
             authenticated: false,
             grant: None,
         };
-        assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
+        assert_eq!(id.log_user(), "claude delegated-by:horst@joydev.com");
     }
 
     #[test]
     fn cross_project_warning_names_session_and_current_projects() {
-        let msg = cross_project_session_warning("JOY", "ai:claude@joy", "JI");
+        let msg = cross_project_session_warning("JOY", "claude", "JI");
         assert!(msg.contains("belongs to project JOY"));
-        assert!(msg.contains("member ai:claude@joy"));
+        assert!(msg.contains("member claude"));
         assert!(msg.contains("current project is JI"));
-        assert!(msg.contains("joy auth token add ai:claude@joy"));
+        assert!(msg.contains("joy auth token add claude"));
     }
 }

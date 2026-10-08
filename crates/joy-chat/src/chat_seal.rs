@@ -71,14 +71,15 @@ pub fn seal_event(
     event: &ChatEvent,
 ) -> Result<Vec<u8>, ChatError> {
     let yaml = serde_yaml_ng::to_string(event)?;
+    Ok(seal_plain(cid, epoch_id, ck, yaml.as_bytes()))
+}
+
+/// Seal the bytes of one event as they stand. [`seal_event`] is the way
+/// in; a test hands in what an earlier release wrote.
+pub(crate) fn seal_plain(cid: &str, epoch_id: &str, ck: &ContentKey, plain: &[u8]) -> Vec<u8> {
     let zone = event_zone(cid, epoch_id);
-    let nonce = det_nonce(&zone, yaml.as_bytes());
-    Ok(encrypt_blob_with_nonce(
-        &zone,
-        &ZoneKey::from_bytes(*ck),
-        &nonce,
-        yaml.as_bytes(),
-    ))
+    let nonce = det_nonce(&zone, plain);
+    encrypt_blob_with_nonce(&zone, &ZoneKey::from_bytes(*ck), &nonce, plain)
 }
 
 /// The content-addressed id (filename) of a sealed blob: `sha256[..16]`

@@ -898,7 +898,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
         }
         Some(MemberCommand::Show(a)) => {
             // `a.id` is a user-supplied identifier. It may be an at-rest map key
-            // (an `ai:` id, or the opaque `m-...` id a user reads from
+            // (an AI member's name, or the opaque `m-...` id a user reads from
             // project.yaml in anonymous mode, or a cleartext e-mail in open mode
             // where the key *is* the e-mail) or a human e-mail in anonymous mode.
             // Try the key space first (preserves the original by-key lookup, incl.
@@ -1113,7 +1113,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             if is_ai {
                 joy_core::auth::grants::change_maximum(&mut new_member, None, level)?;
                 // The tool that runs it: said, or the one its name names.
-                let name = joy_core::model::project::ai_member_name(&a.id);
+                let name = a.id.as_str();
                 new_member.adapter = match a.adapter.as_deref() {
                     Some(adapter) => Some(
                         joy_ai::naming::tool_adapter(adapter)
@@ -1216,8 +1216,8 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 );
             }
 
-            // The member as the project knows it: an AI member's name in
-            // either spelling, an opaque id, or an address resolved
+            // The member as the project knows it: an AI member's name,
+            // an opaque id, or an address resolved
             // through the privacy layer (ADR-042).
             let key = project
                 .member_key(&a.id)
@@ -1263,7 +1263,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     joy_core::store::save_project(&ctx.root, project)?;
                     println!(
                         "{} runs on {} for you.",
-                        joy_core::model::project::ai_member_name(&key),
+                        key.as_str(),
                         a.model
                             .as_deref()
                             .filter(|m| !m.is_empty())
@@ -1381,7 +1381,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // level: bring its files along, so the change holds the next
             // time the tool starts and not only after `joy update`.
             if is_ai && a.project {
-                let tool = joy_core::model::project::ai_member_name(&key);
+                let tool = key.as_str();
                 if joy_ai::ai_setup::is_tool_configured(&ctx.root, tool) {
                     joy_ai::ai_setup::configure_tool(&ctx.root, tool, &mut |_| {})?;
                 }
@@ -1400,7 +1400,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 // refused from now on: say how to get it working again
                 // instead of leaving that to the first refusal.
                 if is_ai && !a.project {
-                    let name = joy_core::model::project::ai_member_name(&key);
+                    let name = key.as_str();
                     println!(
                         "Its token names what it may do for you. Issue a new one: joy auth token add {name}"
                     );

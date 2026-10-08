@@ -26,9 +26,9 @@
 //!
 //! ```text
 //! ai_sessions:
-//!   ai:claude@joy: acp-session-42
+//!   claude: acp-session-42
 //! interaction-levels:
-//!   ai:claude@joy:
+//!   claude:
 //!     horst@example.com: confirmed
 //! ```
 //!

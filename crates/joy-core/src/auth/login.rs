@@ -154,7 +154,7 @@ fn finish_login(
     // rather than taken from whatever the caller came in holding.
     let attested_id = match view.privacy_mode() {
         PrivacyMode::Open => member_key.clone(),
-        // An AI member keeps its synthetic key through the switch to
+        // An AI member keeps its name as its key through the switch to
         // anonymous mode: it gets no members.yaml row, because there is
         // no person behind it to keep out of a committed file, and the
         // key is what an attestation over it signs, exactly as in open
@@ -289,7 +289,25 @@ pub fn verify_member_attestation(
         ))
     })?;
     let attester_pubkey = PublicKey::from_hex(attester_pubkey_hex)?;
-    attestation::verify_attestation(att, &attester_pubkey, email, member).map_err(|e| {
+    // An AI member's attestation from before it was known by its name
+    // was signed over its legacy form, and stands until a person brings
+    // the project over to member files.
+    let signed_before = || {
+        crate::model::project::is_ai_member(email)
+            && attestation::verify_attestation(
+                att,
+                &attester_pubkey,
+                &joy_model::migrations::ai_member_name::legacy_form(email),
+                member,
+            )
+            .is_ok()
+    };
+    let checked = attestation::verify_attestation(att, &attester_pubkey, email, member);
+    let checked = match checked {
+        Err(_) if signed_before() => Ok(()),
+        other => other,
+    };
+    checked.map_err(|e| {
         JoyError::AuthFailed(format!(
             "attestation for {email} is not valid ({e}). The entry appears to have been \
              tampered with. Ask a manage member to remove and re-add {email}."

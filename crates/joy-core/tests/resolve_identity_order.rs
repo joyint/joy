@@ -293,11 +293,11 @@ fn the_order_after_joy_02ae_1a_and_its_two_failure_shapes() {
     // and checked here because the member key it used to compare
     // against (the pin) is gone.
     git_config_says_locally(root, "a@b.c");
-    let session_env = a_delegation_session(root, "a@b.c", "ai:claude@joy");
+    let session_env = a_delegation_session(root, "a@b.c", "claude");
     std::env::set_var("JOY_SESSION", &session_env);
     assert_eq!(
         resolve_identity(root).unwrap().member.id(),
-        "ai:claude@joy",
+        "claude",
         "a live delegation session outranks git config and a human session"
     );
 

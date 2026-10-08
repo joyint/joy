@@ -118,7 +118,7 @@ fn activation_takes_its_attester_from_the_acting_member() {
     joy_ai::ai_setup::init_tool(root, "claude", PASSPHRASE, &mut |_| {}).unwrap();
     let project = joy_core::store::load_project(root).unwrap();
     let member = project
-        .member_by_key("ai:claude@joy")
+        .member_by_key("claude")
         .expect("the tool's member is registered");
     let attestation = member
         .attestation
@@ -144,7 +144,7 @@ fn activation_takes_its_attester_from_the_acting_member() {
     );
     let project = joy_core::store::load_project(root).unwrap();
     assert!(
-        project.member_by_key("ai:qwen@joy").is_none(),
+        project.member_by_key("qwen").is_none(),
         "no member is registered on an attester joy had to guess"
     );
 }

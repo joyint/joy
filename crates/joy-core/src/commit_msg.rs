@@ -28,7 +28,7 @@ pub struct ItemRef {
 /// Who is committing, as resolved by joy-core identity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Committer {
-    /// Member id (email or `ai:tool@joy`).
+    /// Member id (email, or the name of an AI member).
     pub member: String,
     /// The delegating human, present only for an authenticated AI session.
     pub delegated_by: Option<String>,
@@ -267,7 +267,7 @@ mod tests {
 
     fn ai() -> Committer {
         Committer {
-            member: "ai:claude@joy".into(),
+            member: "claude".into(),
             delegated_by: Some("horst@joydev.com".into()),
         }
     }

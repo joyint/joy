@@ -114,7 +114,7 @@ impl Machine {
     /// handle. Every step of it runs on this machine without git, so the
     /// enrolment an agent needs is part of what this file proves.
     fn a_live_session(&self) -> String {
-        let member = "ai:claude@joy";
+        let member = "claude";
         let added = self.joy(&[
             "project",
             "member",

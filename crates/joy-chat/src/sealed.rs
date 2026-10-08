@@ -453,7 +453,7 @@ mod tests {
         // participant it opens nothing and answers nothing.
         let horst = [1u8; 32];
         let vibe = [2u8; 32];
-        let members = vec![member("horst@example.com", 1), member("ai:vibe@joy", 2)];
+        let members = vec![member("horst@example.com", 1), member("vibe", 2)];
 
         let mut stored = Sealed::default();
         let mut chat = Chat::new(CID, vec![MemberRef::new("horst@example.com")], Utc::now());
@@ -472,7 +472,7 @@ mod tests {
         // now the line that addresses it, sealed WITH the AI as participant
         let opened = open(CID, &stored, &horst);
         let mut next = opened.chat.clone();
-        next.participants.push(MemberRef::new("ai:vibe@joy"));
+        next.participants.push(MemberRef::new("vibe"));
         next.messages
             .push(line("m2", "horst@example.com", "@vibe ping"));
         let write = seal(CID, &opened, &next, &recipients(&next, &members), &horst).unwrap();
@@ -485,6 +485,109 @@ mod tests {
             "the addressed AI must read the line that addressed it: {:?}",
             seen.messages.iter().map(|m| &m.text).collect::<Vec<_>>()
         );
+    }
+
+    /// The double answer on integration (2026-10-08), from what is
+    /// stored to what is written next. A chat sealed when an AI member
+    /// still went by its legacy form, opened today: the member is in it
+    /// ONCE, under its name, with the session it had. A line that
+    /// addresses it adds nobody (two entries were two turns, and two
+    /// answers), and the write keeps the chat's key: an AI member whose
+    /// coverage stood under the legacy form counted as someone who had left,
+    /// so every write rotated the key.
+    #[test]
+    fn a_chat_sealed_under_an_ai_members_legacy_form_holds_it_once_and_keeps_its_key() {
+        let horst = [1u8; 32];
+        let vibe = [2u8; 32];
+        let members = vec![member("horst@example.com", 1), member("vibe", 2)];
+        let ais = |chat: &Chat| -> Vec<String> {
+            chat.participants
+                .iter()
+                .map(|p| p.id().to_string())
+                .filter(|id| joy_model::is_ai_member(id))
+                .collect()
+        };
+
+        // a team chat with the AI member in it and a line of its own
+        let mut chat = Chat::new(
+            CID,
+            vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")],
+            Utc::now(),
+        );
+        chat.kind = ChatKind::Team;
+        chat.messages.push(line("m1", "vibe", "hallo"));
+        chat.ai_sessions.insert("vibe".into(), "acp-42".into());
+        let mut today = Sealed::default();
+        let write = seal(
+            CID,
+            &open(CID, &today, &horst),
+            &chat,
+            &recipients(&chat, &members),
+            &horst,
+        )
+        .unwrap();
+        store(&mut today, write);
+
+        // the same events as a release from before sealed them: the AI
+        // member by its legacy form, wherever an event names it
+        let written = open(CID, &today, &horst);
+        let (epoch, ck) = written.epoch_keys.iter().next().expect("one epoch");
+        let older = joy_model::migrations::ai_member_name::legacy_form("vibe");
+        let mut renamed = 0;
+        let mut stored = Sealed {
+            slots: today.slots.clone(),
+            blobs: written
+                .events
+                .iter()
+                .map(|event| {
+                    let yaml = serde_yaml_ng::to_string(event).unwrap();
+                    let then = yaml
+                        .replace("member: vibe\n", &format!("member: {older}\n"))
+                        .replace("author: vibe\n", &format!("author: {older}\n"));
+                    if then != yaml {
+                        renamed += 1;
+                    }
+                    chat_seal::seal_plain(CID, epoch, ck, then.as_bytes())
+                })
+                .collect(),
+        };
+        assert!(
+            renamed >= 4,
+            "participant, coverage, session and line: {renamed}"
+        );
+
+        // opened today
+        let opened = open(CID, &stored, &horst);
+        assert_eq!(ais(&opened.chat), ["vibe"]);
+        assert_eq!(
+            opened.chat.ai_sessions.get("vibe").map(String::as_str),
+            Some("acp-42")
+        );
+        assert_eq!(opened.chat.messages[0].author.id(), "vibe");
+
+        // a line that addresses the member: the client takes an addressed
+        // AI member along only when it is not in the chat yet
+        let mut next = opened.chat.clone();
+        if !next.participants.iter().any(|p| p.id() == "vibe") {
+            next.participants.push(MemberRef::new("vibe"));
+        }
+        next.messages
+            .push(line("m2", "horst@example.com", "@vibe ping"));
+        let write = seal(CID, &opened, &next, &recipients(&next, &members), &horst).unwrap();
+        assert!(
+            write.slots.is_empty(),
+            "nobody left the chat, so its key stays as it is"
+        );
+        store(&mut stored, write);
+
+        // one AI member to ask a turn of, and it reads the line
+        let after = open(CID, &stored, &horst).chat;
+        assert_eq!(ais(&after), ["vibe"]);
+        assert!(open(CID, &stored, &vibe)
+            .chat
+            .messages
+            .iter()
+            .any(|m| m.text == "@vibe ping"));
     }
 
     #[test]
@@ -516,7 +619,7 @@ mod tests {
     fn an_empty_participant_list_reaches_every_member() {
         // General/Team convention: no list means everyone, and that
         // already covers an AI member without naming it.
-        let members = vec![member("horst@example.com", 1), member("ai:vibe@joy", 2)];
+        let members = vec![member("horst@example.com", 1), member("vibe", 2)];
         let mut chat = Chat::new(CID, Vec::new(), Utc::now());
         chat.kind = ChatKind::General;
         let ids: Vec<String> = recipients(&chat, &members)
@@ -525,7 +628,7 @@ mod tests {
             .collect();
         assert_eq!(
             ids,
-            vec!["horst@example.com".to_string(), "ai:vibe@joy".to_string()]
+            vec!["horst@example.com".to_string(), "vibe".to_string()]
         );
     }
 

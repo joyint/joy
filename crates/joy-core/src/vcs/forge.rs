@@ -6248,7 +6248,7 @@ mod tests {
         std::fs::write(wt.join("NEW.txt"), "added").unwrap();
         std::fs::write(wt.join(".joy/marker.yaml"), "state: tampered\n").unwrap();
         std::fs::write(wt.join(".joy/new-item.yaml"), "id: nope\n").unwrap();
-        let committed = commit_all(&wt, "feat: work", "claude", "ai:claude@joy").expect("commit");
+        let committed = commit_all(&wt, "feat: work", "claude", "claude").expect("commit");
         assert!(committed.is_some());
         push_branch(&wt, &Auth::token("x")).expect("push");
 

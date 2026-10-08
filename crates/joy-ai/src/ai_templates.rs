@@ -220,7 +220,7 @@ mod tests {
         let block = render_joy_block(true).unwrap();
         assert!(block.contains("data.member"));
         assert!(block.contains("data.session_env"));
-        assert!(!block.contains("ai:claude@joy"));
+        assert!(!block.contains("claude"));
         assert!(block.contains("/joy"));
     }
 

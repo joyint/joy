@@ -7,7 +7,7 @@ use joy_core::store;
 
 #[derive(clap::Args)]
 pub struct DeauthArgs {
-    /// Member to deauth (default: yourself). Example: ai:claude@joy
+    /// Member to deauth (default: yourself). Example: claude
     pub member: Option<String>,
 }
 

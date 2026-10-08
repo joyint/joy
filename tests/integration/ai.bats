@@ -339,7 +339,7 @@ load setup
     # ephemeral private key and must not be written to any tool config file.
     setup_human_auth
     joy ai init </dev/null 2>/dev/null || true
-    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
+    MEMBER=$(first_ai_member)
     [ -n "$MEMBER" ] || skip "no AI member registered"
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
@@ -357,7 +357,7 @@ load setup
 @test "AI auth works in isolated subshell (simulates AI tool)" {
     setup_human_auth
     joy ai init </dev/null 2>/dev/null || true
-    MEMBER=$(joy project 2>/dev/null | grep "ai:" | head -1 | awk '{print $1}')
+    MEMBER=$(first_ai_member)
     [ -n "$MEMBER" ] || skip "no AI member registered"
     TOKEN=$(joy auth token add "$MEMBER" --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')

@@ -147,7 +147,7 @@ fn an_ai_reads_the_chat_with_its_own_session() {
             "project",
             "member",
             "add",
-            "ai:vibe@joy",
+            "vibe",
             "--with-token",
             "--passphrase",
             PASS,

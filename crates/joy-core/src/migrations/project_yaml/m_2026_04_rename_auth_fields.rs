@@ -102,7 +102,7 @@ members:
     salt: bb
     otp_hash: cc
     ai_delegations:
-      ai:claude@joy:
+      claude:
         delegation_key: dd
         created: 2026-04-15T10:00:00Z
 "#;
@@ -131,7 +131,7 @@ members:
             .as_mapping()
             .unwrap();
         let claude = delegations
-            .get(Value::String("ai:claude@joy".into()))
+            .get(Value::String("claude".into()))
             .unwrap()
             .as_mapping()
             .unwrap();

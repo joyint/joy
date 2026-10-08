@@ -64,7 +64,7 @@ The CLI and the Tauri app operate on a local `.joy/` directory through `joy-core
 ## Security
 
 - **Credentials and configuration.** Secrets live in `credentials.yaml` (gitignored, `0600`); settings live in `config.yaml` (committed). Both exist at a global level (`~/.config/joy/`) and a project level (`.joy/`), with project values overriding global ones.
-- **Identity and authorization.** Identity is the e-mail address (`git config user.email` locally, OAuth on the server); AI members use a synthetic `ai:tool@joy` identity. Human-to-AI delegation uses per-delegator, per-session tokens. See the auth decisions `JOY-01CD-DA`, `JOY-01E0-2E`, `JOY-01E1-E7`, and `JOY-01E3-6B` (pseudonymized identity for GDPR erasure).
+- **Identity and authorization.** Identity is the e-mail address (`git config user.email` locally, OAuth on the server); AI members are known by their name (`claude`). Human-to-AI delegation uses per-delegator, per-session tokens. See the auth decisions `JOY-01CD-DA`, `JOY-01E0-2E`, `JOY-01E1-E7`, and `JOY-01E3-6B` (pseudonymized identity for GDPR erasure).
 - **Encryption.** Project data can be selectively end-to-end encrypted on the client; `joy-core` consumes the encryption layer, whose implementation is the [crypt](https://github.com/joyint/crypt) project.
 - **Runtime gates.** `joy-core/src/guard.rs` is the single point that enforces status-transition gates, capabilities, and the `allow_ai` flag (for example, AI can create items but a human approves them into the backlog).
 - **AI governance.** Joy's governance rests on five pillars (Trustship, Guardianship, Orchestration, Traceability, Settlement); see [VISION.md](./VISION.md#ai-governance-the-five-pillars).

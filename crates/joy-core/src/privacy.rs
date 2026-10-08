@@ -29,9 +29,9 @@ use crate::model::Project;
 use crate::store;
 use joy_crypt::zone::{unwrap_for_member, wrap_for_member, ZoneKey};
 
-/// A human member is one whose map key is an e-mail (not an `ai:` synthetic id).
+/// A human member is one whose map key is an e-mail, not an AI member's name.
 /// Only human members carry PII and get anonymized; AI members keep their
-/// readable synthetic id.
+/// name.
 fn is_human_key(key: &str) -> bool {
     !crate::model::project::is_ai_member(key)
 }
@@ -418,7 +418,7 @@ pub fn switch_to_anonymous(
 
     for (key, mut member) in project.take_members() {
         if !is_human_key(&key) {
-            // AI member: keep synthetic id and entry as-is.
+            // AI member: keep name and entry as-is.
             new_members.insert(key, member);
             continue;
         }

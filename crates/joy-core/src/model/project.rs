@@ -58,7 +58,8 @@ pub struct Project {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        serialize_with = "serialize_members"
+        serialize_with = "serialize_members",
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
@@ -141,8 +142,8 @@ pub struct CryptZone {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// Per-(operator, AI) zone-key wraps for AI Tool delegations
-    /// (ADR-041 §3-4). Outer key is the AI member id (e.g.
-    /// `ai:claude@joy`); inner key is the operator email; value is the
+    /// (ADR-041 §3-4). Outer key is the AI member (`claude`); inner key
+    /// is the operator email; value is the
     /// hex-encoded X25519 wrap of the zone key against the operator's
     /// stable delegation public key.
     ///
@@ -150,7 +151,11 @@ pub struct CryptZone {
     /// the operator has issued. Token issuance writes nothing here; the
     /// embedded delegation private key in `--crypt` tokens is what the
     /// AI uses to unwrap (ADR-041 §5).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
+    )]
     pub delegations: BTreeMap<String, BTreeMap<String, String>>,
 }
 
@@ -212,7 +217,7 @@ pub struct Member {
     /// The ACP adapter that runs an AI member. Since JOY-0231-74 the id is
     /// the tool name itself (claude | vibe | qwen | mock); first-generation
     /// pins (claude-code, mistral-vibe, qwen-code) are rewritten by the
-    /// silent migration. Only meaningful on `ai:*` members. Set when the AI
+    /// silent migration. Only meaningful on AI members. Set when the AI
     /// member is added; the rest of its key-bound ACP config (key, model,
     /// budget, guardrail) lives in the platform DB, not the repo (JI-0164 as
     /// revised by JI-0166-D8: no agent mode is stored anywhere). None on human
@@ -236,7 +241,11 @@ pub struct Member {
     pub seed_wrap_recovery: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enrollment_verifier: Option<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
+    )]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
     /// Per-member Crypt zone-key wraps. Map from zone name to the
     /// hex-encoded `nonce || ciphertext || tag` produced by
@@ -543,28 +552,19 @@ impl Member {
             .is_some_and(|entry| entry.delegation_salt.is_some())
     }
 
-    /// This member's delegation to the AI member `ai`, whichever way the
-    /// AI member's id is written (its name, or the older
-    /// `ai:<name>@joy`): a token issued before a project was brought
-    /// over names it the old way.
+    /// This member's delegation to the AI member `ai`.
     pub fn delegation_to(&self, ai: &str) -> Option<&AiDelegationEntry> {
-        self.ai_delegations.get(ai).or_else(|| {
-            let name = ai_member_name(ai);
-            self.ai_delegations
-                .iter()
-                .find(|(key, _)| ai_member_name(key) == name)
-                .map(|(_, entry)| entry)
-        })
+        self.ai_delegations.get(ai_member_name::read(ai).as_ref())
     }
 
     /// [`Member::delegation_to`], to change the entry.
     pub fn delegation_to_mut(&mut self, ai: &str) -> Option<&mut AiDelegationEntry> {
-        let key = self.delegation_key(ai)?;
-        self.ai_delegations.get_mut(&key)
+        self.ai_delegations
+            .get_mut(ai_member_name::read(ai).as_ref())
     }
 
     /// Record this member's delegation to `ai`, in place of the one they
-    /// had, under whichever spelling of the AI member's name it stood.
+    /// had.
     ///
     /// The model the person picked stays with them across a new
     /// delegation: it hangs on no key, so delegating again is no reason
@@ -574,8 +574,7 @@ impl Member {
         ai: impl Into<String>,
         mut entry: AiDelegationEntry,
     ) -> Option<AiDelegationEntry> {
-        let ai = ai.into();
-        let key = self.delegation_key(&ai).unwrap_or(ai);
+        let key = ai_member_name::read_owned(ai.into());
         if entry.model.is_none() {
             entry.model = self.ai_delegations.get(&key).and_then(|d| d.model.clone());
         }
@@ -584,21 +583,8 @@ impl Member {
 
     /// Take this member's delegation to `ai` away.
     pub fn drop_delegation(&mut self, ai: &str) -> Option<AiDelegationEntry> {
-        let key = self.delegation_key(ai)?;
-        self.ai_delegations.remove(&key)
-    }
-
-    /// The key this member's delegation to `ai` stands under, in either
-    /// spelling of the AI member's name.
-    fn delegation_key(&self, ai: &str) -> Option<String> {
-        if self.ai_delegations.contains_key(ai) {
-            return Some(ai.to_string());
-        }
-        let name = ai_member_name(ai);
         self.ai_delegations
-            .keys()
-            .find(|key| ai_member_name(key) == name)
-            .cloned()
+            .remove(ai_member_name::read(ai).as_ref())
     }
 
     /// Create a member with the given capabilities and no auth fields.
@@ -656,7 +642,8 @@ impl Member {
     }
 }
 
-pub use joy_model::{ai_member_name, is_ai_member};
+use crate::migrations::ai_member_name;
+pub use joy_model::is_ai_member;
 
 /// One-line description for a `joy project get` key. Returned by
 /// `--describe` so the CLI is the single source of truth for what
@@ -795,23 +782,12 @@ impl Project {
         self.members.get_mut(&key)
     }
 
-    /// The id an AI member called `name` has in this project: the name
-    /// itself with member files (JI-019D-46), `ai:<name>@joy` in a
-    /// project from before. Either spelling may be handed in.
-    pub fn ai_member_id(&self, name: &str) -> String {
-        let name = ai_member_name(name);
-        match self.layout {
-            MemberLayout::Files => name.to_string(),
-            MemberLayout::InProject => format!("ai:{name}@joy"),
-        }
-    }
-
     /// The member work is assigned to when a person names `member`, in
-    /// the spelling this project keeps them under, or in words why work
-    /// cannot be assigned to them. A person is named by an address (or,
-    /// in an anonymous project, by their id) and need not be a member
-    /// yet; an AI member is named by its name, in either spelling, and
-    /// has to be one of this project's.
+    /// as this project keeps them, or in words why work cannot be
+    /// assigned to them. A person is named by an address (or, in an
+    /// anonymous project, by their id) and need not be a member yet; an
+    /// AI member is named by its name and has to be one of this
+    /// project's.
     pub fn assignee(&self, member: &str) -> Result<String, String> {
         if !is_ai_member(member) {
             if member.contains('@') || crate::member_id::is_opaque_member_id(member) {
@@ -824,7 +800,7 @@ impl Project {
         self.member_key(member).ok_or_else(|| {
             format!(
                 "this project has no AI member named {}",
-                ai_member_name(member)
+                ai_member_name::read(member)
             )
         })
     }
@@ -838,22 +814,12 @@ impl Project {
     }
 
     /// The key a member is stored under, for a key as anybody may write
-    /// it. A person's key is taken as it is. An AI member is found under
-    /// its name and under `ai:<name>@joy` alike, whichever of the two
-    /// this project uses: a command typed the old way, a token issued
-    /// before the project was brought over and a chat written back then
-    /// all keep meaning the same member.
+    /// it: a person's as it is, an AI member's name.
     pub fn member_key(&self, key: &str) -> Option<String> {
-        if self.members.contains_key(key) {
-            return Some(key.to_string());
-        }
-        if !is_ai_member(key) {
-            return None;
-        }
-        let name = ai_member_name(key);
-        [name.to_string(), format!("ai:{name}@joy")]
-            .into_iter()
-            .find(|candidate| self.members.contains_key(candidate))
+        let key = ai_member_name::read(key);
+        self.members
+            .contains_key(key.as_ref())
+            .then(|| key.into_owned())
     }
 
     /// Look up a member by their at-rest map key (an AI member's name, or
@@ -903,9 +869,9 @@ impl Project {
 
     /// Register a brand-new member, placing it correctly for the privacy mode.
     ///
-    /// `id` is the caller-facing identity: an `ai:` synthetic id (no PII,
+    /// `id` is the caller-facing identity: an AI member's name (no PII,
     /// identical in both modes) or a cleartext e-mail for a human. AI members
-    /// are inserted under their synthetic id in either mode; human members under
+    /// are inserted under their name in either mode; human members under
     /// their e-mail in `open` mode. Adding a *human* to an `anonymous` project is
     /// refused: the opaque id derives from a verify_key the new member does not
     /// have yet, and a naive e-mail insert would leak cleartext PII into the
@@ -931,14 +897,8 @@ impl Project {
         if self.layout == MemberLayout::Files && member.file_id.is_none() {
             member.file_id = Some(crate::member_id::new_member_file_id());
         }
-        // An AI member is stored under the spelling this project uses,
-        // however the caller wrote it.
-        let key = if is_ai_member(id) {
-            self.ai_member_id(id)
-        } else {
-            id.to_string()
-        };
-        self.members.insert(key, member);
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
         Ok(())
     }
 
@@ -948,7 +908,8 @@ impl Project {
     /// member that holds manage, say).
     #[cfg(test)]
     pub(crate) fn insert_as_read(&mut self, id: &str, member: Member) {
-        self.members.insert(id.to_string(), member);
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.
@@ -1054,9 +1015,9 @@ mod tests {
         // is a broken artifact, not a delegation — every surface greys it
         // and offers Delegate. THE one predicate lives here.
         let mut member = Member::new(MemberCapabilities::All);
-        assert!(!member.delegation_usable("ai:claude@joy"));
+        assert!(!member.delegation_usable("claude"));
         member.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "ab".repeat(32),
                 delegation_salt: None,
@@ -1066,13 +1027,13 @@ mod tests {
                 model: None,
             },
         );
-        assert!(!member.delegation_usable("ai:claude@joy"));
+        assert!(!member.delegation_usable("claude"));
         member
             .ai_delegations
-            .get_mut("ai:claude@joy")
+            .get_mut("claude")
             .expect("entry")
             .delegation_salt = Some("cd".repeat(32));
-        assert!(member.delegation_usable("ai:claude@joy"));
+        assert!(member.delegation_usable("claude"));
     }
 
     #[test]
@@ -1186,7 +1147,7 @@ mod tests {
         m.verify_key = Some("aa".repeat(32));
         m.kdf_nonce = Some("bb".repeat(32));
         m.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "cc".repeat(32),
                 delegation_salt: None,
@@ -1200,7 +1161,7 @@ mod tests {
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("ai_delegations:"));
-        assert!(yaml.contains("ai:claude@joy:"));
+        assert!(yaml.contains("claude:"));
         assert!(yaml.contains("delegation_verifier:"));
         assert!(
             !yaml.contains("delegation_salt:"),
@@ -1225,7 +1186,7 @@ mod tests {
             .unwrap()
             .with_timezone(&chrono::Utc);
         m.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "dd".repeat(32),
                 delegation_salt: None,
@@ -1238,7 +1199,7 @@ mod tests {
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("rotated:"));
         let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
-        assert_eq!(m.ai_delegations["ai:claude@joy"].rotated, Some(rotated));
+        assert_eq!(m.ai_delegations["claude"].rotated, Some(rotated));
         assert_eq!(parsed, m);
     }
 
@@ -1313,17 +1274,17 @@ capabilities: all
 public_key: aa
 salt: bb
 ai_tokens:
-  ai:claude@joy:
+  claude:
     token_key: oldkey
     created: "2026-03-28T22:00:00Z"
 ai_delegations:
-  ai:claude@joy:
+  claude:
     delegation_verifier: newkey
     created: "2026-04-15T10:00:00Z"
 "#;
         let parsed: Member = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(
-            parsed.ai_delegations["ai:claude@joy"].delegation_verifier,
+            parsed.ai_delegations["claude"].delegation_verifier,
             "newkey"
         );
     }

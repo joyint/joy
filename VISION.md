@@ -67,7 +67,7 @@ A user's identity in Joy is their **e-mail address**. This is the stable identif
 
 Locally, the e-mail is read from `git config user.email` - no separate login required for CLI usage. On the server, users authenticate via OAuth (GitHub, GitLab, Gitea, or other supported providers). The server matches the OAuth-provided e-mail against the project's role definitions.
 
-AI members use a synthetic identity with the `ai:` prefix (e.g. `ai:claude@joy`). This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
+AI members are known by their name (e.g. `claude`), which is never an e-mail address. This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
 
 ### Items
 
@@ -81,7 +81,7 @@ type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical | extreme
 parent: JOY-0001       # parent item (null for top-level items)
-assignee: null        # e-mail address or ai:tool@joy
+assignee: null        # e-mail address or the name of an AI member
 capabilities: [plan, implement, review]   # from type defaults, editable per item
 deps:
   - JOY-0017           # must be completed before this item
@@ -467,7 +467,7 @@ members:
   horst.schwarz@joydev.com:
     capabilities: all
 
-  ai:claude@joy:
+  claude:
     interaction-level: confirmed
     capabilities:
       conceive:
@@ -588,7 +588,7 @@ sequenceDiagram
 ```
 
 - **Human dispatch:** Joy status gates create Jyn tasks for reviewers, testers, or approvers.
-- **AI dispatch:** Joy creates Jyn tasks for AI members (`ai:implementer@joy`). The AI picks up todos via `jyn ls --mine`, executes work, and marks them done.
+- **AI dispatch:** Joy creates Jyn tasks for AI members (`implementer`). The AI picks up todos via `jyn ls --mine`, executes work, and marks them done.
 - **Callback:** When a dispatched Jyn task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
 
 This keeps Joy focused on orchestration and Jyn focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.

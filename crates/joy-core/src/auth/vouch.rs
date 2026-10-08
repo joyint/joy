@@ -87,7 +87,7 @@ pub fn maximum_level(member: &Member) -> InteractionLevel {
 
 fn maximum_text(project: &Project, name: &str, member: &Member) -> String {
     grant_text(
-        crate::model::project::ai_member_name(name),
+        &crate::migrations::ai_member_name::read(name),
         &capability_list(&member.capabilities),
         maximum_level(member),
         PROJECT_SCOPE,
@@ -557,14 +557,13 @@ mod tests {
             &project,
             "founder@example.com",
             &founder_kp,
-            "ai:claude@joy",
+            "claude",
             &mut ai,
             Occasion::New,
         );
         let att = ai.attestation.as_ref().expect("an attestation");
         assert!(ai.granted.is_none() && ai.origin.is_none());
-        attestation::verify_attestation(att, &founder_kp.public_key(), "ai:claude@joy", &ai)
-            .unwrap();
+        attestation::verify_attestation(att, &founder_kp.public_key(), "claude", &ai).unwrap();
         assert_eq!(signer_of(&ai), Some("founder@example.com"));
     }
 }

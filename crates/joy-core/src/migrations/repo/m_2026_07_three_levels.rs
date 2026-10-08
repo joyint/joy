@@ -407,7 +407,7 @@ mod tests {
             dir.path(),
             store::PROJECT_FILE,
             "name: Test\nlanguage: en\ninteraction:\n  implement: collaborative\n  test: supervised\n\
-             members:\n  ai:claude@joy:\n    capabilities:\n      implement:\n        \
+             members:\n  claude:\n    capabilities:\n      implement:\n        \
              max-interaction: interactive\n        max-cost-per-job: 5.0\n",
         );
         let done = migrate(dir.path()).unwrap();
@@ -423,7 +423,7 @@ mod tests {
         let cfg = v
             .get("members")
             .unwrap()
-            .get("ai:claude@joy")
+            .get("claude")
             .unwrap()
             .get("capabilities")
             .unwrap()
@@ -576,7 +576,7 @@ mod tests {
             dir.path(),
             store::PROJECT_FILE,
             "name: Test\nlanguage: en\nmodes:\n  implement: interactive\nmembers:\n  \
-             ai:claude@joy:\n    capabilities:\n      implement:\n        max-mode: supervised\n",
+             claude:\n    capabilities:\n      implement:\n        max-mode: supervised\n",
         );
         super::super::apply(dir.path()).unwrap();
         let v = read(dir.path(), store::PROJECT_FILE);
@@ -593,7 +593,7 @@ mod tests {
         let cfg = v
             .get("members")
             .unwrap()
-            .get("ai:claude@joy")
+            .get("claude")
             .unwrap()
             .get("capabilities")
             .unwrap()

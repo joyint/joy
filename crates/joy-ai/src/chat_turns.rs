@@ -85,7 +85,7 @@ mod tests {
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         // chats are always sealed now, so the members carry identities and
         // the writer's seed is installed for this thread
-        for (member, seed_byte) in [("ai:claude@joy", 7u8), ("horst@example.com", 5u8)] {
+        for (member, seed_byte) in [("claude", 7u8), ("horst@example.com", 5u8)] {
             // an AI member never holds manage, so never `all`
             let capabilities = if joy_core::model::project::is_ai_member(member) {
                 joy_core::model::project::MemberCapabilities::Specific(
@@ -130,9 +130,9 @@ mod tests {
         .unwrap();
         let added = add_mentioned_ais(dir.path(), &mut chat, &msg, now).unwrap();
         assert!(added);
-        assert!(chat.participants.iter().any(|p| p.id() == "ai:claude@joy"));
+        assert!(chat.participants.iter().any(|p| p.id() == "claude"));
         assert_eq!(
-            decide(&chat, &msg, "ai:claude@joy"),
+            decide(&chat, &msg, "claude"),
             TurnDecision::Respond,
             "the added AI answers the very message that added it"
         );

@@ -60,20 +60,14 @@ fn a_live_session_makes_the_host_delegated_even_on_a_terminal() {
     // A live delegation session: the agent owns a terminal and is still
     // an agent. This is the case the refusal rule is written for, and it
     // is the one the value alone cannot prove.
-    std::env::set_var(
-        "JOY_SESSION",
-        live_session("ai:claude@joy", Duration::hours(1)),
-    );
+    std::env::set_var("JOY_SESSION", live_session("claude", Duration::hours(1)));
     assert_eq!(HostKind::detect(true), HostKind::Delegated);
     assert_eq!(HostKind::detect(false), HostKind::Delegated);
     assert!(!HostKind::detect(true).may_ask());
 
     // An expired session is no delegation: the process is what it was
     // before, so a person at the terminal is served rather than refused.
-    std::env::set_var(
-        "JOY_SESSION",
-        live_session("ai:claude@joy", Duration::minutes(-5)),
-    );
+    std::env::set_var("JOY_SESSION", live_session("claude", Duration::minutes(-5)));
     assert_eq!(HostKind::detect(true), HostKind::Interactive);
     assert_eq!(HostKind::detect(false), HostKind::Background);
 

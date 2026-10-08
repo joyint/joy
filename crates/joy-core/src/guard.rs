@@ -546,10 +546,10 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             ("other@example.com", MemberCapabilities::All),
-            ("ai:vibe@joy", specific_caps(&[Capability::Jobs])),
+            ("vibe", specific_caps(&[Capability::Jobs])),
         ]);
         let guard = Guard::new(&project);
-        let ai: crate::member_ref::MemberRef = "ai:vibe@joy".into();
+        let ai: crate::member_ref::MemberRef = "vibe".into();
         let start = Action::ChangeJobStatus {
             from: Status::Open,
             to: Status::InProgress,
@@ -557,7 +557,7 @@ mod tests {
         };
         // the assignee, delegated by a human: allowed
         assert_eq!(
-            guard.check(&start, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            guard.check(&start, &ai_identity("vibe", "dev@example.com")),
             Verdict::Allow
         );
         // a person starts an AI member's job: the explicit order to work
@@ -572,7 +572,7 @@ mod tests {
             assignee: Some(ai.clone()),
         };
         assert_eq!(
-            guard.check(&review, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            guard.check(&review, &ai_identity("vibe", "dev@example.com")),
             Verdict::Allow
         );
         assert!(matches!(
@@ -632,10 +632,10 @@ mod tests {
     fn an_ai_without_the_capability_is_refused_for_management_and_only_warned_for_work() {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
-            ("ai:claude@joy", specific_caps(&[Capability::Review])),
+            ("claude", specific_caps(&[Capability::Review])),
         ]);
         let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
 
         match guard.check(&Action::CreateItem, &ai) {
             Verdict::Deny(reason) => assert!(reason.contains("'create'"), "{reason}"),
@@ -797,7 +797,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -806,7 +806,7 @@ mod tests {
             ),
         ]);
         let guard = Guard::new(&project);
-        let id = ai_identity("ai:claude@joy", "dev@example.com");
+        let id = ai_identity("claude", "dev@example.com");
 
         // AI with Create -> CreateItem = Allow
         assert_eq!(guard.check(&Action::CreateItem, &id), Verdict::Allow);
@@ -847,7 +847,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[Capability::Jobs, Capability::Review, Capability::Create]),
             ),
         ]);
@@ -856,7 +856,7 @@ mod tests {
             gates.insert(key.to_string(), GateConfig { allow_ai: true });
         }
         let guard = Guard::with_gates(&project, gates);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
         for (from, to) in [
             (Status::New, Status::Open),
             (Status::Review, Status::Closed),
@@ -864,7 +864,7 @@ mod tests {
             let job_step = Action::ChangeJobStatus {
                 from: from.clone(),
                 to: to.clone(),
-                assignee: Some("ai:claude@joy".into()),
+                assignee: Some("claude".into()),
             };
             match guard.check(&job_step, &ai) {
                 Verdict::Deny(reason) => assert!(reason.contains("job gate"), "{reason}"),
@@ -887,7 +887,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -901,7 +901,7 @@ mod tests {
             GateConfig { allow_ai: false },
         );
         let guard = Guard::with_gates(&project, gates);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
         let human = identity("dev@example.com");
 
         // AI blocked by gate
@@ -944,11 +944,11 @@ mod tests {
     #[test]
     fn no_gates_allows_all_transitions() {
         let project = project_with_members(vec![(
-            "ai:claude@joy",
+            "claude",
             specific_caps(&[Capability::Review, Capability::Create]),
         )]);
         let guard = Guard::new(&project); // no gates
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
 
         // Without gates, AI with Review can close
         assert_eq!(
@@ -968,7 +968,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -977,7 +977,7 @@ mod tests {
             ),
         ]);
         let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
         let human = identity("dev@example.com");
 
         // Without gate config, AI with Review capability CAN close items
@@ -1079,7 +1079,7 @@ mod tests {
             ),
             // AI agent: can implement, review, create
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -1091,7 +1091,7 @@ mod tests {
 
         let lead = identity("lead@example.com");
         let dev = identity("dev@example.com");
-        let ai = ai_identity("ai:claude@joy", "lead@example.com");
+        let ai = ai_identity("claude", "lead@example.com");
 
         // === Creating items ===
         // All three can create (all have Create)
@@ -1276,7 +1276,7 @@ mod tests {
     fn is_last_manager_ai_not_counted() {
         let project = project_with_members(vec![
             ("lead@example.com", MemberCapabilities::All),
-            ("ai:claude@joy", MemberCapabilities::All),
+            ("claude", MemberCapabilities::All),
         ]);
         let guard = Guard::new(&project);
         // AI members don't count as managers (Guard blocks AI from manage)
@@ -1289,10 +1289,10 @@ mod tests {
         // last manager": the human manager still stands (JI-0161-C2).
         let project = project_with_members(vec![
             ("lead@example.com", MemberCapabilities::All),
-            ("ai:vibe@joy", MemberCapabilities::All),
+            ("vibe", MemberCapabilities::All),
         ]);
         let guard = Guard::new(&project);
-        assert!(!guard.is_last_manager("ai:vibe@joy"));
+        assert!(!guard.is_last_manager("vibe"));
     }
 
     #[test]
@@ -1316,7 +1316,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[Capability::Implement, Capability::Create]),
             ),
         ]);

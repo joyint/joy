@@ -1206,7 +1206,7 @@ fn a_live_session(machine: &Machine) -> String {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--passphrase",
             passphrase,
         ],
@@ -1214,14 +1214,7 @@ fn a_live_session(machine: &Machine) -> String {
         let (ok, seen) = joy(&args);
         assert!(ok, "{args:?}: {seen}");
     }
-    let (ok, token) = joy(&[
-        "auth",
-        "token",
-        "add",
-        "ai:claude@joy",
-        "--passphrase",
-        passphrase,
-    ]);
+    let (ok, token) = joy(&["auth", "token", "add", "claude", "--passphrase", passphrase]);
     assert!(ok, "{token}");
     let token = token
         .lines()

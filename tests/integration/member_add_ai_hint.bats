@@ -31,7 +31,7 @@ load setup
     run joy ai --help
     [ "$status" -eq 0 ]
     [[ "$output" == *"chat-only"* ]]
-    [[ "$output" == *"joy project member add ai:"* ]]
+    [[ "$output" == *"joy project member add <name>"* ]]
 }
 
 # --- end-to-end: the workflow that the next-steps hint guides users through ---
@@ -93,7 +93,7 @@ load setup
     [[ "$member_line" != *"testai"* ]]
 }
 
-@test "joy project member add ai:* fails when member already exists" {
+@test "joy project member add fails when the AI member already exists" {
     setup_human_auth
     joy project member add dup --passphrase "$TEST_PASSPHRASE" >/dev/null
     run joy project member add dup --passphrase "$TEST_PASSPHRASE"

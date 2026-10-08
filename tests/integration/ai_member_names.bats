@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
-# An AI member is known by its name: `claude`, not `ai:claude@joy`
-# (JI-019D-46). A command typed the old way keeps working and says once
-# what the member is called now.
+# An AI member is known by its name (JI-019D-46). Its legacy form may still
+# be typed: it is cut down to the name at once, one line says so, and
+# nothing joy writes or prints carries it. These are the only CLI tests
+# that spell the legacy form out.
 
 load setup
 

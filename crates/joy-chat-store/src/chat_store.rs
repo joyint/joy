@@ -759,14 +759,14 @@ mod tests {
     #[test]
     fn a_chat_whose_first_message_mentions_an_ai_stays_readable_to_its_creator() {
         let (dir, horst, _anna) = project();
-        // add an AI member with its own key (like ai:vibe@joy)
+        // add an AI member with its own key (like vibe)
         let ai_seed = [9u8; 32];
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
         let mut vibe = joy_core::model::project::Member::new(
             joy_core::model::project::MemberCapabilities::all_for_ai(),
         );
         vibe.verify_key = Some(IdentityKeypair::from_seed(&ai_seed).public_key().to_hex());
-        project.register_member("ai:vibe@joy", vibe).unwrap();
+        project.register_member("vibe", vibe).unwrap();
         joy_core::store::write_yaml(
             &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
@@ -798,7 +798,7 @@ mod tests {
         crate::chats::add_participant(
             dir.path(),
             &mut reloaded,
-            MemberRef::new("ai:vibe@joy"),
+            MemberRef::new("vibe"),
             &MemberRef::new("horst@example.com"),
             ts(2),
         )

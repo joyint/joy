@@ -36,8 +36,6 @@ use std::pin::Pin;
 use joy_chat::model::AgentMode;
 use joy_core::model::config::InteractionLevel;
 
-use crate::chat_turns;
-
 /// Live activity of a RUNNING turn (JI-0172-EE): the agent's streamed
 /// chunks, thoughts and tool calls, and the questions the lane puts to
 /// the person the turn runs for (JOY-028A-DC). One vocabulary for every
@@ -324,7 +322,7 @@ pub fn run_host_turn(
     spec: HostTurnSpec,
     run_agent: impl FnOnce(&TurnRequest) -> Result<TurnOutcome, String>,
 ) -> HostTurnOutcome {
-    let alias = chat_turns::alias(spec.member);
+    let alias = spec.member;
     // The level is joy-core's to say, the same on every host: what the
     // person chose, within what the AI member may do for them. A member
     // whose grants do not hold does not run at all.
@@ -470,7 +468,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let spec = HostTurnSpec {
             root: dir.path(),
-            member: "ai:vibe@joy",
+            member: "vibe",
             turn_id: "m-1",
             prompt: "full".into(),
             prompt_delta: Some("delta".into()),
@@ -508,7 +506,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let spec = HostTurnSpec {
             root: dir.path(),
-            member: "ai:vibe@joy",
+            member: "vibe",
             turn_id: "m-2",
             prompt: "full".into(),
             prompt_delta: None,
