@@ -1,7 +1,7 @@
 id: JOY-02C4-53
 title: Member files under .joy/members, project.yaml as head with the member list, migration by the first unlocked human
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 6
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:44.898508829Z
-updated: 2026-10-07T21:00:29.412870130Z
+updated: 2026-10-08T00:18:51.394105263Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 1 of JI-019E-40, decided in JI-019D-46 sections 4, 5 and 8.
@@ -26,3 +26,7 @@ description: |-
   Migration (section 8): a repo migration in migrations/repo that runs only when a human session or an unlocked seed is available (CLI: the auth gate of the first command; desktop and portal: their unlock path calls into joy-core), never from an AI session, never on the platform server. It writes the files, the head, the list, the origins, and signs the project maximum of every AI member with the acting human's key from today's values (capabilities as held, level = max-interaction-level if set else autonomous, no personal grants). It is deterministic so that two hosts produce identical files. Before it has run, the old project.yaml reader serves the same Project; both readers live behind load_project. The downgrade guard applies as for every migration; the old reader is removed after the window.
 
   Tests: the fixtures and the migration test of the safety net task pass unchanged after the migration; a test that a member file edited by hand to add a capability to an AI member changes nothing for the AI (delivery 2 proves the refusal, this item proves the file is not the source).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-08T00:18:51.394103370Z
+  text: 'Result: every member lives in .joy/members/<id>.yaml, project.yaml keeps the head and the list of ids (store.rs load_project/save_project, member_files.rs). The id is only the file name: random for new members, deterministic for brought-over ones, the existing id for people of an already anonymous project. A project from before is brought over once by the first person whose key is at hand (login, unlock, any passphrase command), never by an AI session and never by the platform server; member_migration::prepare/finish split the same step for a key held in a browser. Origin replaces the attestation for people; an AI member carries what the project allows it, signed by that person. Fixture projects (open and anonymous, tests/fixtures/members) stay in the old format and are asked the same questions after each host opened them, including a NEW token for the AI member after the move. Found on the way: the delegation key was derived over the old id, so a renamed member could not get a new token; the derivation now uses one form for both spellings (crypt 7ffd62e).'

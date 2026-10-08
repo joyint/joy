@@ -1,7 +1,7 @@
 id: JOY-02C5-CF
 title: 'The name is the id: claude instead of ai:claude@joy, old form accepted and normalised'
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:44.963212396Z
-updated: 2026-10-07T21:57:55.818582303Z
+updated: 2026-10-08T00:18:51.440335283Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 1 of JI-019E-40, decided in JI-019D-46 section 6.
@@ -24,3 +24,7 @@ description: |-
   Migration: the repo migration of the member-files story rewrites ai:<name>@joy to <name> in items, logs, ai_delegations keys and job assignees; sealed chats are not rewritten, the resolver maps the old form when reading participants. Generated instruction files and the joy skill use the name; joy update regenerates them.
 
   Tests: resolver round trip for both forms, redemption of an old-form token, the migration fixture after rewrite, and a bats case for the note line.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-08T00:18:51.440333229Z
+  text: 'Result: an AI member is known by its name (claude). The older ai:claude@joy is accepted wherever a member is named: the CLI replaces a whole argument and says once what the member is called now (not under --json); Project::member_key, Member::delegation_to and friends find either spelling, so an old session, an old chat record and an old assignment keep meaning the same member. Work is assigned to an AI member by its name and only to one the project has (Project::assignee, used by CLI, platform and desktop). Bats: ai_member_names.bats.'

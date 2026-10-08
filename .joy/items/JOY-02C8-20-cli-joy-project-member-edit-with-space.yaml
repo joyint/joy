@@ -1,7 +1,7 @@
 id: JOY-02C8-20
 title: 'CLI: joy project member edit with space separated capabilities, --level and --project, joy ai add with adapter and model'
 type: story
-status: in-progress
+status: review
 priority: high
 assignees:
 - member: ai:claude@joy
@@ -12,7 +12,7 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:45.137364799Z
-updated: 2026-10-07T22:19:56.176771180Z
+updated: 2026-10-08T00:18:51.570520052Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 7 and 9.
@@ -24,3 +24,7 @@ description: |-
   Help texts are one short sentence each, like their neighbours. The old forms (ai:<name>@joy, comma separated capabilities) are accepted and normalised with the note line during the window.
 
   Tests: bats cases for every flag, the refusal above the maximum, joy ai add with and without --adapter, and the three-column show.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-08T00:18:51.570518990Z
+  text: 'Result: joy project member edit <id> --capabilities a b c (commas still read), --add-capability/--rm-capability, --level, --project, --model, --description; without --project the caller''s own grant is written and signed, and the answer says that a new token is due. joy project member add takes the same words plus --adapter and --with-token. joy project member show prints project | mine | effective for an AI member and the capabilities alone for a person. joy ai add <name> [--adapter] [--model] registers, sets the tool up and prints the token. The members table shows all twelve capabilities. Help: one short sentence each. Tutorials (user and AI) rewritten for the two settings.'
