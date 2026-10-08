@@ -153,7 +153,7 @@ Jobs take the scope as a third positional argument (required, comma-separated it
 joy add job "Implement recipe basics" CB-0002,CB-0003
 ```
 
-Jobs live in `.joy/jobs/` with IDs like `CB-JOB-0001-A3` and stay out of the normal views; `joy ls -J` and `joy board -J` show them (`-Ja` includes closed ones). A job is written with its assignee, its level and its budget, and it starts when you set it to open (`joy status <ID> open`): on the Joyint platform an AI assignee then takes it at those terms. The assignee has to hold the `jobs` capability for you, and the level has to be one it may run at for you; joy checks that when the job is written or assigned, and again when you set it to open, because a member can be changed in between. `joy show` on a job lists its scope, budget, window, and recorded activity; `joy show` on an item lists the jobs it belongs to. Closing a job asks per scope item whether to close that item too. Moving jobs through their gates is governed by the `jobs` capability, separate from `review`, so who accepts AI work and who accepts the product items can differ.
+Jobs live in `.joy/jobs/` with IDs like `CB-JOB-0001-A3` and stay out of the normal views; `joy ls -J` and `joy board -J` show them (`-Ja` includes closed ones). A job is written with its assignee, its level and its budget, and it starts when you approve it (`joy approve <ID>`, new to open): on the Joyint platform an AI assignee then takes it at those terms, one job at a time, the most urgent first, and only between the start and the end the job was given. Approving a job and accepting its result are always a person's steps. Start it yourself (`joy start <ID>`) to have exactly this job worked now. The assignee has to hold the `jobs` capability for you, and the level has to be one it may run at for you; joy checks that when the job is written or assigned, and again when you approve it, because a member can be changed in between. `joy show` on a job lists its scope, budget, window, and recorded activity; `joy show` on an item lists the jobs it belongs to. Closing a job asks per scope item whether to close that item too. Moving jobs through their gates is governed by the `jobs` capability, separate from `review`, so who accepts AI work and who accepts the product items can differ.
 
 ---
 
@@ -551,7 +551,7 @@ Joy defines twelve capabilities across two groups.
 | `test` | Verify behaviour and add tests. |
 | `review` | Approve work from someone else and gate `submit -> closed`. |
 | `document` | Update user- or developer-facing docs. |
-| `jobs` | Take jobs, and move them through their statuses: set a job to open so its assignee takes it, stop it, accept the result. |
+| `jobs` | Take jobs, and move them through their statuses: approve a job so its assignee takes it, stop it, accept the result. |
 
 **Management capabilities** govern project-level operations:
 
@@ -619,7 +619,7 @@ joy project member show claude
 
 `project` is what the project allows, `mine` what you allow for yourself (empty while you follow the project), `effective` what the AI member may do when it works for you. Tools and AI agents follow the effective column; they do not re-derive it.
 
-A job carries a level of its own (`joy add job ... --level confirmed`): the one it asks for, at most what its assignee may run at for you. A job that names none gets the assignee's level when it is set to open. From then on the level is the job's own.
+A job runs at one of two levels: `proposing`, which is what every job has until you say otherwise, or `autonomous` (`joy add job ... --level autonomous`), and autonomous only where its assignee may run at autonomous for you. The level in between asks a person before a command runs, and a job has nobody there to ask. From the approval on the level is the job's own.
 
 A project from before this layout keeps working as it is. The first person who signs in with their passphrase brings it over to member files, once and without a question.
 

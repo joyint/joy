@@ -650,38 +650,81 @@ pub fn job_assignees(
         .collect()
 }
 
+/// The levels a job can run at: proposing or autonomous, nothing in
+/// between (operator 2026-10-08). The middle level asks a person before
+/// a command runs, and a job has nobody there to ask.
+pub const JOB_LEVELS: [InteractionLevel; 2] =
+    [InteractionLevel::Proposing, InteractionLevel::Autonomous];
+
+/// The level every job has until somebody says otherwise.
+pub const JOB_DEFAULT_LEVEL: InteractionLevel = InteractionLevel::Proposing;
+
+/// A level as a job may name it, or the sentence that says which it may.
+pub fn job_level(level: InteractionLevel) -> Result<InteractionLevel, String> {
+    if JOB_LEVELS.contains(&level) {
+        Ok(level)
+    } else {
+        Err(format!(
+            "a job runs at proposing or at autonomous, not at {level}"
+        ))
+    }
+}
+
 /// The level a job runs at, checked for `person_key`: when they write
-/// the job, when they change it, and when they set it to open, which is
-/// when its assignee takes it.
+/// the job, when they change it, and when they approve it (new -> open),
+/// after which its assignee takes it.
 ///
-/// A job with an AI assignee runs at the level it asks for, and at most
-/// at the level the assignee may have for the person: a job that asks
-/// for more is refused, and so is an assignee without the jobs
-/// capability. A job that names no level gets the assignee's level
-/// (the caller writes it in when the job is opened). From then on the
-/// level is the job's own, and a member changed later does not reach
+/// A job runs at proposing unless it says autonomous, and autonomous
+/// only where its AI assignee may run at autonomous for the person. An
+/// assignee without the jobs capability is refused. From the approval on
+/// the level is the job's own, and a member changed later does not reach
 /// into a job that is already open (JI-0166-D8). A job with no AI
-/// assignee, or in a project from before the member files, keeps what
-/// it has.
+/// assignee, or in a project from before the member files, is not
+/// judged on its assignee; it still names one of the two levels.
 pub fn job_terms(
     project: &Project,
     job: &crate::model::item::Item,
     person_key: &str,
 ) -> Result<Option<InteractionLevel>, String> {
+    let wanted = job_level(job.interaction_level.unwrap_or(JOB_DEFAULT_LEVEL))?;
     let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
-        return Ok(job.interaction_level);
+        return Ok(Some(wanted));
     };
     let Some(most) = job_assignee(project, assignee, person_key)? else {
-        return Ok(job.interaction_level);
+        return Ok(Some(wanted));
     };
-    match job.interaction_level {
-        None => Ok(Some(most)),
-        Some(wanted) if more_oversight(wanted, most) == wanted => Ok(Some(wanted)),
-        Some(wanted) => Err(format!(
-            "this job asks for {wanted}, and {} may run at most at {most} for you",
+    if wanted == InteractionLevel::Autonomous && most != InteractionLevel::Autonomous {
+        return Err(format!(
+            "this job asks for autonomous, and {} may run at most at {most} for you",
             ai_member_name(assignee)
-        )),
+        ));
     }
+    Ok(Some(wanted))
+}
+
+/// A job that is already open, when it is started: its level is its own
+/// since the approval and stays, also one from before jobs had two
+/// levels. What is asked again is whether the assignee can still take
+/// it for the person: the jobs capability, and a level it may run at.
+fn job_start_terms(
+    project: &Project,
+    job: &crate::model::item::Item,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    let level = job.interaction_level.unwrap_or(JOB_DEFAULT_LEVEL);
+    let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
+        return Ok(Some(level));
+    };
+    let Some(most) = job_assignee(project, assignee, person_key)? else {
+        return Ok(Some(level));
+    };
+    if more_oversight(level, most) != level {
+        return Err(format!(
+            "this job runs at {level}, and {} may run at most at {most} for you",
+            ai_member_name(assignee)
+        ));
+    }
+    Ok(Some(level))
 }
 
 /// The level a job has after a status step by `person_key`, or why the
@@ -700,9 +743,8 @@ pub fn job_step(
 ) -> Result<Option<InteractionLevel>, String> {
     use crate::model::item::Status;
     match (from, to) {
-        (Status::New, Status::Open) | (Status::Open, Status::InProgress) => {
-            job_terms(project, job, person_key)
-        }
+        (Status::New, Status::Open) => job_terms(project, job, person_key),
+        (Status::Open, Status::InProgress) => job_start_terms(project, job, person_key),
         _ => Ok(job.interaction_level),
     }
 }
@@ -1110,39 +1152,47 @@ mod tests {
         let why = job_terms(&project, &job_for(DEV, None), FOUNDER).unwrap_err();
         assert!(why.contains("does not hold the jobs capability"), "{why}");
 
-        // the project allows it jobs at confirmed
-        let (mut project, _, dev_kp) = project_where_claude_may(&[Implement, Jobs], Confirmed);
+        // the project allows it jobs at confirmed: it is offered, and a
+        // job runs at proposing, which is what a job says when it says
+        // nothing
+        let (project, _, _) = project_where_claude_may(&[Implement, Jobs], Confirmed);
         assert!(job_assignees(&project, DEV).contains(&("claude".to_string(), Some(Confirmed))));
-        // a job that names no level gets the member's when it is opened
         assert_eq!(
             job_terms(&project, &job_for("claude", None), DEV).unwrap(),
-            Some(Confirmed)
+            Some(Proposing)
         );
-        // less say for the AI is the job's to ask for, more is refused
         assert_eq!(
             job_terms(&project, &job_for("claude", Some(Proposing)), DEV).unwrap(),
             Some(Proposing)
         );
+        // autonomous only where the member may run at autonomous
         let why = job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).unwrap_err();
         assert!(
             why.contains("may run at most at confirmed for you"),
             "{why}"
         );
+        // a job has two levels, nothing in between
+        let why = job_terms(&project, &job_for("claude", Some(Confirmed)), DEV).unwrap_err();
+        assert!(why.contains("proposing or at autonomous"), "{why}");
+        assert!(job_level(Confirmed).is_err());
 
+        let (mut project, _, dev_kp) = project_where_claude_may(&[Implement, Jobs], Autonomous);
+        assert_eq!(
+            job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).unwrap(),
+            Some(Autonomous)
+        );
         // changed after the job was written: the person takes jobs away
-        // for themselves, and opening the job is refused for them only
-        grant(&mut project, &dev_kp, DEV, &[Implement], Confirmed);
+        // for themselves, and approving the job is refused for them only
+        grant(&mut project, &dev_kp, DEV, &[Implement], Autonomous);
         assert!(job_terms(&project, &job_for("claude", None), DEV).is_err());
         assert!(job_terms(&project, &job_for("claude", None), FOUNDER).is_ok());
         assert!(!job_assignees(&project, DEV)
             .iter()
             .any(|(key, _)| key == "claude"));
-        // a person's own level holds the job too
+        // a person's own level holds the job too: no autonomous for them
         grant(&mut project, &dev_kp, DEV, &[Implement, Jobs], Proposing);
-        assert_eq!(
-            job_terms(&project, &job_for("claude", None), DEV).unwrap(),
-            Some(Proposing)
-        );
+        assert!(job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).is_err());
+        assert!(job_terms(&project, &job_for("claude", Some(Autonomous)), FOUNDER).is_ok());
     }
 
     /// The model: the project's for everybody, else each person's own,
@@ -1273,29 +1323,44 @@ mod tests {
         assert_eq!(order, ["high", "medium-old", "medium-new", "inside"]);
     }
 
-    /// Approving a job and starting it ask the same rule; other steps
-    /// leave the level alone.
+    /// Approving a job gives it one of the two job levels; starting an
+    /// open job leaves its level alone and asks only whether the assignee
+    /// can still take it; other steps judge nothing.
     #[test]
-    fn approving_and_starting_a_job_ask_the_same_rule() {
+    fn approving_a_job_sets_its_level_and_starting_it_keeps_it() {
         use crate::model::item::Status;
         use Capability::Jobs;
         let (project, _, _) = project_where_claude_may(&[Implement, Jobs], Confirmed);
-        let job = job_for("claude", None);
-        for (from, to) in [
+        let (approve, start) = (
             (Status::New, Status::Open),
             (Status::Open, Status::InProgress),
-        ] {
-            assert_eq!(
-                job_step(&project, &job, &from, &to, DEV).unwrap(),
-                Some(Confirmed)
-            );
-            let above = job_for("claude", Some(Autonomous));
-            assert!(job_step(&project, &above, &from, &to, DEV).is_err());
-        }
-        // stopping or handing to review judges nothing
-        let above = job_for("claude", Some(Autonomous));
+        );
+        let step = |job: &crate::model::item::Item, (from, to): &(Status, Status)| {
+            job_step(&project, job, from, to, DEV)
+        };
         assert_eq!(
-            job_step(&project, &above, &Status::InProgress, &Status::Open, DEV).unwrap(),
+            step(&job_for("claude", None), &approve).unwrap(),
+            Some(Proposing)
+        );
+        assert!(step(&job_for("claude", Some(Autonomous)), &approve).is_err());
+        assert!(step(&job_for("claude", Some(Confirmed)), &approve).is_err());
+        // an open job from before jobs had two levels keeps its level
+        assert_eq!(
+            step(&job_for("claude", Some(Confirmed)), &start).unwrap(),
+            Some(Confirmed)
+        );
+        // ...unless the member may no longer run at it
+        assert!(step(&job_for("claude", Some(Autonomous)), &start).is_err());
+        // stopping judges nothing
+        assert_eq!(
+            job_step(
+                &project,
+                &job_for("claude", Some(Autonomous)),
+                &Status::InProgress,
+                &Status::Open,
+                DEV
+            )
+            .unwrap(),
             Some(Autonomous)
         );
     }

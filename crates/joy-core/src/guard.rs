@@ -296,23 +296,20 @@ impl Guard {
                 }
             }
 
-            // Job gates use `job: `-prefixed status_rules keys. The triage
-            // gate defaults to allow_ai: false -- setting a job to open is what
-            // lets its assignee take it and spend, a human's step.
+            // Two steps of a job are a person's, always (operator
+            // 2026-10-08): approving it (new -> open), which lets its
+            // assignee take it and spend, and accepting its result
+            // (review -> closed). No status rule opens them to an AI
+            // member. The other job steps follow `job: `-prefixed
+            // status_rules keys, open to AI members unless a rule says no.
             if let Action::ChangeJobStatus { from, to, .. } = action {
                 let key = format!("job: {} -> {}", status_str(from), status_str(to));
-                // Two steps of a job are a human's by default: setting it
-                // to open, which lets its assignee take it and spend, and
-                // accepting its result. An AI member that takes jobs
-                // holds the jobs capability (`grants::job_assignee`), and
-                // that must not make it the one who accepts its own work.
-                let allow_ai = match self.gates.get(&key) {
-                    Some(gate) => gate.allow_ai,
-                    None => !matches!(
-                        (from, to),
-                        (Status::New, Status::Open) | (Status::Review, Status::Closed)
-                    ),
-                };
+                let a_persons_step = matches!(
+                    (from, to),
+                    (Status::New, Status::Open) | (Status::Review, Status::Closed)
+                );
+                let allow_ai =
+                    !a_persons_step && self.gates.get(&key).is_none_or(|gate| gate.allow_ai);
                 if !allow_ai {
                     return Verdict::Deny(format!(
                         "AI member {} blocked by job gate on {} (allow_ai: false)",
@@ -839,6 +836,50 @@ mod tests {
             guard.check(&Action::CreateRelease, &id),
             Verdict::Deny(_)
         ));
+    }
+
+    /// Approving a job and accepting its result are a person's steps for
+    /// good (operator 2026-10-08): no status rule opens them to an AI
+    /// member, while a normal item's steps stay open to it unless a rule
+    /// closes them.
+    #[test]
+    fn approving_and_accepting_a_job_stay_a_persons_whatever_the_rules_say() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            (
+                "ai:claude@joy",
+                specific_caps(&[Capability::Jobs, Capability::Review, Capability::Create]),
+            ),
+        ]);
+        let mut gates = BTreeMap::new();
+        for key in ["job: new -> open", "job: review -> closed"] {
+            gates.insert(key.to_string(), GateConfig { allow_ai: true });
+        }
+        let guard = Guard::with_gates(&project, gates);
+        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        for (from, to) in [
+            (Status::New, Status::Open),
+            (Status::Review, Status::Closed),
+        ] {
+            let job_step = Action::ChangeJobStatus {
+                from: from.clone(),
+                to: to.clone(),
+                assignee: Some("ai:claude@joy".into()),
+            };
+            match guard.check(&job_step, &ai) {
+                Verdict::Deny(reason) => assert!(reason.contains("job gate"), "{reason}"),
+                other => panic!("an AI member on a person's job step: {other:?}"),
+            }
+            assert_eq!(
+                guard.check(&job_step, &identity("dev@example.com")),
+                Verdict::Allow
+            );
+            // the same step of a normal item: no rule, so the AI member may
+            assert_ne!(
+                std::mem::discriminant(&guard.check(&Action::ChangeStatus { from, to }, &ai)),
+                std::mem::discriminant(&Verdict::Deny(String::new()))
+            );
+        }
     }
 
     #[test]
