@@ -1,0 +1,34 @@
+id: JOY-02C6-25
+title: 'Two signed layers for an AI member: project maximum and personal grant, verified by Guard on every action'
+type: story
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- plan
+- implement
+- review
+effort: 7
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:45.024451369Z
+updated: 2026-10-08T00:18:51.482437389Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Delivery 2 of JI-019E-40, decided in JI-019D-46 sections 1 and 2.
+
+  Model: an AI member has capabilities (flat list of the Capability enum) and one interaction level. CapabilityConfig with interaction-level, max-interaction-level and max-cost-per-job goes, as do the member default interaction_level, project.defaults.yaml per-capability levels as member input, interaction-level.default in config.yaml and config.defaults.yaml (the project default stays as the value for new grants), capabilities.rs warn_unless_capable, data/capabilities/*.md, the AiConfig ai.* keys and Action::StartJob's budget branch. Human members have capabilities only.
+
+  Project maximum: stored in the AI member's file as { capabilities, level, signed_by, signed_at, signature }. Signed text: name|capabilities sorted comma separated|level|project|project id. Writing it needs manage; the signer is any human member with manage, the signature is made with that member's identity key.
+
+  Personal grant: stored in the delegating human's ai_delegations[<name>] as { capabilities, level, signed_at, signature }, signed text name|capabilities|level|delegator id|project id, signed with the delegator's identity key, at most the project maximum at signing time. joy auth token add puts the hash of the grant text into the token claims (grant_hash, or none when the human has no grant); the redeemed session keeps it.
+
+  Guard (guard.rs): for an AI session, on every action, verify the project maximum signature against a human member with manage, verify the personal grant against the delegator, require the grant hash to match the session, take the intersection of capabilities and the lower level. Missing project maximum = no capabilities. No grant and the token says none = the project maximum. Any signature made with an AI member's key is invalid. An AI member without the required capability is denied, work and management alike (the safety net test flips to Deny). Humans keep today's verdicts. The AI-never-manage rule stays.
+
+  Level in joy show and joy project member show: the effective maximum and, for the caller's own delegation, the effective level.
+
+  Tests: signature round trip for both layers, Guard matrix (missing maximum, missing grant with and without hash, hand-edited member file, hand-edited grant, AI-signed maximum), and the fixture AI member acting after migration with the migrated maximum.
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-08T00:18:51.482435826Z
+  text: 'Result: two signed layers. The project''s side (capabilities and ONE level) is in the AI member''s file with granted {by, at, signature}; a person''s own grant is in their ai_delegations[<ai>].grant, signed with their key, within the project''s side. The token names the grant it was issued with; Guard checks both signatures on every AI action and takes the narrower result (auth/vouch.rs, auth/grants.rs, guard.rs). No capability, no action, work and management alike; an AI never holds manage. grants::shown gives every host the same three columns. Removed as dead: resolve_interaction_level and its sources, the per-capability setters, warn_unless_capable, the job start action with max-cost-per-job, the personal interaction-level.default and ai.* config keys, the per-capability levels of the defaults template. Kept on purpose: CapabilityConfig still parses the two old fields, because the migration reads the floors of an older project; an older project behaves as before until a person brings it over. Also fixed: a checkout without project.defaults.yaml (a clone, the platform) now gives a new AI member joy''s own recommendation, create and assign included; before it fell back to the work capabilities and such a member could neither create nor comment once refusals became hard.'

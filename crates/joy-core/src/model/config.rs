@@ -11,12 +11,8 @@ pub struct Config {
     pub sync: Option<SyncConfig>,
     #[serde(default)]
     pub output: OutputConfig,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ai: Option<AiConfig>,
     #[serde(default)]
     pub workflow: WorkflowConfig,
-    #[serde(default, rename = "interaction-level")]
-    pub interaction_level: InteractionLevelConfig,
     #[serde(default = "default_auto_sync", rename = "auto-sync")]
     pub auto_sync: bool,
     /// Editor invoked when a Joy command needs free-form input (e.g.
@@ -77,12 +73,11 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-pub struct InteractionLevelConfig {
-    #[serde(default)]
-    pub default: InteractionLevel,
-}
-
+// The level an AI member works at is the member's own, signed with what
+// the project allows it and narrowed by the person it acts for
+// (JI-019D-46). A personal `interaction-level.default` used to sit here;
+// nothing reads it any more, and a config.yaml that still carries the
+// section parses as it always did.
 pub use joy_model::InteractionLevel;
 
 /// The `sync:` block of `.joy/config.yaml`. Nothing in the product
@@ -129,24 +124,13 @@ pub enum ColorMode {
     Never,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct AiConfig {
-    pub tool: String,
-    pub command: String,
-    pub model: String,
-    pub max_cost_per_job: f64,
-    pub currency: String,
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
             version: 1,
             sync: None,
             output: OutputConfig::default(),
-            ai: None,
             workflow: WorkflowConfig::default(),
-            interaction_level: InteractionLevelConfig::default(),
             auto_sync: default_auto_sync(),
             editor: None,
         }
@@ -173,16 +157,6 @@ pub fn describe_value(key: &str, value: &serde_json::Value) -> Option<String> {
     let s = value.as_str();
     let b = value.as_bool();
     let text = match (key, s, b) {
-        ("interaction-level.default", Some("autonomous"), _) => {
-            "work independently, stop only at governance gates"
-        }
-        ("interaction-level.default", Some("confirmed"), _) => {
-            "work independently, confirm before irreversible actions"
-        }
-        ("interaction-level.default", Some("proposing"), _) => {
-            "propose, the human decides every step"
-        }
-
         ("workflow.auto-git", Some("off"), _) => "never stage, commit, or push automatically",
         ("workflow.auto-git", Some("add"), _) => "git add changed files after each write",
         ("workflow.auto-git", Some("commit"), _) => "add + commit after each write",
@@ -381,42 +355,6 @@ mod tests {
     }
 
     #[test]
-    fn interaction_level_config_get_default() {
-        let config = Config::default();
-        assert_eq!(
-            config.interaction_level.default,
-            InteractionLevel::Proposing
-        );
-    }
-
-    #[test]
-    fn interaction_level_config_set_default() {
-        let yaml = "interaction-level:\n  default: autonomous\n";
-        let mut base = serde_json::to_value(Config::default()).unwrap();
-        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
-        crate::store::deep_merge_value(&mut base, &overlay);
-        let config: Config = serde_json::from_value(base).unwrap();
-        assert_eq!(
-            config.interaction_level.default,
-            InteractionLevel::Autonomous
-        );
-    }
-
-    #[test]
-    fn old_agents_key_does_not_deserialize_to_interaction_level() {
-        let yaml = "agents:\n  default:\n    mode: proposing\n";
-        let mut base = serde_json::to_value(Config::default()).unwrap();
-        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
-        crate::store::deep_merge_value(&mut base, &overlay);
-        let config: Config = serde_json::from_value(base).unwrap();
-        // interaction-level.default should still be the default
-        assert_eq!(
-            config.interaction_level.default,
-            InteractionLevel::Proposing
-        );
-    }
-
-    #[test]
     fn pre_2_0_level_value_errors_with_update_hint() {
         let err = serde_yaml_ng::from_str::<InteractionLevel>("pairing").unwrap_err();
         assert!(err.to_string().contains("joy update"));
@@ -434,53 +372,10 @@ mod tests {
     }
 
     #[test]
-    fn describe_value_interaction_level_default() {
-        let v = serde_json::Value::String("proposing".to_string());
-        let d = describe_value("interaction-level.default", &v).expect("known variant");
-        assert!(d.contains("propose"));
-        let unknown = serde_json::Value::String("zzz".to_string());
-        assert!(describe_value("interaction-level.default", &unknown).is_none());
-    }
-
-    #[test]
-    fn flatten_under_interaction_level_returns_default() {
-        let cfg = serde_json::to_value(Config::default()).unwrap();
-        let leaves = flatten_under(&cfg, "interaction-level");
-        let keys: Vec<&str> = leaves.iter().map(|(k, _)| k.as_str()).collect();
-        assert!(keys.contains(&"interaction-level.default"));
-    }
-
-    #[test]
     fn flatten_under_output_lists_scalars_only() {
         let cfg = serde_json::to_value(Config::default()).unwrap();
         let leaves = flatten_under(&cfg, "output");
         assert!(leaves.iter().all(|(_, v)| !v.is_object()));
         assert!(leaves.iter().any(|(k, _)| k == "output.color"));
-    }
-
-    #[test]
-    fn field_hint_interaction_level_default() {
-        let hint = field_hint("interaction-level.default");
-        assert!(hint.is_some());
-        let values = hint.unwrap();
-        assert!(values.contains("proposing"));
-        assert!(values.contains("confirmed"));
-        assert!(values.contains("autonomous"));
-    }
-
-    #[test]
-    fn old_agents_key_has_no_effect_on_interaction_level() {
-        // Even if agents key is present in YAML, it should not affect the level
-        let yaml =
-            "agents:\n  default:\n    mode: proposing\ninteraction-level:\n  default: confirmed\n";
-        let mut base = serde_json::to_value(Config::default()).unwrap();
-        let overlay: serde_json::Value = serde_yaml_ng::from_str(yaml).unwrap();
-        crate::store::deep_merge_value(&mut base, &overlay);
-        let config: Config = serde_json::from_value(base).unwrap();
-        // interaction-level.default takes the explicit value, agents is ignored
-        assert_eq!(
-            config.interaction_level.default,
-            InteractionLevel::Confirmed
-        );
     }
 }

@@ -79,21 +79,21 @@ enroll_member() {
 # 1. joy init creates founder without attestation
 # ============================================================
 
-@test "founder entry has no attestation after joy init + auth init" {
+@test "the founder has no origin after joy init + auth init" {
     setup_founder
-    # Founder is the sole member, trust root, no attestation expected.
-    run grep -c "attestation:" .joy/project.yaml
+    # The founder is the one person nobody invited.
+    run members_grep -c "^origin:"
     [ "$output" = "0" ]
     # Founder has verify_key and kdf_nonce from auth init.
-    grep -q "verify_key:" .joy/project.yaml
-    grep -q "kdf_nonce:" .joy/project.yaml
+    members_grep -q "verify_key:"
+    members_grep -q "kdf_nonce:"
 }
 
 # ============================================================
 # 2. joy project member add creates OTP + attestation signed by founder
 # ============================================================
 
-@test "member add emits OTP and writes attestation signed by founder" {
+@test "member add emits OTP and writes an origin signed by the founder" {
     setup_founder
     run joy project member add alice@example.com --passphrase "$FOUNDER_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -102,14 +102,16 @@ enroll_member() {
     otp=$(extract_otp "$output")
     [ -n "$otp" ]
 
-    # project.yaml now contains an attestation block naming test@example.com
-    # (the founder) as attester.
-    grep -q "attestation:" .joy/project.yaml
-    grep -q "attester: test@example.com" .joy/project.yaml
+    # Alice's file says who invited her: the founder, with a signature.
+    local file
+    file="$(member_file alice@example.com)"
+    grep -q "^origin:" "$file"
+    grep -q "  attester: test@example.com" "$file"
+    grep -q "  signature: " "$file"
     # enrollment_verifier is recorded (alice still has one, pre-redemption).
-    grep -q "enrollment_verifier:" .joy/project.yaml
+    members_grep -q "enrollment_verifier:"
     # Only the founder has a verify_key at this point; alice has none.
-    [ "$(grep -c '^    verify_key:' .joy/project.yaml)" = "1" ]
+    [ "$(members_grep -c '^verify_key:')" = "1" ]
 }
 
 @test "member add without manage-member passphrase fails" {
@@ -123,32 +125,30 @@ enroll_member() {
 # 3. joy auth --otp sets passphrase and silently reverse-attests founder
 # ============================================================
 
-@test "otp redemption sets passphrase and reverse-attests founder silently" {
+@test "otp redemption sets the passphrase and leaves the invitation as it was signed" {
     setup_founder
     add_member_capture_otp alice@example.com
     [ -n "$MEMBER_OTP" ]
 
-    # Founder currently has no attestation.
-    run bash -c 'grep -B1 "test@example.com:" .joy/project.yaml | head -3'
+    local signed
+    signed=$(grep "  signature: " "$(member_file alice@example.com)")
 
     # Alice redeems OTP and sets her passphrase.
     run joy auth --otp "$MEMBER_OTP" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
-    # Redemption output should be minimal - no explicit mention of
-    # reverse-attesting the founder (silent behavior per the 8-point design).
-    [[ "$output" != *"reverse-attesting"* ]]
     [[ "$output" != *"founder"* ]]
 
-    # Alice's member-level enrollment_verifier is cleared (attestation signed_fields under the pinned otp_hash key
-    # may still reference it as historical record - that's 8-space indent
-    # and not matched by the member-level regex).
-    run grep -E "^    enrollment_verifier:" .joy/project.yaml
+    # Alice's own copy of the invitation is cleared; her origin keeps the
+    # hash it was signed over.
+    run members_grep -E "^enrollment_verifier:"
     [ "$status" -ne 0 ]
     # Both alice and founder now have verify_keys at member-level.
-    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
+    [ "$(members_grep -cE '^verify_key:')" = "2" ]
 
-    # Founder now carries an attestation naming alice as attester.
-    grep -q "attester: alice@example.com" .joy/project.yaml
+    # The origin is untouched by the redemption, and the founder is
+    # still the one person without one.
+    [ "$(grep "  signature: " "$(member_file alice@example.com)")" = "$signed" ]
+    ! grep -q "^origin:" "$(member_file test@example.com)"
 }
 
 @test "otp redemption finds its member behind a forge alias address" {
@@ -165,11 +165,11 @@ enroll_member() {
     [ "$status" -eq 0 ]
 
     # invitation spent on the invited slot, both members enrolled
-    run grep -E "^    enrollment_verifier:" .joy/project.yaml
+    run members_grep -E "^enrollment_verifier:"
     [ "$status" -ne 0 ]
-    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
+    [ "$(members_grep -cE '^verify_key:')" = "2" ]
     # no second identity under the alias
-    ! grep -q "users.noreply.github.com" .joy/project.yaml
+    ! members_grep -q "users.noreply.github.com"
 }
 
 # ============================================================
@@ -184,7 +184,7 @@ enroll_member() {
 
     # Capture founder's current attestation signature.
     local before_sig
-    before_sig=$(grep -A10 "test@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    before_sig=$(members_grep -A10 "test@example.com:" | grep "signature:" | head -1)
 
     # Alice (now manage) adds bob.
     become_member test@example.com "$FOUNDER_PASSPHRASE"   # go back to manage
@@ -193,7 +193,7 @@ enroll_member() {
 
     # Founder's attestation is unchanged.
     local after_sig
-    after_sig=$(grep -A10 "test@example.com:" .joy/project.yaml | grep "signature:" | head -1)
+    after_sig=$(members_grep -A10 "test@example.com:" | grep "signature:" | head -1)
     [ "$before_sig" = "$after_sig" ]
 }
 
@@ -232,7 +232,7 @@ enroll_member() {
     MEMBER_OTP=$(joy project member add carol@example.com --passphrase "$ALICE_PASSPHRASE" \
         | sed -n 's/^[[:space:]]*One-time password:[[:space:]]*\([A-Za-z0-9-]*\).*$/\1/p' | head -1)
     enroll_member carol@example.com "$CAROL_PASSPHRASE"
-    grep -A20 "carol@example.com:" .joy/project.yaml | grep -q "attester: alice@example.com"
+    grep -q "  attester: alice@example.com" "$(member_file carol@example.com)"
 
     # Founder adds bob as another manage member.
     become_member test@example.com "$FOUNDER_PASSPHRASE"
@@ -245,9 +245,9 @@ enroll_member() {
     run joy project member rm alice@example.com --passphrase "$BOB_PASSPHRASE"
     [ "$status" -eq 0 ]
 
-    # Alice's entry is gone; carol's attester is now bob.
-    ! grep -q "^  alice@example.com:" .joy/project.yaml
-    grep -A20 "carol@example.com:" .joy/project.yaml | grep -q "attester: bob@example.com"
+    # Alice's file is gone; bob signed for carol in her place.
+    [ -z "$(member_file alice@example.com)" ]
+    grep -q "  attester: bob@example.com" "$(member_file carol@example.com)"
 }
 
 # ============================================================
@@ -261,89 +261,44 @@ enroll_member() {
     add_member_capture_otp alice@example.com
     enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
-    # Simulate a manual yaml edit: insert eve as a member without
-    # attestation, without going through 'joy project member add'.
-    # Inserted just before the top-level 'created:' line so yaml stays valid.
-    # awk for BSD/GNU portability: insert eve before the top-level created: line.
-    awk '/^created:/ && !done {
-        print "  eve@attacker.com:";
-        print "    capabilities:";
-        print "      manage: {}";
-        done = 1
-    } { print }' .joy/project.yaml > .joy/project.yaml.tmp \
+    # Simulate an edit by hand: a member file for eve and her id in the
+    # list, without going through 'joy project member add'.
+    printf 'email: eve@attacker.com\ncapabilities: all\nupdated: 2026-01-01T00:00:00Z\n' \
+        > .joy/members/m-eveeveevee.yaml
+    awk '/^members:/ { print; print "- m-eveeveevee"; next } { print }' \
+        .joy/project.yaml > .joy/project.yaml.tmp \
         && mv .joy/project.yaml.tmp .joy/project.yaml
 
-    # Eve names herself (the member map now lists her) and tries to
+    # Eve names herself (the project now lists her) and tries to
     # bootstrap her auth: joy auth init sets her verify_key, and then she
-    # authenticates. The attestation check at joy auth rejects her
-    # because her entry has no attestation.
+    # authenticates. joy auth rejects her because nobody invited her and
+    # she is not the founder.
     joy auth init --user eve@attacker.com --passphrase "$EVE_PASSPHRASE"
     run joy auth --user eve@attacker.com --passphrase "$EVE_PASSPHRASE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"attestation"* ]] || [[ "$output" == *"tampered"* ]] || [[ "$output" == *"not valid"* ]]
+    [[ "$output" == *"was not invited by anyone"* ]]
     # Error points the user at the recovery path.
-    [[ "$output" == *"manage member"* ]] || [[ "$output" == *"re-add"* ]]
+    [[ "$output" == *"re-add"* ]]
 }
 
 # ============================================================
 # 8. Tampered attestation signature fails joy auth
 # ============================================================
 
-@test "silent auto-seal attests existing members on first post-upgrade auth" {
-    # Simulate a pre-feature project: members with verify_keys but no
-    # attestations anywhere. Dev joins via direct yaml edit + auth init
-    # before we introduced attestations (we achieve the same state by
-    # stripping attestations from a fresh project).
+@test "a tampered origin signature fails joy auth" {
     setup_founder
     add_member_capture_otp alice@example.com
     enroll_member alice@example.com "$ALICE_PASSPHRASE"
 
-    # Back to the founder BEFORE the project is put into its pre-feature
-    # state, so the authentication below is the first one the auto-seal
-    # can happen in.
-    become_member test@example.com "$FOUNDER_PASSPHRASE"
+    # Flip one hex character in the signature of alice's origin (perl
+    # for a portable in-place edit).
+    perl -i -pe 'BEGIN {$done=0} if (!$done && /^\s+signature:\s*([0-9a-f])/) { $c = $1 eq "0" ? "1" : "0"; s/signature:\s*[0-9a-f]/signature: $c/; $done=1 }' "$(member_file alice@example.com)"
 
-    # Strip every attestation block (simulating pre-feature state).
-    python3 -c "
-import re, sys
-with open('.joy/project.yaml') as f:
-    text = f.read()
-text = re.sub(r'    attestation:\n(      .*\n)*', '', text)
-with open('.joy/project.yaml', 'w') as f:
-    f.write(text)
-"
-    ! grep -q "attestation:" .joy/project.yaml
-
-    # Deauth and re-auth as founder. Auto-seal triggers: founder signs
-    # attestations for everyone else (just alice here).
-    joy deauth
-    run joy auth --passphrase "$FOUNDER_PASSPHRASE"
-    [ "$status" -eq 0 ]
-
-    # Alice now has an attestation naming test@example.com as attester;
-    # founder remains unattested (trust root of the sealed state).
-    # -A30 reaches past alice's capability list (default excludes
-    # manage/delete, so the capability block spans several lines).
-    grep -A30 "alice@example.com:" .joy/project.yaml | grep -q "attester: test@example.com"
-    # Verify silent: auth output should not mention sealing.
-    [[ "$output" != *"seal"* ]]
-    [[ "$output" != *"migration"* ]]
-}
-
-@test "tampered attestation signature fails joy auth" {
-    setup_founder
-    add_member_capture_otp alice@example.com
-    enroll_member alice@example.com "$ALICE_PASSPHRASE"
-
-    # Flip one hex character in alice's attestation signature.
-    # Uses perl for cross-platform sed-style in-place edit on the first
-    # hex digit of the 'signature:' line in the attestation block.
-    perl -i -pe 'BEGIN {$done=0} if (!$done && /^\s+signature:\s*([0-9a-f])/) { $c = $1 eq "0" ? "1" : "0"; s/signature:\s*[0-9a-f]/signature: $c/; $done=1 }' .joy/project.yaml
-
-    # Alice tries to auth with valid passphrase; attestation check fails.
+    # Alice tries to auth with her valid passphrase; the origin does not
+    # verify.
     run joy auth --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -ne 0 ]
-    [[ "$output" == *"attestation"* ]] || [[ "$output" == *"tampered"* ]] || [[ "$output" == *"not valid"* ]]
+    [[ "$output" == *"does not verify"* ]]
 }
 
 # ============================================================
@@ -362,10 +317,10 @@ with open('.joy/project.yaml', 'w') as f:
     [ "$status" -ne 0 ]
     [[ "$output" == *"one-time password is required"* ]]
     # Only the founder is enrolled; alice's slot is untouched.
-    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "1" ]
+    [ "$(members_grep -cE '^verify_key:')" = "1" ]
 
     # Redeeming the invitation is the way in.
     run joy auth --otp "$MEMBER_OTP" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [ "$(grep -cE '^    verify_key:' .joy/project.yaml)" = "2" ]
+    [ "$(members_grep -cE '^verify_key:')" = "2" ]
 }

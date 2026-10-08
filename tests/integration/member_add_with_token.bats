@@ -7,10 +7,10 @@ load setup
 @test "--with-token issues a delegation token in one go for ai: members" {
     setup_human_auth
 
-    run joy project member add ai:claude@joy --with-token \
+    run joy project member add claude --with-token \
         --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Added member ai:claude@joy"* ]]
+    [[ "$output" == *"Added member claude"* ]]
 
     # Token printed on its own line, wrapped in double quotes, so the
     # operator can copy/paste it intact.
@@ -25,21 +25,21 @@ load setup
     local member session
     member=$(echo "$redeem" | jq -r '.data.member')
     session=$(echo "$redeem" | jq -r '.data.session_env')
-    [ "$member" = "ai:claude@joy" ]
+    [ "$member" = "claude" ]
     [[ "$session" == joy_s_* ]]
 }
 
 @test "--with-token JSON output includes member, token, ttl_hours" {
     setup_human_auth
 
-    run joy project member add ai:gemini@joy --with-token --json \
+    run joy project member add gemini --with-token --json \
         --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     local member token ttl
     member=$(echo "$output" | jq -r '.data.member')
     token=$(echo "$output" | jq -r '.data.token')
     ttl=$(echo "$output" | jq -r '.data.ttl_hours')
-    [ "$member" = "ai:gemini@joy" ]
+    [ "$member" = "gemini" ]
     [[ "$token" == joy_t_* ]]
     [ "$ttl" = "24" ]
 }
@@ -59,7 +59,7 @@ load setup
 @test "without --with-token the AI add does NOT issue a token" {
     setup_human_auth
 
-    run joy project member add ai:noauto@joy --passphrase "$TEST_PASSPHRASE"
+    run joy project member add noauto --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" != *"joy_t_"* ]]
 }

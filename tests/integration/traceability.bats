@@ -40,39 +40,39 @@ load setup
 
 @test "AI item.created has delegated-by in log" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy add task "AI created"
     # Item title is not recorded in the log (JOY-0175-9B); verify the
     # structural event and the delegated-by actor.
-    grep -q "item.created .*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "item.created .*testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI item.status_changed has delegated-by in log" {
     setup_human_auth
     joy add task "AI status test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "AI status" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
-    grep -q "$ITEM_ID item.status_changed.*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$ITEM_ID item.status_changed.*testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI comment.added has delegated-by in log" {
     setup_human_auth
     joy add task "AI comment test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "AI comment" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "AI said this"
     # Comment text is not recorded in the log (JOY-0175-9B).
-    grep -q "$ITEM_ID comment.added .*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$ITEM_ID comment.added .*testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI item.assigned has delegated-by in log" {
     setup_human_auth
     joy add task "AI assign test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "AI assign" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy assign "$ITEM_ID"
-    grep -q "$ITEM_ID item.assigned.*ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$ITEM_ID item.assigned.*testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 # ============================================================
@@ -81,8 +81,8 @@ load setup
 
 @test "auth.session_created logged for token auth" {
     setup_human_auth
-    setup_ai_session ai:test@joy
-    grep -q "auth.session_created.*ai:test@joy" .joy/logs/*.log
+    setup_ai_session testai
+    grep -q "auth.session_created.*testai" .joy/logs/*.log
 }
 
 # ============================================================
@@ -91,10 +91,10 @@ load setup
 
 @test "guard.denied logged for AI manage attempt" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project set description "AI edit"
     [ "$status" -ne 0 ]
-    grep -q "guard.denied.*ai:test@joy" .joy/logs/*.log
+    grep -q "guard.denied.*testai" .joy/logs/*.log
 }
 
 @test "guard.denied logged for gate violation" {
@@ -106,12 +106,12 @@ status_rules:
   review -> closed:
     allow_ai: false
 EOF
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy status "$ITEM_ID" in-progress
     joy status "$ITEM_ID" review
     run joy status "$ITEM_ID" closed
     [ "$status" -ne 0 ]
-    grep -q "guard.denied.*gate.*allow_ai.*ai:test@joy" .joy/logs/*.log
+    grep -q "guard.denied.*gate.*allow_ai.*testai" .joy/logs/*.log
 }
 
 @test "guard.warned logged for missing capability" {
@@ -136,12 +136,12 @@ EOF
 
 @test "three identities coexist with correct auth status" {
     setup_human_auth
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    joy project member add copilot --passphrase "$TEST_PASSPHRASE"
     # Create and auth both AI members
-    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_CLAUDE=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
-    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add copilot --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
@@ -153,19 +153,19 @@ EOF
     [[ "$output" == *"test@example.com"* ]]
     # Claude status
     run env JOY_SESSION="$SESSION_CLAUDE" joy auth status
-    [[ "$output" == *"ai:claude@joy"* ]]
+    [[ "$output" == *"claude"* ]]
     # Copilot status
     run env JOY_SESSION="$SESSION_COPILOT" joy auth status
-    [[ "$output" == *"ai:copilot@joy"* ]]
+    [[ "$output" == *"copilot"* ]]
 }
 
 @test "three identities produce correct event log entries" {
     setup_human_auth
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:copilot@joy --passphrase "$TEST_PASSPHRASE"
-    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    joy project member add copilot --passphrase "$TEST_PASSPHRASE"
+    TOKEN_CLAUDE=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
-    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add copilot --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
@@ -180,14 +180,14 @@ EOF
     COPILOT_ID=$(JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot task" \
         | sed -n 's/^Created \([A-Z0-9-]\+\) .*/\1/p')
     grep -q "$HUMAN_ID item.created .*test@example.com" .joy/logs/*.log
-    grep -q "$CLAUDE_ID item.created .*ai:claude@joy delegated-by:test@example.com" .joy/logs/*.log
-    grep -q "$COPILOT_ID item.created .*ai:copilot@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$CLAUDE_ID item.created .*claude delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "$COPILOT_ID item.created .*copilot delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI guard enforcement uses correct identity per session" {
     setup_human_auth
-    joy project member add ai:claude@joy --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
-    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add claude --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
+    TOKEN_CLAUDE=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
@@ -204,12 +204,12 @@ EOF
 @test "two AIs with different capabilities enforced correctly" {
     setup_human_auth
     # Claude: can implement and create, but NOT delete
-    joy project member add ai:claude@joy --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"
     # Copilot: can review and create, but NOT implement
-    joy project member add ai:copilot@joy --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
-    TOKEN_CLAUDE=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add copilot --capabilities "review,create" --passphrase "$TEST_PASSPHRASE"
+    TOKEN_CLAUDE=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
-    TOKEN_COPILOT=$(joy auth token add ai:copilot@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN_COPILOT=$(joy auth token add copilot --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$TOKEN_CLAUDE")
     SESSION_CLAUDE="$JOY_SESSION"
@@ -220,22 +220,25 @@ EOF
     JOY_SESSION="$SESSION_COPILOT" joy add task "Copilot item"
     CLAUDE_ID=$(joy ls 2>/dev/null | grep "Claude item" | awk '{print $1}')
     COPILOT_ID=$(joy ls 2>/dev/null | grep "Copilot item" | awk '{print $1}')
-    # Claude can start work (implement), Copilot cannot (warn)
+    # Claude starts work (implement); copilot is refused (JI-019D-46: an
+    # AI without the capability does not act, and the log says so).
     run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" in-progress
     [ "$status" -eq 0 ]
     run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" in-progress
-    # Copilot lacks implement -> warn (still succeeds, but warning logged)
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"copilot does not have 'implement' capability"* ]]
+    grep -q "guard.denied.*copilot.*implement" .joy/logs/*.log
+    # Claude hands its item to review and may not close it (lacks
+    # review); copilot may close one that is in review.
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" review
+    [ "$status" -ne 0 ]
+    switch_to_human
+    joy status "$CLAUDE_ID" review
+    run env JOY_SESSION="$SESSION_COPILOT" joy status "$CLAUDE_ID" closed
     [ "$status" -eq 0 ]
-    grep -q "guard.warned.*ai:copilot@joy.*implement" .joy/logs/*.log
-    # Claude cannot close (lacks review), Copilot can close (has review)
-    JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" review
-    JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" review
-    run env JOY_SESSION="$SESSION_COPILOT" joy status "$COPILOT_ID" closed
-    [ "$status" -eq 0 ]
-    # Claude closing warns (lacks review)
-    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$CLAUDE_ID" closed
-    [ "$status" -eq 0 ]
-    grep -q "guard.warned.*ai:claude@joy.*review" .joy/logs/*.log
+    run env JOY_SESSION="$SESSION_CLAUDE" joy status "$COPILOT_ID" closed
+    [ "$status" -ne 0 ]
+    grep -q "guard.denied.*claude.*review" .joy/logs/*.log
 }
 
 # ============================================================

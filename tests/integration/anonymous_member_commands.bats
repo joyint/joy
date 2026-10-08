@@ -20,9 +20,9 @@ _anon() {
 
 @test "auth token add issues a token in an anonymous project" {
     _anon
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy project member add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    run joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add claude --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"joy_t_"* ]]
     [[ "$output" != *"not a registered project member"* ]]
@@ -35,12 +35,12 @@ _anon() {
 @test "member add --with-token registers an AI and issues a token in anonymous mode" {
     _anon
 
-    run joy project member add ai:copilot@joy --with-token --passphrase "$TEST_PASSPHRASE"
+    run joy project member add copilot --with-token --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"joy_t_"* ]]
 
     run env JOY_PASSPHRASE="$TEST_PASSPHRASE" joy project member
-    [[ "$output" == *"ai:copilot@joy"* ]]
+    [[ "$output" == *"copilot"* ]]
 
     run grep -rl "$TEST_EMAIL" .joy/
     [ "$status" -ne 0 ]
@@ -48,8 +48,8 @@ _anon() {
 
 @test "an AI token issued in anonymous mode redeems and the AI can act" {
     _anon
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    token=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | tr -d '"')
+    joy project member add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
+    token=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" | tr -d '"')
 
     # Redeem: `joy auth --token` prints an `export JOY_SESSION=...` line.
     eval "$(joy auth --token "$token")"
@@ -87,5 +87,5 @@ _anon() {
     # project.yaml, so register_member refuses it instead.
     run joy project member add newperson@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
-    ! grep -q "newperson@example.com" .joy/project.yaml
+    ! members_grep -q "newperson@example.com"
 }

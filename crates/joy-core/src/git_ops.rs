@@ -120,7 +120,7 @@ pub fn auto_git_post_command(root: &Path, summary: &str, identity: &str) {
 
     let resolved = at_rest_identity(identity, project.as_ref());
     let message = match resolved.split_once(" delegated-by:") {
-        Some((member, delegator)) if member.starts_with("ai:") => {
+        Some((member, delegator)) if crate::model::project::is_ai_member(member) => {
             format!("joy: {summary}\n\nDelegated-By: {delegator}")
         }
         _ => format!("joy: {summary}"),

@@ -26,12 +26,12 @@ load setup
 
 @test "AI member without JOY_SESSION env var does not show as authenticated" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     # Drop the env var; the session file remains on disk.
     unset JOY_SESSION
 
     run joy project member
     [ "$status" -eq 0 ]
-    line=$(echo "$output" | grep "ai:test@joy" || true)
+    line=$(echo "$output" | grep "testai" || true)
     [[ "$line" != *"✓ 🔐"* ]]
 }

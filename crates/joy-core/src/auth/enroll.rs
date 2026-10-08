@@ -165,6 +165,11 @@ pub fn founder_needing_reverse_attestation(project: &Project) -> Option<String> 
 /// no manage capability, only a key that verifies the signature, so any
 /// redeemer can close it (JOY-00FD-93).
 pub fn reverse_attest_founder(project: &mut Project, redeemer: &str, keypair: &IdentityKeypair) {
+    // With member files the founder is the one person without an origin
+    // and stays that; nobody signs for them after the fact.
+    if project.member_layout() == crate::model::project::MemberLayout::Files {
+        return;
+    }
     let Some(founder) = founder_needing_reverse_attestation(project) else {
         return;
     };
@@ -201,7 +206,6 @@ pub fn redeem_with_passphrase(
 ) -> Result<EnrollmentOutcome, JoyError> {
     crate::auth::validate_passphrase(passphrase)?;
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
     let mut project = store::load_project(root)?;
     // The OTP finds its member (JOY-0257-FC); a NAMED member only
     // survives as the fallthrough so apply_enrollment can answer with its
@@ -249,9 +253,7 @@ pub fn redeem_with_passphrase(
     )?;
     reverse_attest_founder(&mut project, &member_key, &keypair);
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &project)?;
 
     // Establish the new member's first session.
     let project_id = session::project_id(root)?;

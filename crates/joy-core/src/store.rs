@@ -13,6 +13,9 @@ pub const CONFIG_FILE: &str = "config.yaml";
 pub const CONFIG_DEFAULTS_FILE: &str = "config.defaults.yaml";
 pub const PROJECT_FILE: &str = "project.yaml";
 pub const PROJECT_DEFAULTS_FILE: &str = "project.defaults.yaml";
+/// joy's recommendation as it is written to [`PROJECT_DEFAULTS_FILE`] at
+/// init, for a checkout that has no such file.
+const EMBEDDED_PROJECT_DEFAULTS: &str = include_str!("../data/project.defaults.yaml");
 pub const CREDENTIALS_FILE: &str = "credentials.yaml";
 pub const ITEMS_DIR: &str = "items";
 /// Job items live apart from product items: deletable without touching
@@ -473,7 +476,16 @@ pub fn read_project(
         path: project_path.to_path_buf(),
         source: e,
     })?;
-    parse_project(&content, project_path)
+    let (mut project, listed) = parse_project_and_member_ids(&content, project_path)?;
+    if let Some(ids) = listed {
+        // `<root>/.joy/project.yaml`: the member files sit next to it.
+        let root = project_path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        project.replace_members(crate::member_files::read(root, &ids)?);
+    }
+    Ok(project)
 }
 
 /// Parse the content of a project.yaml that did not come from a file on
@@ -484,11 +496,36 @@ pub fn parse_project(
     content: &str,
     origin: &Path,
 ) -> Result<crate::model::project::Project, crate::error::JoyError> {
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(content).map_err(|e| JoyError::YamlParse {
-            path: origin.to_path_buf(),
-            source: e,
-        })?;
+    parse_project_and_member_ids(content, origin).map(|(project, _)| project)
+}
+
+/// [`parse_project`], and the member ids project.yaml lists when the
+/// members are kept in files of their own (JI-019D-46). The project then
+/// comes back without members: reading the files is the caller's part,
+/// because only a caller with a checkout has them.
+fn parse_project_and_member_ids(
+    content: &str,
+    origin: &Path,
+) -> Result<(crate::model::project::Project, Option<Vec<String>>), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
+    let yaml_err = |e| JoyError::YamlParse {
+        path: origin.to_path_buf(),
+        source: e,
+    };
+    let mut value: Value = serde_yaml_ng::from_str(content).map_err(yaml_err)?;
+    // A list under `members` is the ids of the member files; a map is
+    // the members themselves, as every older project has them.
+    let listed: Option<Vec<String>> = match value.get("members") {
+        Some(Value::Sequence(_)) => {
+            let list = value
+                .as_mapping_mut()
+                .and_then(|map| map.remove("members"))
+                .unwrap_or(Value::Null);
+            Some(serde_yaml_ng::from_value(list).map_err(yaml_err)?)
+        }
+        _ => None,
+    };
     // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
     // never sent to project.yaml — they are not supposed to see that file
     // at all. `joy update` persists the migrated form when it runs; until
@@ -497,17 +534,92 @@ pub fn parse_project(
     // merely got its adapter pin backfilled, nagging about "legacy auth
     // field names" that never existed.
     let (value, _migrated) = crate::migrations::project_yaml::apply(value);
-    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
-        path: origin.to_path_buf(),
-        source: e,
-    })
+    let mut project: crate::model::project::Project =
+        serde_yaml_ng::from_value(value).map_err(yaml_err)?;
+    if listed.is_some() {
+        project.set_member_layout(crate::model::project::MemberLayout::Files);
+    }
+    Ok((project, listed))
 }
 
 /// Load the full project metadata from project.yaml under the given
 /// project root. Applies migrations via [`read_project`].
 pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate::error::JoyError> {
+    read_project(&joy_dir(root).join(PROJECT_FILE))
+}
+
+/// The top-level keys of project.yaml that [`Project`] models. What it
+/// says about them is the whole truth: one it leaves out is gone from
+/// the file. Every other top-level key (gates, defaults a newer joy
+/// wrote) is carried over untouched.
+///
+/// [`Project`]: crate::model::project::Project
+const MODELED_PROJECT_KEYS: &[&str] = &[
+    "name",
+    "acronym",
+    "description",
+    "language",
+    "forge",
+    "privacy",
+    "docs",
+    "members",
+    "crypt",
+    "created",
+];
+
+/// Write the project back and stage what was written.
+///
+/// THE way a changed [`Project`](crate::model::project::Project) reaches
+/// the disk: every caller hands over the root and the project, and where
+/// the project lives under `.joy/` is this module's business alone. The
+/// written paths are staged like every other joy write (`auto_git_add`,
+/// which the `workflow.auto-git` setting governs).
+pub fn save_project(
+    root: &Path,
+    project: &crate::model::project::Project,
+) -> Result<(), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    read_project(&project_path)
+    let mut value = serde_yaml_ng::to_value(project)?;
+    let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
+    if in_files {
+        let ids = crate::member_files::write(root, project.member_map())?;
+        if let Some(map) = value.as_mapping_mut() {
+            map.remove("members");
+            if !ids.is_empty() {
+                map.insert("members".into(), serde_yaml_ng::to_value(ids)?);
+            }
+        }
+    }
+    if let (Some(map), Ok(existing)) = (
+        value.as_mapping_mut(),
+        std::fs::read_to_string(&project_path),
+    ) {
+        if let Ok(Value::Mapping(existing)) = serde_yaml_ng::from_str::<Value>(&existing) {
+            for (key, val) in existing {
+                let modeled = key
+                    .as_str()
+                    .is_some_and(|k| MODELED_PROJECT_KEYS.contains(&k));
+                if !modeled && !map.contains_key(&key) {
+                    map.insert(key, val);
+                }
+            }
+        }
+    }
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(&project_path, yaml).map_err(|e| JoyError::WriteFile {
+        path: project_path.clone(),
+        source: e,
+    })?;
+    let rel = format!("{JOY_DIR}/{PROJECT_FILE}");
+    let members = format!("{JOY_DIR}/{}", crate::member_files::MEMBERS_DIR);
+    if in_files {
+        crate::git_ops::auto_git_add(root, &[&rel, &members]);
+    } else {
+        crate::git_ops::auto_git_add(root, &[&rel]);
+    }
+    Ok(())
 }
 
 /// Load interaction-level defaults by merging project.defaults.yaml with the
@@ -531,23 +643,17 @@ pub fn load_interaction_level_defaults(
     serde_json::from_value(base).unwrap_or_default()
 }
 
-/// Load the raw interaction-level defaults from project.defaults.yaml (before
-/// the project.yaml merge). Used for source tracking in resolve_interaction_level().
-pub fn load_raw_interaction_level_defaults(
-    root: &Path,
-) -> crate::model::project::InteractionLevelDefaults {
-    let path = project_defaults_path(root);
-    read_yaml_value(&path)
-        .and_then(|v| v.get("interaction-level").cloned())
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default()
-}
-
 /// Load AI defaults (capabilities granted to AI members) from project.defaults.yaml,
 /// with project.yaml ai-defaults overlay.
 pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
+    // The defaults file is joy's own recommendation, written at `joy
+    // init` and not committed. A checkout that never saw an init (a
+    // clone, the platform's) has none, and gets the same recommendation
+    // from the copy joy carries: an AI member registered there may do
+    // what one registered at home may, create and assign included.
     let defaults_path = project_defaults_path(root);
     let mut base = read_yaml_value(&defaults_path)
+        .or_else(|| serde_yaml_ng::from_str::<serde_json::Value>(EMBEDDED_PROJECT_DEFAULTS).ok())
         .and_then(|v| v.get("ai-defaults").cloned())
         .unwrap_or(serde_json::json!({}));
 
@@ -563,8 +669,7 @@ pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
 
 /// Load the project acronym from project.yaml.
 pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
-    let project_path = joy_dir(root).join(PROJECT_FILE);
-    let project = read_project(&project_path)?;
+    let project = load_project(root)?;
     project.acronym.ok_or_else(|| {
         crate::error::JoyError::Other(
             "project acronym not set -- run: joy project --acronym <ACRONYM>".to_string(),
@@ -575,6 +680,34 @@ pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What the project says about its own keys is the whole truth, and
+    /// what it does not model is left alone: a cleared description is
+    /// gone from the file, a gate written by hand stays.
+    #[test]
+    fn save_project_drops_a_cleared_modeled_key_and_keeps_an_unmodeled_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(joy_dir(root)).unwrap();
+        let mut project = crate::model::project::Project::new("Shop".into(), Some("SH".into()));
+        project.description = Some("sells things".into());
+        save_project(root, &project).unwrap();
+
+        let path = joy_dir(root).join(PROJECT_FILE);
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str("status_rules:\n  review -> closed:\n    allow_ai: false\n");
+        std::fs::write(&path, raw).unwrap();
+
+        let mut reread = load_project(root).unwrap();
+        assert_eq!(reread.description.as_deref(), Some("sells things"));
+        reread.description = None;
+        save_project(root, &reread).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains("description"), "{written}");
+        assert!(written.contains("review -> closed"), "{written}");
+        assert_eq!(load_project(root).unwrap(), reread);
+    }
     use crate::model::Config;
     use tempfile::tempdir;
 
@@ -794,37 +927,27 @@ interaction-level:
         );
     }
 
+    /// A checkout that never saw `joy init` (a clone, the platform's) has
+    /// no defaults file; an AI member registered there gets joy's own
+    /// recommendation all the same, create and assign included, so it
+    /// can write an item or a comment like one registered at home.
     #[test]
-    fn load_raw_interaction_level_defaults_ignores_project_overrides() {
+    fn load_ai_defaults_without_a_file_is_joys_own_recommendation() {
+        use crate::model::item::Capability;
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
-
-        let defaults_content = r#"
-interaction-level:
-  implement: proposing
-"#;
-        std::fs::write(
-            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
-            defaults_content,
-        )
-        .unwrap();
-
-        let project_content = r#"
-name: test
-acronym: TST
-language: en
-created: "2026-01-01T00:00:00+00:00"
-members: {}
-interaction-level:
-  implement: confirmed
-"#;
-        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
-
-        let raw = load_raw_interaction_level_defaults(dir.path());
-        assert_eq!(
-            raw.capabilities[&Capability::Implement],
-            InteractionLevel::Proposing
-        );
+        let _ = std::fs::remove_file(dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE));
+        let defaults = load_ai_defaults(dir.path());
+        for cap in [
+            Capability::Implement,
+            Capability::Review,
+            Capability::Create,
+            Capability::Assign,
+        ] {
+            assert!(defaults.capabilities.contains(&cap), "{cap}");
+        }
+        assert!(!defaults.capabilities.contains(&Capability::Manage));
+        assert!(!defaults.capabilities.contains(&Capability::Delete));
     }
 
     #[test]

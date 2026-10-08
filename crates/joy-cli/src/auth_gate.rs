@@ -101,6 +101,7 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     });
     if !passphrase_given() {
         if let Some((keypair, seed)) = session {
+            joy_core::member_migration::migrate_quietly(root, member_key, &keypair);
             return Ok(Unlocked {
                 member_key: member_key.to_string(),
                 keypair,
@@ -116,6 +117,7 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
         // 2026-09-27), or a session that already stands and a given
         // passphrase that only had to be right: unwrap and go.
         let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
+        joy_core::member_migration::migrate_quietly(root, member_key, &unlocked.keypair);
         return Ok(Unlocked {
             member_key: member_key.to_string(),
             keypair: unlocked.keypair,
@@ -138,6 +140,27 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
         keypair: outcome.keypair,
         seed: outcome.seed,
     })
+}
+
+/// Bring a project from before the member files over when the person
+/// at this terminal is signed in: their session carries the key that
+/// signs what the AI members may do (JI-019D-46). Runs before the
+/// command, asks nothing, and does nothing where nobody is signed in or
+/// the project already keeps its members in files.
+pub fn bring_members_over(root: &Path) {
+    if !joy_core::member_migration::pending(root) {
+        return;
+    }
+    let Ok(project) = joy_core::store::load_project(root) else {
+        return;
+    };
+    let Ok(member_key) = joy_core::identity::acting_human_key(root) else {
+        return;
+    };
+    if let Some(seed) = session_seed(root, &project, &member_key) {
+        let keypair = IdentityKeypair::from_seed(&seed);
+        joy_core::member_migration::migrate_quietly(root, &member_key, &keypair);
+    }
 }
 
 /// The seed cached in this terminal's session, if that session is the

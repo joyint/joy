@@ -10,12 +10,12 @@ load setup
     grep -q 'data.member' AGENTS.md
     grep -q 'data.session_env' AGENTS.md
     grep -q 'data.delegated_by' AGENTS.md
-    ! grep -q 'ai:vibe@joy' AGENTS.md
+    ! grep -q 'vibe' AGENTS.md
     ! grep -q 'Co-Authored-By: Mistral' AGENTS.md
     ! grep -q 'Your interaction level:' AGENTS.md
 
-    sed -i 's/data.member/ai:vibe@joy/' AGENTS.md
+    sed -i 's/data.member/vibe/' AGENTS.md
     joy ai init --tool vibe </dev/null
     grep -q 'data.member' AGENTS.md
-    ! grep -q 'ai:vibe@joy' AGENTS.md
+    ! grep -q 'vibe' AGENTS.md
 }

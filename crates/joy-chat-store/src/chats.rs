@@ -396,7 +396,7 @@ pub fn readd_mentioned_humans(
     let humans: Vec<String> = project
         .members()
         .map(|(key, _)| key.clone())
-        .filter(|key| !key.starts_with("ai:"))
+        .filter(|key| !joy_core::model::project::is_ai_member(key))
         .collect();
     let mentioned: Vec<String> = joy_chat::mentions::mentions(text, &humans)
         .into_iter()
@@ -593,7 +593,7 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
     };
     let humans: Vec<_> = members
         .iter()
-        .filter(|p| !p.id().starts_with("ai:"))
+        .filter(|p| !joy_core::model::project::is_ai_member(p.id()))
         .collect();
     let everyone_done = !humans.is_empty()
         && humans

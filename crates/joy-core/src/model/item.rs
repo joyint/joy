@@ -26,8 +26,9 @@ pub struct Item {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
-    /// Item-level interaction-level override (the "item" layer of the
-    /// resolution in [`super::project::resolve_interaction_level`]).
+    /// The level a job runs at (JI-019D-46): what it asks for while it
+    /// is new, and what it was released at once approved
+    /// (`auth::grants::job_level_at_approval`). Other items carry none.
     #[serde(
         default,
         rename = "interaction-level",

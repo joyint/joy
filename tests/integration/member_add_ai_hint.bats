@@ -6,11 +6,11 @@ load setup
 
 @test "joy project member add prints next-steps hint for ai: members" {
     setup_human_auth
-    run joy project member add ai:copilot-chat@joy --passphrase "$TEST_PASSPHRASE"
+    run joy project member add copilot-chat --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Added member ai:copilot-chat@joy"* ]]
+    [[ "$output" == *"Added member copilot-chat"* ]]
     [[ "$output" == *"Next steps:"* ]]
-    [[ "$output" == *"joy auth token add ai:copilot-chat@joy"* ]]
+    [[ "$output" == *"joy auth token add copilot-chat"* ]]
     [[ "$output" == *"joy auth --token <TOKEN> --json"* ]]
     [[ "$output" == *"session_env"* ]]
     [[ "$output" == *"joy ai tutorial"* ]]
@@ -40,16 +40,16 @@ load setup
     setup_human_auth
 
     # Step 1: register a generic AI member (e.g. a chat-only tool).
-    run joy project member add ai:copilot-chat@joy \
+    run joy project member add copilot-chat \
         --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    grep -q "ai:copilot-chat@joy:" .joy/project.yaml
+    members_grep -q "^name: copilot-chat"
 
     # Step 2: issue a delegation token (as the next-steps hint instructs).
     # The command prints the token wrapped in double quotes; strip them
     # for the bare value used on the next line.
     local token
-    token=$(joy auth token add ai:copilot-chat@joy --passphrase "$TEST_PASSPHRASE" | tr -d '"')
+    token=$(joy auth token add copilot-chat --passphrase "$TEST_PASSPHRASE" | tr -d '"')
     [[ "$token" == joy_t_* ]]
 
     # Step 3: AI redeems the token via --json and learns its identity + auth.
@@ -58,7 +58,7 @@ load setup
     local member session
     member=$(echo "$redeem" | jq -r '.data.member')
     session=$(echo "$redeem" | jq -r '.data.session_env')
-    [ "$member" = "ai:copilot-chat@joy" ]
+    [ "$member" = "copilot-chat" ]
     [[ "$session" == joy_s_* ]]
 
     # Step 4: use --session to act as the AI on a write command.
@@ -66,20 +66,20 @@ load setup
     [ "$status" -eq 0 ]
 
     # Verify the created item is recorded with the AI as author in the event log.
-    run grep -l "ai:copilot-chat@joy" .joy/logs/*.log
+    run grep -l "copilot-chat" .joy/logs/*.log
     [ "$status" -eq 0 ]
 }
 
 @test "bogus --session value does not authenticate as the AI" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     local good="$JOY_SESSION"
     unset JOY_SESSION
 
     # The good session works.
     run joy --session "$good" auth status
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Member:"*"ai:test@joy"* ]]
+    [[ "$output" == *"Member:"*"testai"* ]]
 
     # A garbage value must not yield the AI session, and it must not
     # yield the session of the person who signed in here either: a
@@ -90,13 +90,13 @@ load setup
     [[ "$output" == *"JOY_SESSION is no longer valid"* ]]
     [[ "$output" == *"No active session"* ]]
     member_line=$(echo "$output" | grep -E "^\s*Member:" | head -n 1)
-    [[ "$member_line" != *"ai:test@joy"* ]]
+    [[ "$member_line" != *"testai"* ]]
 }
 
 @test "joy project member add ai:* fails when member already exists" {
     setup_human_auth
-    joy project member add ai:dup@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    run joy project member add ai:dup@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add dup --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run joy project member add dup --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"already exists"* ]]
 }

@@ -12,7 +12,7 @@ load setup
         [ -d "$dir" ] && configured=1 && break
     done
     if [ "$configured" -eq 1 ]; then
-        grep -q "ai:.*@joy" .joy/project.yaml
+        members_grep -q "^adapter:"
     fi
 }
 
@@ -45,7 +45,7 @@ load setup
     # are git-ignored and absent here. joy update must still carry the
     # full block instead of stripping the committed tool entries.
     setup_human_auth
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
     [ ! -d .claude ]
     joy update </dev/null 2>/dev/null || true
     grep -q "^\.claude/" .gitignore
@@ -200,8 +200,8 @@ load setup
 
     [ -f ".claude/CLAUDE.md" ]
     [ -f ".github/copilot-instructions.md" ]
-    grep -q "ai:claude@joy" .joy/project.yaml
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "claude"
+    members_grep -q "copilot"
 }
 
 @test "joy ai init registers member for already-configured tool missing from project.yaml" {
@@ -218,18 +218,18 @@ load setup
 
     # Pre-create Claude's instruction file as if a previous joy update ran
     # (or the file was copied from another project) -- so is_tool_configured
-    # returns true for claude even though no ai:claude@joy member exists in
+    # returns true for claude even though no claude member exists in
     # project.yaml.
     mkdir -p .claude
     echo "# placeholder" > .claude/CLAUDE.md
-    ! grep -q "ai:claude@joy" .joy/project.yaml
+    ! members_grep -q "claude"
 
     joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null || true
 
     # Both members should be registered: claude (because the tool is
     # configured even if it pre-existed) and copilot (newly configured).
-    grep -q "ai:claude@joy" .joy/project.yaml
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "claude"
+    members_grep -q "copilot"
 }
 
 # --- configurable doc paths ---
@@ -261,15 +261,15 @@ load setup
     run joy project get docs.architecture
     [ "$status" -eq 0 ]
     [ "$output" = "ARCHITECTURE.md" ]
-    grep -q "architecture: ARCHITECTURE.md" .joy/project.yaml
+    members_grep -q "architecture: ARCHITECTURE.md"
 }
 
 @test "joy project set docs.architecture default removes the override" {
     setup_human_auth
     joy project set docs.architecture ARCHITECTURE.md
-    grep -q "architecture: ARCHITECTURE.md" .joy/project.yaml
+    members_grep -q "architecture: ARCHITECTURE.md"
     joy project set docs.architecture default
-    ! grep -q "architecture:" .joy/project.yaml
+    ! members_grep -q "architecture:"
     run joy project get docs.architecture
     [ "$output" = "ARCHITECTURE.md" ]
 }
@@ -286,7 +286,7 @@ load setup
     run joy project get docs.vision
     [ "$output" = "docs/vision.md" ]
     # CONTRIBUTING.md is the default -- not stored as override
-    ! grep -q "contributing: CONTRIBUTING.md" .joy/project.yaml
+    ! members_grep -q "contributing: CONTRIBUTING.md"
 }
 
 @test "joy ai init creates template at the configured path" {
@@ -309,7 +309,7 @@ load setup
     # creation. None of the chosen paths differ from defaults, so no docs
     # block should be written.
     joy ai init </dev/null 2>/dev/null || true
-    ! grep -q "^docs:" .joy/project.yaml
+    ! members_grep -q "^docs:"
 }
 
 # --- JOY_SESSION in tool settings ---

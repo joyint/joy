@@ -491,7 +491,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
                 "project",
                 "member",
                 "add",
-                "ai:claude@joy",
+                "claude",
                 "--capabilities",
                 "all",
                 "--passphrase",
@@ -500,14 +500,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
         ),
         (
             "token add",
-            vec![
-                "auth",
-                "token",
-                "add",
-                "ai:claude@joy",
-                "--passphrase",
-                PASSPHRASE,
-            ],
+            vec!["auth", "token", "add", "claude", "--passphrase", PASSPHRASE],
         ),
         (
             "delegation rotate",
@@ -515,7 +508,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
                 "auth",
                 "delegation",
                 "rotate",
-                "ai:claude@joy",
+                "claude",
                 "--passphrase",
                 PASSPHRASE,
             ],
@@ -995,7 +988,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
     assert!(item.status.success(), "{}", text(&item));
     let encrypted = machine.joy(&["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE]);
     assert!(encrypted.status.success(), "{}", text(&encrypted));
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     for (label, args) in [
         (
@@ -1007,7 +1000,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
             vec![
                 "crypt",
                 "grant",
-                "ai:claude@joy",
+                "claude",
                 "--zone",
                 "default",
                 "--passphrase",
@@ -1023,7 +1016,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
             text(&output)
         );
         assert!(
-            text(&output).contains("ai:claude@joy") && text(&output).contains("manage"),
+            text(&output).contains("claude") && text(&output).contains("manage"),
             "`joy {label}` names the AI and the right it lacks: {}",
             text(&output)
         );
@@ -1049,12 +1042,12 @@ fn a_delegation_session_outranks_the_git_config() {
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
 
-    let session_env = machine.a_delegation_session("ai:claude@joy");
+    let session_env = machine.a_delegation_session("claude");
 
     let deauth = machine.joy_with_session(&["deauth"], Some(&session_env));
     assert!(deauth.status.success(), "{}", text(&deauth));
     assert!(
-        text(&deauth).contains("ai:claude@joy"),
+        text(&deauth).contains("claude"),
         "the AI's own session is the one that ends: {}",
         text(&deauth)
     );
@@ -1159,7 +1152,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     machine.git_config_says("a@b.c");
     let item = machine.joy(&["add", "task", "First thing"]);
     assert!(item.status.success(), "{}", text(&item));
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     // The zone commands: the operator's passphrase opens the operator's
     // seed, under the AI's session.
@@ -1188,7 +1181,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     );
     assert!(!member_add.status.success(), "{}", text(&member_add));
     assert!(
-        text(&member_add).contains("ai:claude@joy"),
+        text(&member_add).contains("claude"),
         "{}",
         text(&member_add)
     );
@@ -1208,7 +1201,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     );
     assert!(changed.status.success(), "{}", text(&changed));
     assert!(
-        text(&changed).contains("a@b.c") && !text(&changed).contains("ai:claude@joy"),
+        text(&changed).contains("a@b.c") && !text(&changed).contains("claude"),
         "the operator is the one whose passphrase changed: {}",
         text(&changed)
     );
@@ -1242,12 +1235,12 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
 
     // Register the AI, issue its token, redeem it. Every step asserts its
     // own success, so the one that breaks names itself.
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     // The delegation the token was issued from is written down, under the
     // operator's own member entry. This is the entry redemption looks for,
     // and the one that used to be silently skipped here.
-    let project = std::fs::read_to_string(machine.root.join(".joy").join("project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&machine.root);
     assert!(
         project.contains("ai_delegations:") && project.contains("delegation_verifier:"),
         "the issued delegation is recorded in project.yaml: {project}"
@@ -1265,7 +1258,7 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
     );
     let actor = the_actor_of_the_only_item(&machine);
     assert!(
-        actor.starts_with("ai:claude@joy delegated-by:m-"),
+        actor.starts_with("claude delegated-by:m-"),
         "the AI acts for the operator, by opaque id: {actor}"
     );
 
@@ -1303,7 +1296,7 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
         "project",
         "member",
         "add",
-        "ai:claude@joy",
+        "claude",
         "--capabilities",
         "all",
         "--passphrase",
@@ -1317,7 +1310,7 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
         "auth",
         "token",
         "add",
-        "ai:claude@joy",
+        "claude",
         "--user",
         FOUNDER,
         "--passphrase",
@@ -1350,7 +1343,7 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
     let actor = the_actor_of_the_only_item(&machine);
     assert_eq!(
         actor,
-        format!("ai:claude@joy delegated-by:{}", claims.delegated_by),
+        format!("claude delegated-by:{}", claims.delegated_by),
         "the item names the operator by the very id the token claimed"
     );
     assert!(

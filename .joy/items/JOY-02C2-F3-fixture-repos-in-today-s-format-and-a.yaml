@@ -1,0 +1,24 @@
+id: JOY-02C2-F3
+title: Fixture repos in today's format and a migration test through update sync, login, token redemption and a write
+type: task
+status: review
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T20:18:44.788275395Z
+updated: 2026-10-07T20:30:27.341756935Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Safety net for JI-019E-40 (delivery 0), against today's code, before any format change lands.
+
+  Fixtures: two small repos checked in under tests/ in today's .joy format, one open and one anonymous (privacy: anonymous, encrypted members.yaml), each with a founder, a second human with an attestation, an AI member with attestation, adapter and delegation, and an issued delegation token plus the passphrases used (test material only).
+
+  Test: for each fixture, copy to a temp dir, run the shared reconciles the hosts run (joy_core/joy_chat_store update::sync with Reach::Data as the platform does and Reach::Checkout as the desktop does) and the CLI path (joy update), then: joy auth as the second human with the passphrase succeeds, joy auth --token redeems the AI token, a joy add as the AI succeeds, joy project member show lists the same members with the same capabilities as before. The test is written so that the migration of JI-019D-46 can be dropped in and the same assertions still have to hold (the fixtures stay in the old format on purpose).
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-07T20:30:20.560473351Z
+  text: 'Result: tests/fixtures/members/{open,anonymous} hold two projects in the 0.22 format (founder, second person, AI member with delegation, issued ten-year token), written by generate.sh with a debug binary. crates/joy-cli/tests/member_fixtures.rs opens each the way the platform (update sync, data reach), the desktop (checkout reach) and joy update do, then asks through the real binary: both people sign in, the second writes and may not manage, the founder manages, the token redeems, the AI writes and may not manage, the old item is listed. Six cases, half a second. The anonymous fixture is an open project switched over, because adding a person to an anonymous project is refused today.'

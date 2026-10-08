@@ -15,8 +15,8 @@ use joy_core::model::Project;
 // the platform server share it; this file keeps the CLI-only pieces
 // (clap args, editor flows, printing, privacy switch, member flows).
 use joy_core::project_meta::{
-    current_scalar_value, is_list_key, project_value_tree, prune_docs_yaml, prune_yaml_key,
-    scalar_str, set_value, value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
+    current_scalar_value, is_list_key, project_value_tree, scalar_str, set_value,
+    value_as_optional_string, wildcard_prefix, LIST_KEYS, PROJECT_KEYS,
 };
 use joy_core::store;
 use joy_core::version_files::{
@@ -27,14 +27,57 @@ use crate::color;
 
 /// Parse an interaction-level argument value; an empty string means "clear"
 /// (`None`), anything else must be one of the three level names.
-fn parse_optional_level(s: &str) -> Result<Option<joy_core::model::config::InteractionLevel>> {
-    let s = s.trim();
-    if s.is_empty() {
-        return Ok(None);
+fn parse_level(s: &str) -> Result<joy_core::model::config::InteractionLevel> {
+    s.trim()
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!("{}", e))
+}
+
+/// The capabilities named on the command line: none, `all`, or a list
+/// (given as separate words or with commas, both read the same).
+enum NamedCapabilities {
+    Unsaid,
+    All,
+    List(Vec<Capability>),
+}
+
+fn parse_capabilities(words: &[String]) -> Result<NamedCapabilities> {
+    let words: Vec<&str> = words
+        .iter()
+        .map(|w| w.trim())
+        .filter(|w| !w.is_empty())
+        .collect();
+    if words.is_empty() {
+        return Ok(NamedCapabilities::Unsaid);
     }
-    s.parse::<joy_core::model::config::InteractionLevel>()
-        .map(Some)
-        .map_err(|e| anyhow::anyhow!("{}", e))
+    if words == ["all"] {
+        return Ok(NamedCapabilities::All);
+    }
+    let mut list = Vec::new();
+    for word in words {
+        let cap: Capability = word.parse().map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        if !list.contains(&cap) {
+            list.push(cap);
+        }
+    }
+    Ok(NamedCapabilities::List(list))
+}
+
+fn specific(list: &[Capability]) -> MemberCapabilities {
+    MemberCapabilities::Specific(
+        list.iter()
+            .map(|cap| (*cap, CapabilityConfig::default()))
+            .collect(),
+    )
+}
+
+/// One column of `member show` for an AI member: what one side allows.
+fn may_column(may: Option<&joy_core::auth::grants::Effective>, cap: &Capability) -> &'static str {
+    match may {
+        Some(may) if may.allows(cap) => "x",
+        Some(_) => "-",
+        None => "",
+    }
 }
 
 #[derive(Args)]
@@ -113,7 +156,7 @@ enum MemberCommand {
     Show(MemberShowArgs),
     /// Add a project member
     Add(MemberAddArgs),
-    /// Edit a member's capabilities and interaction levels
+    /// Edit what a member may do
     Edit(MemberEditArgs),
     /// Remove a project member
     Rm(MemberRmArgs),
@@ -130,49 +173,57 @@ struct MemberEraseArgs {
 
 #[derive(clap::Args)]
 struct MemberShowArgs {
-    /// Member ID (email or ai:tool@joy)
+    /// Member: a person's address, or an AI member's name
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
 }
 
 #[derive(clap::Args)]
 struct MemberAddArgs {
-    /// Member ID (email or ai:tool@joy)
+    /// Member: a person's address, or a name for an AI member
     id: String,
 
-    /// Capabilities: comma-separated list, or the keyword `all`.
-    /// Default: conceive, plan, design, implement, test, review,
-    /// document, create, assign. `manage` and `delete` must be
-    /// granted explicitly (use `all` to include them).
-    #[arg(short = 'c', long)]
-    capabilities: Option<String>,
+    /// Capabilities, or `all`. Default: the work capabilities, create and assign.
+    #[arg(short = 'c', long, num_args = 1.., value_delimiter = ',')]
+    capabilities: Vec<String>,
 
-    /// After registering an AI member, immediately issue a delegation
-    /// token. Combines `joy project member add` and `joy auth token add`
-    /// so the operator unlocks their identity once. Ignored for human
-    /// members.
+    /// The most an AI member may do on its own: proposing, confirmed or autonomous.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
+
+    /// The tool that runs an AI member. Default: the tool the name names.
+    #[arg(long)]
+    adapter: Option<String>,
+
+    /// The model an AI member runs on. Default: the tool's own.
+    #[arg(long)]
+    model: Option<String>,
+
+    /// What an AI member is for.
+    #[arg(long)]
+    description: Option<String>,
+
+    /// Issue a delegation token for an AI member right away.
     #[arg(long = "with-token")]
     with_token: bool,
 }
 
 #[derive(clap::Args)]
 struct MemberRmArgs {
-    /// Member ID (email or ai:tool@joy)
+    /// Member: a person's address, or an AI member's name
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
 }
 
 #[derive(clap::Args)]
 struct MemberEditArgs {
-    /// Member ID (email or ai:tool@joy)
+    /// Member: a person's address, or an AI member's name
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     id: String,
 
-    /// Replace the whole capability set: a comma-separated list, or the
-    /// keyword `all`. Surviving capabilities keep their
-    /// interaction-level/max-interaction-level/max-cost settings.
-    #[arg(short = 'c', long, conflicts_with_all = ["add_capability", "rm_capability"])]
-    capabilities: Option<String>,
+    /// Replace the capabilities, or `all`.
+    #[arg(short = 'c', long, num_args = 1.., value_delimiter = ',', conflicts_with_all = ["add_capability", "rm_capability"])]
+    capabilities: Vec<String>,
 
     /// Grant one capability, keeping the rest (repeatable).
     #[arg(long = "add-capability", value_name = "CAP")]
@@ -182,24 +233,27 @@ struct MemberEditArgs {
     #[arg(long = "rm-capability", value_name = "CAP")]
     rm_capability: Vec<String>,
 
-    /// Set the member default interaction level: `LEVEL` for the global
-    /// default, `CAP=LEVEL` per capability (repeatable); `=` resp. `CAP=`
-    /// clears. LEVEL is one of proposing|confirmed|autonomous.
-    #[arg(long = "interaction-level", value_name = "[CAP=]LEVEL")]
-    interaction_level: Vec<String>,
+    /// The most an AI member may do on its own: proposing, confirmed or autonomous.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
 
-    /// Set a per-capability max-interaction-level floor: `CAP=LEVEL`
-    /// (repeatable); `CAP=` clears it. LEVEL is one of
-    /// proposing|confirmed|autonomous.
-    #[arg(long = "max-interaction-level", value_name = "CAP=LEVEL")]
-    max_interaction_level: Vec<String>,
+    /// Change what the project allows an AI member, not what you allow it yourself.
+    #[arg(long)]
+    project: bool,
+
+    /// The model an AI member runs on (with --project).
+    #[arg(long)]
+    model: Option<String>,
+
+    /// What an AI member is for (with --project).
+    #[arg(long)]
+    description: Option<String>,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
     let mut ctx = Context::load()?;
 
-    let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
-    let mut project: Project = store::read_yaml(&project_path)?;
+    let mut project: Project = store::load_project(&ctx.root)?;
 
     match args.command {
         Some(ProjectCommand::Get(a)) => {
@@ -207,10 +261,10 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         }
         Some(ProjectCommand::Set(a)) => {
             crate::auth_gate::enforce(&mut ctx, &Action::ManageProject, "project")?;
-            return set_command(&ctx, &project_path, &mut project, a);
+            return set_command(&ctx, &mut project, a);
         }
         Some(ProjectCommand::Member(a)) => {
-            return run_member(a, &mut project, &project_path, &mut ctx);
+            return run_member(a, &mut project, &mut ctx);
         }
         None => {}
     }
@@ -233,9 +287,7 @@ pub fn run(args: ProjectArgs) -> Result<()> {
         if let Some(language) = args.language {
             project.language = language;
         }
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        store::save_project(&ctx.root, &project)?;
         println!("Project updated.");
         let log_user = ctx.log_user();
         joy_core::git_ops::auto_git_post_command(&ctx.root, "project edit", &log_user);
@@ -445,12 +497,7 @@ fn get_list_value(root: &std::path::Path, key: &str, describe: bool) -> Result<(
 /// existing set_value() path and list keys (`release.version-files`)
 /// via the dedicated version-files helpers that operate on raw YAML so
 /// mapping-form entries round-trip cleanly.
-fn set_command(
-    ctx: &Context,
-    project_path: &std::path::Path,
-    project: &mut Project,
-    args: SetArgs,
-) -> Result<()> {
+fn set_command(ctx: &Context, project: &mut Project, args: SetArgs) -> Result<()> {
     let key = &args.key;
 
     if is_list_key(key) {
@@ -472,7 +519,7 @@ fn set_command(
     }
 
     if key == "privacy" {
-        return set_privacy(ctx, project_path, project, &args);
+        return set_privacy(ctx, project, &args);
     }
 
     let value = match args.value.as_deref() {
@@ -487,21 +534,7 @@ fn set_command(
     };
 
     set_value(project, key, &value)?;
-    store::write_yaml_preserve(project_path, project)?;
-    if key.starts_with("docs.") {
-        prune_docs_yaml(project_path, &project.docs)?;
-    }
-    if key == "forge" && project.forge.is_none() {
-        prune_yaml_key(project_path, "forge")?;
-    }
-    if key == "privacy" && project.privacy().is_none() {
-        prune_yaml_key(project_path, "privacy")?;
-    }
-    if key == "description" && project.description.is_none() {
-        prune_yaml_key(project_path, "description")?;
-    }
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+    store::save_project(&ctx.root, project)?;
     if key == "acronym" {
         let stored = project.acronym.as_deref().unwrap_or(&value);
         println!("{key} = {stored}");
@@ -529,12 +562,7 @@ fn set_command(
 /// operator's unlocked seed; the manage capability is already enforced by the
 /// caller. `open`/`none` on a project that is not anonymous is a plain field
 /// normalization.
-fn set_privacy(
-    ctx: &Context,
-    project_path: &std::path::Path,
-    project: &mut Project,
-    args: &SetArgs,
-) -> Result<()> {
+fn set_privacy(ctx: &Context, project: &mut Project, args: &SetArgs) -> Result<()> {
     let target = args.value.as_deref().map(str::trim).unwrap_or_default();
     let want_anon = match target {
         "anonymous" => true,
@@ -550,12 +578,7 @@ fn set_privacy(
     if !want_anon && !is_anon {
         // Plain field normalization, no migration.
         set_value(project, "privacy", target)?;
-        store::write_yaml_preserve(project_path, project)?;
-        if project.privacy().is_none() {
-            prune_yaml_key(project_path, "privacy")?;
-        }
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+        store::save_project(&ctx.root, project)?;
         println!("privacy = {target}");
         return Ok(());
     }
@@ -818,21 +841,50 @@ fn show_project(project: &Project, root: &std::path::Path) {
 
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 
-    // Hint about member modes if AI members exist
-    if project.member_keys().any(|id| id.starts_with("ai:")) {
+    // An AI member has more to it than the table says: its one level,
+    // and what the reader allows it for themselves
+    if project
+        .member_keys()
+        .any(|id| joy_core::model::project::is_ai_member(id))
+    {
         println!(
             "{}",
-            color::label("Use `joy project member show <ID>` to see interaction levels")
+            color::label(
+                "Use `joy project member show <NAME>` to see what an AI member may do, and at which level"
+            )
         );
     }
 }
 
-fn run_member(
-    args: MemberArgs,
-    project: &mut Project,
-    project_path: &std::path::Path,
-    ctx: &mut Context,
+/// Register an AI member and issue its token: what `joy ai add` does
+/// before it sets the tool up, and the same thing `joy project member
+/// add <name> --with-token` does.
+pub(crate) fn add_ai_member(
+    name: &str,
+    adapter: Option<String>,
+    model: Option<String>,
 ) -> Result<()> {
+    let mut ctx = Context::load()?;
+    let mut project = store::load_project(&ctx.root)?;
+    let add = MemberAddArgs {
+        id: name.to_string(),
+        capabilities: Vec::new(),
+        level: None,
+        adapter,
+        model,
+        description: None,
+        with_token: true,
+    };
+    run_member(
+        MemberArgs {
+            command: Some(MemberCommand::Add(add)),
+        },
+        &mut project,
+        &mut ctx,
+    )
+}
+
+fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Result<()> {
     match args.command {
         None => {
             if crate::output::is_json() {
@@ -866,105 +918,116 @@ fn run_member(
                 .or_else(|| project.member_by_email(&a.id))
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
 
+            let key = project
+                .member_key(&a.id)
+                .or_else(|| project.member_key_for_email(&a.id))
+                .unwrap_or_else(|| a.id.clone());
+            let is_ai = joy_core::model::project::is_ai_member(&key);
+            // What an AI member may do has three sides: what the project
+            // allows, what the person looking allows it themselves, and
+            // what comes out for them (JI-019D-46).
+            let viewer = joy_core::identity::acting_human_key(&ctx.root).ok();
+            let may = (is_ai && joy_core::auth::grants::applies(project))
+                .then(|| joy_core::auth::grants::view(project, &key, viewer.as_deref()));
+
             if crate::output::is_json() {
+                #[derive(serde::Serialize)]
+                struct Side {
+                    capabilities: Vec<Capability>,
+                    level: joy_core::model::config::InteractionLevel,
+                }
+                #[derive(serde::Serialize)]
+                struct May {
+                    project: Option<Side>,
+                    mine: Option<Side>,
+                    effective: Option<Side>,
+                }
                 #[derive(serde::Serialize)]
                 struct ShowPayload<'a> {
                     id: joy_core::member_ref::MemberRef,
                     member: &'a joy_core::model::project::Member,
+                    #[serde(skip_serializing_if = "Option::is_none")]
+                    may: Option<May>,
                 }
+                let side = |e: &joy_core::auth::grants::Effective| Side {
+                    capabilities: e.capabilities.clone(),
+                    level: e.level,
+                };
                 return crate::output::emit(ShowPayload {
-                    id: a.id.clone().into(),
+                    id: key.clone().into(),
                     member,
+                    may: may.as_ref().map(|v| May {
+                        project: v.project.as_ref().ok().map(side),
+                        mine: v.mine.as_ref().map(side),
+                        effective: v.effective.as_ref().ok().map(side),
+                    }),
                 });
             }
 
             let w = color::terminal_width();
-            let wide = w >= 60;
-
             println!(
                 "{}",
-                color::header(&joy_core::member_ref::resolve_str(&a.id))
+                color::header(&joy_core::member_ref::resolve_str(&key))
             );
 
-            // Load defaults for interaction-level resolution
-            let raw_defaults = joy_core::store::load_raw_interaction_level_defaults(&ctx.root);
-            let effective_defaults = joy_core::store::load_interaction_level_defaults(&ctx.root);
-            let config = joy_core::store::load_config();
-            let personal_level = if config.interaction_level.default
-                != joy_core::model::config::InteractionLevel::default()
-            {
-                Some(config.interaction_level.default)
-            } else {
-                None
-            };
-
-            // Build capability list with has/denied and interaction info
-            let all_caps = joy_core::model::item::Capability::ALL;
-            let is_all = matches!(&member.capabilities, MemberCapabilities::All);
-            let specific_map = match &member.capabilities {
-                MemberCapabilities::Specific(map) => Some(map),
-                _ => None,
-            };
-
-            for cap in all_caps {
-                let has = is_all || specific_map.is_some_and(|m| m.contains_key(cap));
-                let mark = if has { "x" } else { "-" };
-                let cap_label = if wide {
-                    format!("{cap}")
-                } else {
-                    let s = format!("{cap}");
-                    s[..3].to_string()
-                };
-
-                if has && cap.is_work_capability() {
-                    let cap_config = specific_map.and_then(|m| m.get(cap));
-                    let (level, source) = joy_core::model::project::resolve_interaction_level(
-                        cap,
-                        &raw_defaults,
-                        &effective_defaults,
-                        member.interaction_level,
-                        personal_level,
-                        cap_config,
+            match &may {
+                Some(view) => {
+                    let runs_on = [member.adapter.as_deref(), member.model.as_deref()]
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>()
+                        .join(" · ");
+                    if !runs_on.is_empty() {
+                        println!("  {}", color::inactive(&runs_on));
+                    }
+                    if let Some(description) = &member.description {
+                        println!("  {description}");
+                    }
+                    let project_side = view.project.as_ref().ok();
+                    let mine = view.mine.as_ref();
+                    let effective = view.effective.as_ref().ok();
+                    println!(
+                        "  {:<12} {:<12} {:<12} {}",
+                        "",
+                        color::label("project"),
+                        color::label("mine"),
+                        color::label("effective")
                     );
-                    let level_text = format!("{level} [{source}]");
-                    let mut line = if wide {
-                        format!(
-                            "  {:<12} {}   {}",
-                            cap_label,
-                            mark,
-                            color::inactive(&level_text)
-                        )
-                    } else {
-                        format!(
-                            "  {:<5} {}   {}",
-                            cap_label,
-                            mark,
-                            color::inactive(&level_text)
-                        )
+                    for cap in joy_core::model::item::Capability::ALL {
+                        if !project_side.is_some_and(|p| p.allows(cap)) {
+                            continue;
+                        }
+                        println!(
+                            "  {:<12} {:<12} {:<12} {}",
+                            cap.to_string(),
+                            may_column(project_side, cap),
+                            may_column(mine, cap),
+                            may_column(effective, cap)
+                        );
+                    }
+                    let level = |side: Option<&joy_core::auth::grants::Effective>| {
+                        side.map(|s| s.level.to_string()).unwrap_or_default()
                     };
-                    // Show the clamped-away preference if the floor won
-                    if source == joy_core::model::project::InteractionLevelSource::ProjectMax {
-                        if let Some(personal) = personal_level {
-                            line.push_str(&color::inactive(&format!(
-                                "  (your preference: {personal})"
-                            )));
-                        }
+                    println!(
+                        "  {:<12} {:<12} {:<12} {}",
+                        "level",
+                        level(project_side),
+                        level(mine),
+                        level(effective)
+                    );
+                    for why in [view.project.as_ref().err(), view.effective.as_ref().err()]
+                        .into_iter()
+                        .flatten()
+                        .take(1)
+                    {
+                        println!("  {}", color::warning(why));
                     }
-                    // Show max-interaction-level from cap config
-                    if let Some(cc) = cap_config {
-                        if let Some(ref max) = cc.max_interaction_level {
-                            if source
-                                != joy_core::model::project::InteractionLevelSource::ProjectMax
-                            {
-                                line.push_str(&color::inactive(&format!("  max: {max}")));
-                            }
-                        }
+                }
+                None => {
+                    for cap in joy_core::model::item::Capability::ALL {
+                        let mark = if member.has_capability(cap) { "x" } else { "-" };
+                        println!("  {:<12} {}", cap.to_string(), mark);
                     }
-                    println!("{line}");
-                } else if wide {
-                    println!("  {:<12} {}", cap_label, mark);
-                } else {
-                    println!("  {:<5} {}", cap_label, mark);
                 }
             }
 
@@ -981,7 +1044,9 @@ fn run_member(
             // project.yaml. Until that flow lands, refuse rather than leak; the
             // documented path is to add the member in open mode and switch back.
             // AI members carry no PII and keep their readable id, so they are fine.
-            if project.privacy_mode() == PrivacyMode::Anonymous && !a.id.starts_with("ai:") {
+            if project.privacy_mode() == PrivacyMode::Anonymous
+                && !joy_core::model::project::is_ai_member(&a.id)
+            {
                 bail!(
                     "cannot add a human member while privacy is anonymous: it would write \
                      the e-mail in cleartext.\nAdd them in open mode and switch back:\n  \
@@ -990,27 +1055,37 @@ fn run_member(
                     a.id
                 );
             }
-            let capabilities = match a.capabilities {
-                None => default_member_capabilities(),
-                Some(ref caps_str) if caps_str.trim() == "all" => MemberCapabilities::All,
-                Some(ref caps_str) => {
-                    let mut map = std::collections::BTreeMap::new();
-                    for s in caps_str.split(',') {
-                        let cap: Capability = s
-                            .trim()
-                            .parse()
-                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                        map.insert(cap, CapabilityConfig::default());
+            let is_ai = joy_core::model::project::is_ai_member(&a.id);
+            if !is_ai
+                && (a.level.is_some()
+                    || a.adapter.is_some()
+                    || a.model.is_some()
+                    || a.description.is_some())
+            {
+                bail!("--level, --adapter, --model and --description are for an AI member");
+            }
+            let capabilities = match parse_capabilities(&a.capabilities)? {
+                NamedCapabilities::All => MemberCapabilities::All,
+                NamedCapabilities::List(list) => specific(&list),
+                // What an AI member starts with is the project's to say
+                // (`ai-defaults` in project.yaml), a person gets the same
+                // set unless told otherwise.
+                NamedCapabilities::Unsaid if is_ai => {
+                    let defaults = joy_core::store::load_ai_defaults(&ctx.root).capabilities;
+                    if defaults.is_empty() {
+                        default_member_capabilities()
+                    } else {
+                        specific(&defaults)
                     }
-                    MemberCapabilities::Specific(map)
                 }
+                NamedCapabilities::Unsaid => default_member_capabilities(),
             };
+            let level = a.level.as_deref().map(parse_level).transpose()?;
 
             // Authenticate the acting manage member by passphrase. Their
             // identity key will sign the attestation placed on the new
             // member's entry (JOY-00FC-1D).
             let attester_key = joy_core::identity::acting_human_key(&ctx.root)?;
-            let is_ai = a.id.starts_with("ai:");
 
             // One unlock serves the attestation and, with `--with-token`,
             // the delegation token too (JOY-0185-66): the gate answers
@@ -1031,30 +1106,36 @@ fn run_member(
                 (Some(otp), Some(otp_hash))
             };
 
-            // Construct and sign the attestation over (email, capabilities,
-            // otp_hash). public_key is intentionally not covered.
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &a.id,
-                &capabilities,
-                otp_hash_opt.as_deref(),
-            );
-            // The attester is referenced by their on-disk member key, so
-            // anonymous mode (ADR-042) records the opaque id and never a
-            // cleartext address.
-            let attestation = joy_core::auth::attestation::sign_attestation(
-                &attester_key,
-                attester_kp,
-                signed_fields,
-            );
-
+            // The acting manager signs for the new entry (JOY-00FC-1D);
+            // what exactly is signed is joy-core's to say.
             let mut new_member = Member::new(capabilities);
             new_member.enrollment_verifier = otp_hash_opt;
-            new_member.attestation = Some(attestation);
+            if is_ai {
+                joy_core::auth::grants::change_maximum(&mut new_member, None, level)?;
+                // The tool that runs it: said, or the one its name names.
+                let name = joy_core::model::project::ai_member_name(&a.id);
+                new_member.adapter = match a.adapter.as_deref() {
+                    Some(adapter) => Some(
+                        joy_ai::naming::tool_adapter(adapter)
+                            .ok_or_else(|| anyhow::anyhow!("unknown adapter: {adapter}"))?
+                            .to_string(),
+                    ),
+                    None => joy_ai::naming::tool_adapter(name).map(String::from),
+                };
+                new_member.model = a.model.clone();
+                new_member.description = a.description.clone();
+            }
+            joy_core::auth::vouch::sign(
+                project,
+                &attester_key,
+                attester_kp,
+                &a.id,
+                &mut new_member,
+                joy_core::auth::vouch::Occasion::New,
+            );
             project.register_member(&a.id, new_member)?;
 
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            store::save_project(&ctx.root, project)?;
 
             // Optional immediate token issuance for AI members
             // (JOY-0185-66): the same unlocked operator signs it, so
@@ -1122,165 +1203,185 @@ fn run_member(
             );
         }
         Some(MemberCommand::Edit(a)) => {
-            crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
-
-            if a.capabilities.is_none()
+            let named = parse_capabilities(&a.capabilities)?;
+            let level = a.level.as_deref().map(parse_level).transpose()?;
+            let nothing_said = matches!(named, NamedCapabilities::Unsaid)
                 && a.add_capability.is_empty()
                 && a.rm_capability.is_empty()
-                && a.interaction_level.is_empty()
-                && a.max_interaction_level.is_empty()
-            {
+                && level.is_none()
+                && a.model.is_none()
+                && a.description.is_none();
+            if nothing_said {
                 bail!(
                     "nothing to edit: pass --capabilities, --add-capability, \
-                     --rm-capability, --interaction-level, or --max-interaction-level"
+                     --rm-capability, --level, --model or --description"
                 );
             }
 
-            // Resolve the target to its at-rest map key: an ai:/opaque id is
-            // used as-is, a cleartext e-mail resolves via the privacy layer
-            // (ADR-042) so anonymous mode never needs the e-mail here.
-            let key = if project.has_member_key(&a.id) {
-                a.id.clone()
-            } else if let Some(k) = joy_core::privacy::member_key_for_email(project, &a.id) {
-                k
-            } else {
-                bail!("member not found: {}", a.id);
-            };
-            let mut member = project
-                .member_by_key(&key)
-                .cloned()
+            // The member as the project knows it: an AI member's name in
+            // either spelling, an opaque id, or an address resolved
+            // through the privacy layer (ADR-042).
+            let key = project
+                .member_key(&a.id)
+                .or_else(|| joy_core::privacy::member_key_for_email(project, &a.id))
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
-            let had_manage = member.has_capability(&Capability::Manage);
-
-            // 1. Capability-set changes. --capabilities replaces wholesale
-            //    (carrying over surviving configs); --add/--rm-capability are
-            //    incremental and mutually exclusive with it (clap-enforced).
-            if let Some(caps_str) = a.capabilities.as_deref() {
-                let target = if caps_str.trim() == "all" {
-                    MemberCapabilities::All
-                } else {
-                    let mut map = std::collections::BTreeMap::new();
-                    for s in caps_str.split(',') {
-                        let cap: Capability = s
-                            .trim()
+            let is_ai = joy_core::model::project::is_ai_member(&key);
+            if !is_ai
+                && (level.is_some() || a.project || a.model.is_some() || a.description.is_some())
+            {
+                bail!("--level, --project, --model and --description are for an AI member");
+            }
+            let parse_all = |words: &[String]| -> Result<Vec<Capability>> {
+                words
+                    .iter()
+                    .map(|w| {
+                        w.trim()
                             .parse()
-                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                        map.insert(cap, CapabilityConfig::default());
-                    }
-                    MemberCapabilities::Specific(map)
+                            .map_err(|e: String| anyhow::anyhow!("{}", e))
+                    })
+                    .collect()
+            };
+            let (adding, removing) = (parse_all(&a.add_capability)?, parse_all(&a.rm_capability)?);
+
+            if is_ai && !a.project {
+                // What I allow this AI member myself, within what the
+                // project allows it: signed with my own key, and nobody
+                // needs to hold manage for it (JI-019D-46).
+                if a.model.is_some() || a.description.is_some() {
+                    bail!("--model and --description change the project's side: add --project");
+                }
+                let me = joy_core::identity::acting_human_key(&ctx.root)?;
+                let unlocked = crate::auth_gate::unlock(&ctx.root, project, &me)?;
+                let view = joy_core::auth::grants::view(project, &key, Some(&me));
+                let allowed = view.project.clone().map_err(|why| anyhow::anyhow!(why))?;
+                let mut caps: Option<Vec<Capability>> = match named {
+                    NamedCapabilities::Unsaid => None,
+                    NamedCapabilities::All => Some(allowed.capabilities.clone()),
+                    NamedCapabilities::List(list) => Some(list),
                 };
-                member.set_capabilities(target);
-            }
-            for s in &a.add_capability {
-                let cap: Capability = s
-                    .trim()
-                    .parse()
-                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                match &mut member.capabilities {
-                    MemberCapabilities::All => {}
-                    MemberCapabilities::Specific(map) => {
-                        map.entry(cap).or_default();
+                if !adding.is_empty() || !removing.is_empty() {
+                    let mut list = caps
+                        .or_else(|| view.mine.map(|m| m.capabilities))
+                        .unwrap_or(allowed.capabilities);
+                    list.retain(|cap| !removing.contains(cap));
+                    for cap in adding {
+                        if !list.contains(&cap) {
+                            list.push(cap);
+                        }
+                    }
+                    caps = Some(list);
+                }
+                joy_core::auth::grants::set_personal(
+                    project,
+                    &key,
+                    &me,
+                    &unlocked.keypair,
+                    caps.as_deref(),
+                    level,
+                )?;
+            } else {
+                crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
+                let mut member = project
+                    .member_by_key(&key)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
+                let had_manage = member.has_capability(&Capability::Manage);
+
+                match named {
+                    NamedCapabilities::Unsaid => {}
+                    NamedCapabilities::All if is_ai => {
+                        bail!("an AI member never holds the manage capability: name what it may do")
+                    }
+                    NamedCapabilities::All => member.set_capabilities(MemberCapabilities::All),
+                    NamedCapabilities::List(list) => member.set_capabilities(specific(&list)),
+                }
+                if !adding.is_empty() || !removing.is_empty() {
+                    match &mut member.capabilities {
+                        MemberCapabilities::All if !removing.is_empty() => bail!(
+                            "member has 'capabilities: all'; replace the set with \
+                             --capabilities <list> before removing individual capabilities"
+                        ),
+                        MemberCapabilities::All => {}
+                        MemberCapabilities::Specific(map) => {
+                            for cap in &adding {
+                                map.entry(*cap).or_default();
+                            }
+                            for cap in &removing {
+                                map.remove(cap);
+                            }
+                        }
                     }
                 }
-            }
-            for s in &a.rm_capability {
-                let cap: Capability = s
-                    .trim()
-                    .parse()
-                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                match &mut member.capabilities {
-                    MemberCapabilities::All => bail!(
-                        "member has 'capabilities: all'; replace the set with \
-                         --capabilities <list> before removing individual capabilities"
-                    ),
-                    MemberCapabilities::Specific(map) => {
-                        map.remove(&cap);
+                if is_ai {
+                    if member.has_capability(&Capability::Manage) {
+                        bail!("an AI member never holds the manage capability");
+                    }
+                    joy_core::auth::grants::change_maximum(&mut member, None, level)?;
+                    if let Some(model) = &a.model {
+                        member.model = (!model.is_empty()).then(|| model.clone());
+                    }
+                    if let Some(description) = &a.description {
+                        member.description = (!description.is_empty()).then(|| description.clone());
                     }
                 }
-            }
 
-            // 2. Member default interaction levels: `LEVEL` sets the member's
-            //    global default, `CAP=LEVEL` the per-capability default; an
-            //    empty level clears the respective setting.
-            for spec in &a.interaction_level {
-                match spec.split_once('=') {
-                    Some((cap_str, level_str)) => {
-                        let cap: Capability = cap_str
-                            .trim()
-                            .parse()
-                            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                        let level = parse_optional_level(level_str)?;
-                        member
-                            .set_capability_interaction_level(cap, level)
-                            .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    }
-                    None => {
-                        member.interaction_level = parse_optional_level(spec)?;
+                // Anti-brick: never strip manage from the last manager.
+                if had_manage && !member.has_capability(&Capability::Manage) {
+                    let guard = joy_core::guard::Guard::new(project);
+                    if guard.is_last_manager(&key) {
+                        bail!(
+                            "cannot remove manage from {}: last member with manage \
+                             capability. Grant another member manage first.",
+                            a.id
+                        );
                     }
                 }
-            }
 
-            // 3. Per-capability max-interaction-level floors (CAP=LEVEL, CAP= clears).
-            for spec in &a.max_interaction_level {
-                let (cap_str, level_str) = spec.split_once('=').ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "--max-interaction-level expects CAP=LEVEL (or CAP= to clear), got '{spec}'"
-                    )
-                })?;
-                let cap: Capability = cap_str
-                    .trim()
-                    .parse()
-                    .map_err(|e: String| anyhow::anyhow!("{}", e))?;
-                let max_interaction_level = parse_optional_level(level_str)?;
-                member
-                    .set_capability_max_interaction_level(cap, max_interaction_level)
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                // The acting manager signs what changed, where the
+                // project keeps a signature for it (joy-core says where).
+                let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
+                let acting_kp = derive_acting_keypair(&ctx.root, project, &acting_key)?;
+                joy_core::auth::vouch::sign(
+                    project,
+                    &acting_key,
+                    &acting_kp,
+                    &key,
+                    &mut member,
+                    joy_core::auth::vouch::Occasion::Changed,
+                );
+                *project
+                    .member_by_key_mut(&key)
+                    .expect("member key resolved above") = member;
             }
-
-            // 4. Anti-brick: never strip manage from the last manager.
-            if had_manage && !member.has_capability(&Capability::Manage) {
-                let guard = joy_core::guard::Guard::new(project);
-                if guard.is_last_manager(&key) {
-                    bail!(
-                        "cannot remove manage from {}: last member with manage \
-                         capability. Grant another member manage first.",
-                        a.id
-                    );
+            store::save_project(&ctx.root, project)?;
+            // The tool a member is named after is set up with the member's
+            // level: bring its files along, so the change holds the next
+            // time the tool starts and not only after `joy update`.
+            if is_ai && a.project {
+                let tool = joy_core::model::project::ai_member_name(&key);
+                if joy_ai::ai_setup::is_tool_configured(&ctx.root, tool) {
+                    joy_ai::ai_setup::configure_tool(&ctx.root, tool, &mut |_| {})?;
                 }
             }
-
-            // 5. Re-sign: any capability or interaction-level change invalidates
-            //    the stored attestation (it covers `capabilities`), so the
-            //    acting manage member re-signs over the new fields.
-            let acting_key = joy_core::identity::acting_human_key(&ctx.root)?;
-            let acting_kp = derive_acting_keypair(&ctx.root, project, &acting_key)?;
-            let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                &key,
-                &member.capabilities,
-                member.enrollment_verifier.as_deref(),
-            );
-            member.attestation = Some(joy_core::auth::attestation::sign_attestation(
-                &acting_key,
-                &acting_kp,
-                signed_fields,
-            ));
-
-            // 5. Apply + persist + audit (mirrors add/rm).
-            *project
-                .member_by_key_mut(&key)
-                .expect("member key resolved above") = member;
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
 
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
                 struct EditPayload<'a> {
                     member: &'a str,
                 }
-                crate::output::emit(EditPayload { member: &a.id })?;
+                crate::output::emit(EditPayload { member: &key })?;
             } else {
                 println!("Updated member {}", color::user(&a.id));
+                // A token names what the AI member may do for the person
+                // who issued it, so one issued before this change is
+                // refused from now on: say how to get it working again
+                // instead of leaving that to the first refusal.
+                if is_ai && !a.project {
+                    let name = joy_core::model::project::ai_member_name(&key);
+                    println!(
+                        "Its token names what it may do for you. Issue a new one: joy auth token add {name}"
+                    );
+                }
             }
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
@@ -1331,17 +1432,7 @@ fn run_member(
             // removed; they need to be re-attested by the acting manage
             // member so the attestation chain stays intact.
             let removed_id = a.id.clone();
-            let orphans: Vec<String> = project
-                .members()
-                .filter(|(email, m)| {
-                    **email != removed_id
-                        && m.attestation
-                            .as_ref()
-                            .map(|att| att.attester == removed_id.as_str())
-                            .unwrap_or(false)
-                })
-                .map(|(email, _)| email.clone())
-                .collect();
+            let orphans = joy_core::auth::vouch::signed_by(project, &removed_id);
 
             let acting_kp = if orphans.is_empty() {
                 None
@@ -1361,24 +1452,20 @@ fn run_member(
                         .member_by_key(orphan_email)
                         .cloned()
                         .expect("orphan exists - just collected");
-                    let signed_fields = joy_core::auth::attestation::signed_fields_for(
-                        orphan_email,
-                        &orphan.capabilities,
-                        orphan.enrollment_verifier.as_deref(),
-                    );
-                    let new_attestation = joy_core::auth::attestation::sign_attestation(
+                    let mut orphan = orphan;
+                    joy_core::auth::vouch::sign(
+                        project,
                         &acting_key,
                         &kp,
-                        signed_fields,
+                        orphan_email,
+                        &mut orphan,
+                        joy_core::auth::vouch::Occasion::SignerLeft,
                     );
-                    project.member_by_key_mut(orphan_email).unwrap().attestation =
-                        Some(new_attestation);
+                    *project.member_by_key_mut(orphan_email).unwrap() = orphan;
                 }
             }
 
-            store::write_yaml_preserve(project_path, project)?;
-            let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-            joy_core::git_ops::auto_git_add(&ctx.root, &[&rel]);
+            store::save_project(&ctx.root, project)?;
             if crate::output::is_json() {
                 #[derive(serde::Serialize)]
                 struct RmPayload<'a> {
@@ -1492,6 +1579,7 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
         ("tst", Capability::Test),
         ("rev", Capability::Review),
         ("doc", Capability::Document),
+        ("job", Capability::Jobs),
         ("crt", Capability::Create),
         ("asg", Capability::Assign),
         ("mng", Capability::Manage),
@@ -1795,7 +1883,7 @@ fn member_auth_status(
     let has_delegation = is_ai
         && all_members
             .member_values()
-            .any(|m| m.ai_delegations.contains_key(id));
+            .any(|m| m.delegation_to(id).is_some());
     let has_auth = if is_ai {
         has_delegation
     } else {
@@ -1817,7 +1905,7 @@ fn member_auth_status(
         // straight lookup of the env-referenced session.
         let current_delegation_keys: Vec<&str> = all_members
             .member_values()
-            .filter_map(|m| m.ai_delegations.get(id))
+            .filter_map(|m| m.delegation_to(id))
             .map(|entry| entry.delegation_verifier.as_str())
             .collect();
 

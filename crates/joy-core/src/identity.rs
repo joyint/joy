@@ -73,6 +73,26 @@ pub struct Identity {
     pub delegated_by: Option<MemberRef>,
     /// Whether this identity was cryptographically authenticated (session or token).
     pub authenticated: bool,
+    /// For an AI member: what its token says the delegator allows it
+    /// (JI-019D-46, see [`crate::auth::grants`]). `None` for a person,
+    /// and for an AI whose token was issued before grants existed.
+    pub grant: Option<String>,
+}
+
+impl Identity {
+    /// A person, or an AI member without a grant of its delegator's own.
+    pub fn new(
+        member: impl Into<MemberRef>,
+        delegated_by: Option<MemberRef>,
+        authenticated: bool,
+    ) -> Self {
+        Identity {
+            member: member.into(),
+            delegated_by,
+            authenticated,
+            grant: None,
+        }
+    }
 }
 
 impl Identity {
@@ -140,6 +160,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
             member: member.into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         });
     }
 
@@ -217,6 +238,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                             .clone()
                                             .map(Into::into),
                                         authenticated: true,
+                                        grant: sess.claims.grant.clone(),
                                     });
                                 }
                             }
@@ -257,6 +279,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                 member: member.into(),
                 delegated_by: None,
                 authenticated: true,
+                grant: None,
             });
         }
     }
@@ -287,6 +310,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         member: member_key.into(),
         delegated_by: None,
         authenticated: false,
+        grant: None,
     })
 }
 
@@ -717,8 +741,7 @@ pub fn token_session_rejection(
         ));
     }
     let registered = project.members().any(|(_, m)| {
-        m.ai_delegations
-            .get(&sess.claims.member)
+        m.delegation_to(&sess.claims.member)
             .is_some_and(|d| &d.delegation_verifier == verifier)
     });
     if !registered {
@@ -774,8 +797,7 @@ fn ephemeral_public_matches(
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::read_project(&project_path).ok()
+    store::load_project(root).ok()
 }
 
 #[allow(dead_code)]
@@ -806,6 +828,7 @@ mod tests {
             member: "alice@example.com".into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         };
         assert_eq!(id.log_user(), "alice@example.com");
     }
@@ -816,6 +839,7 @@ mod tests {
             member: "ai:claude@joy".into(),
             delegated_by: Some("horst@joydev.com".into()),
             authenticated: false,
+            grant: None,
         };
         assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
     }

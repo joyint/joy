@@ -271,9 +271,11 @@ pub fn by_adapter(id: &str) -> Option<&'static AdapterSpec> {
     ADAPTERS.iter().find(|spec| spec.adapter == id)
 }
 
-/// The row acting as a given member (`ai:vibe@joy` -> vibe).
+/// The row of the tool a member is named after (`vibe` and the older
+/// `ai:vibe@joy` -> vibe). A member with a name of its own says which
+/// adapter runs it in its entry, not in its name.
 pub fn by_member(member: &str) -> Option<&'static AdapterSpec> {
-    ADAPTERS.iter().find(|spec| spec.member == member)
+    by_adapter(joy_core::model::project::ai_member_name(member))
 }
 
 /// The registered id for an adapter string: `Some` exactly for the

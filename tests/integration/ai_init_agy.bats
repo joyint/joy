@@ -12,9 +12,9 @@ load setup
 
     joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null
 
-    grep -q 'ai:agy@joy' .joy/project.yaml
+    members_grep -q 'agy'
     grep -q 'data.member' AGENTS.md
-    ! grep -q 'ai:agy@joy' AGENTS.md
+    ! grep -q 'agy' AGENTS.md
     [ -f .agents/skills/joy/SKILL.md ]
     grep -q '^name: joy$' .agents/skills/joy/SKILL.md
     [ -f .agents/skills/joy/setup.md ]

@@ -209,7 +209,7 @@ impl AiMemberAdapterItem {
         project
             .members()
             .filter(|(key, m)| {
-                key.starts_with("ai:")
+                joy_core::model::project::is_ai_member(key)
                     && m.adapter.as_deref().unwrap_or("").trim().is_empty()
                     && Self::adapter_for(key).is_some()
             })
@@ -250,10 +250,7 @@ impl UpdateItem for AiMemberAdapterItem {
                     m.adapter = Some(adapter.to_string());
                 }
             }
-            joy_core::store::write_yaml_preserve(
-                &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
-                &project,
-            )?;
+            joy_core::store::save_project(root, &project)?;
         }
         Ok(vec![RefreshRow {
             name: "AI member adapters".into(),
@@ -276,8 +273,8 @@ impl AiToolItem {
     fn display_name(&self) -> &'static str {
         ai::tool_display_name(self.id).unwrap_or(self.id)
     }
-    fn member_id(&self) -> String {
-        format!("ai:{}@joy", self.id)
+    fn member_id(&self, root: &Path) -> String {
+        joy_ai::naming::member_id_at(root, self.id)
     }
 }
 
@@ -292,7 +289,7 @@ impl UpdateItem for AiToolItem {
         // not configured" and "not installed" are informational, not
         // stale (the user must run joy ai init to opt in).
         let (mark, detail) = if configured {
-            let stale = ai::is_tool_stale_pub(root, self.id, &self.member_id())?;
+            let stale = ai::is_tool_stale_pub(root, self.id, &self.member_id(root))?;
             if stale {
                 (RowMark::Stale, "outdated".to_string())
             } else {
@@ -317,7 +314,7 @@ impl UpdateItem for AiToolItem {
             // Not configured -> not joy's job to install; skip silently.
             return Ok(Vec::new());
         }
-        let changed = ai::refresh_tool_by_id(root, self.id, &self.member_id())?;
+        let changed = ai::refresh_tool_by_id(root, self.id, &self.member_id(root))?;
         // Keep the configured-tools .gitignore entries fresh too.
         let _ = ai::sync_gitignore_for_configured_tools(root);
         Ok(vec![RefreshRow {

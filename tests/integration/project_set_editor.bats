@@ -62,7 +62,7 @@ EOF
     run joy project get description
     [ "$status" -ne 0 ]
     # The `description:` line is pruned from the YAML on clear.
-    run grep -q "^description:" .joy/project.yaml
+    run members_grep -q "^description:"
     [ "$status" -ne 0 ]
 }
 

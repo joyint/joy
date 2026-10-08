@@ -214,12 +214,6 @@ const STATIC_CONFIG_KEYS: &[&str] = &[
     "output.fortune-category",
     "sync.remote",
     "sync.auto",
-    "ai.tool",
-    "ai.command",
-    "ai.model",
-    "ai.max_cost_per_job",
-    "ai.currency",
-    "interaction.default",
 ];
 
 /// Complete config keys for `joy config get/set`.

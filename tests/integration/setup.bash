@@ -100,7 +100,7 @@ setup_human_auth() {
 # After this, joy commands run as the AI member.
 # Sets JOY_SESSION (SSH-agent pattern) and saves AI_TOKEN for re-auth.
 setup_ai_session() {
-    local ai_member="${1:-ai:test@joy}"
+    local ai_member="${1:-testai}"
     # Add member if not already registered (idempotent)
     joy project member add "$ai_member" --passphrase "$TEST_PASSPHRASE" 2>/dev/null || true
     # joy auth token add wraps the token in double quotes; strip them
@@ -204,4 +204,22 @@ pty_run() {
     else
         script -q /dev/null sh -c "$cmd"
     fi
+}
+
+# Everything joy keeps about the project and its members, as one text:
+# project.yaml and the member files under .joy/members (JI-019D-46). A
+# test that asks "is this recorded for a member" greps this and does not
+# have to know which file holds it.
+members_text() {
+    cat .joy/project.yaml .joy/members/*.yaml 2>/dev/null
+}
+
+# grep over members_text, with grep's own arguments: `members_grep -q X`.
+members_grep() {
+    members_text | grep "$@"
+}
+
+# The file of one member, by address or by an AI member's name.
+member_file() {
+    grep -lE "^(email|name): $1\$" .joy/members/*.yaml 2>/dev/null | head -1
 }

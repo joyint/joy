@@ -15,6 +15,7 @@ mod crypt_session;
 mod editor;
 mod effort;
 mod forge;
+mod member_names;
 mod member_resolver;
 mod output;
 mod prompt;
@@ -477,7 +478,7 @@ pub fn cli_main() -> anyhow::Result<()> {
 
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let raw: Vec<String> = std::env::args().collect();
+    let raw: Vec<String> = member_names::modernise(std::env::args().collect());
     // Use try_parse_from so we can append the Windows PowerShell alias tip to
     // the very end of `joy help` / `joy -h` output (JOY-01C3-90). clap prints
     // help/version and would otherwise exit before we get a chance.
@@ -618,6 +619,14 @@ pub fn cli_main() -> anyhow::Result<()> {
     // Install the per-command member resolver (ADR-042) so every output that
     // names a member resolves the opaque id to a name/e-mail, fail-safe. In open
     // mode this is a pass-through.
+    // A project from before the member files is brought over as soon as
+    // the person at this terminal is signed in (JI-019D-46).
+    if let Some(root) = std::env::current_dir()
+        .ok()
+        .and_then(|cwd| joy_core::store::find_project_root(&cwd))
+    {
+        auth_gate::bring_members_over(&root);
+    }
     member_resolver::install_member_resolver();
 
     let result =

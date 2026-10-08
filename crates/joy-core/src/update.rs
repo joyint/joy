@@ -172,11 +172,8 @@ pub fn write_migrated_project(
     root: &Path,
     migrated_value: serde_yaml_ng::Value,
 ) -> UpdateResult<()> {
-    let project_path = crate::store::joy_dir(root).join(crate::store::PROJECT_FILE);
     let project: crate::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
-    crate::store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", crate::store::JOY_DIR, crate::store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    crate::store::save_project(root, &project)?;
     Ok(())
 }
 

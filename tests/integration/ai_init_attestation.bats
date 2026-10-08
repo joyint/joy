@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# Verify that joy ai init produces attested AI-member entries, signed
-# by the acting human. Without this, joy ai init bypassed the
-# attestation chain that joy project member add enforces, leaving
-# AI members unverifiable and opening a yaml-edit attack surface.
+# What an AI member may do is signed by the person who set it up
+# (JI-019D-46): joy ai init writes that signature for every member it
+# registers, the same one joy project member add writes. Without it an
+# AI member's capabilities would be whatever its file says.
 
 load setup
 
@@ -18,17 +18,21 @@ setup_fake_ai_tools() {
     PATH="$BIN_DIR:$PATH"
 }
 
-@test "joy ai init writes attestation block on new AI members" {
+@test "joy ai init signs what a new AI member may do" {
     setup_human_auth
     setup_fake_ai_tools
 
     joy ai init --passphrase "$TEST_PASSPHRASE" </dev/null 2>/dev/null
 
-    # Attestation block must be present.
-    grep -q "attestation:" .joy/project.yaml
-    grep -q "attester: test@example.com" .joy/project.yaml
-    # And the signed_fields must name the AI member as the attestee.
-    grep -q "email: ai:claude@joy" .joy/project.yaml
+    # The member's file carries the signature of the person acting, and
+    # the level that was signed with the capabilities.
+    local file
+    file="$(member_file claude)"
+    grep -q "^granted:" "$file"
+    grep -q "  by: test@example.com" "$file"
+    grep -q "^level: " "$file"
+    # An AI member is brought in by a delegation, not by an invitation.
+    ! grep -q "^origin:" "$file"
 }
 
 @test "AI member attestation has no enrollment_verifier (no OTP)" {
@@ -39,7 +43,7 @@ setup_fake_ai_tools() {
 
     # AI members authenticate via delegation tokens, not OTP redemption.
     # Their entry should not carry an enrollment_verifier.
-    ! grep -q "enrollment_verifier:" .joy/project.yaml
+    ! members_grep -q "enrollment_verifier:"
 }
 
 @test "joy ai init fails fast when no passphrase available and a member needs attestation" {
@@ -54,7 +58,7 @@ setup_fake_ai_tools() {
     run joy ai init </dev/null 2>&1
     [ "$status" -ne 0 ]
     [[ "$output" == *"run \`joy auth\`"* ]]
-    ! grep -q "ai:claude@joy" .joy/project.yaml
+    ! members_grep -q "claude"
 }
 
 @test "joy ai init does not prompt for passphrase when no new members are added" {

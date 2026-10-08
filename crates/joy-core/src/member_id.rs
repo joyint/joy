@@ -76,6 +76,39 @@ pub fn opaque_member_id(verify_key_hex: &str) -> Result<String, hex::FromHexErro
     Ok(format!("m-{}", &b32[..MEMBER_ID_SHORT_LEN]))
 }
 
+/// Domain tag of the file id a member gets when a project from before the
+/// member files is brought over (JI-019D-46). A tag of its own, so the id
+/// is never the one [`opaque_member_id`] derives for the same member.
+const MIGRATED_FILE_ID_INFO: &[u8] = b"joy-member-file:";
+
+fn short_id(digest: &[u8]) -> String {
+    let b32 = base32_lower_nopad(digest);
+    format!("m-{}", &b32[..MEMBER_ID_SHORT_LEN])
+}
+
+/// A fresh id for a new member's file under `.joy/members/`: `m-` and ten
+/// random base32 characters. It derives from nothing, so nothing about
+/// the member can be read off it or computed towards it.
+pub fn new_member_file_id() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    short_id(&bytes)
+}
+
+/// The file id of a member that existed before the member files, from
+/// the project and the member's key in the old map. Deterministic on
+/// purpose: two people who bring the same project over on two machines
+/// write the same files.
+pub fn migrated_member_file_id(project_id: &str, member_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(MIGRATED_FILE_ID_INFO);
+    hasher.update(project_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(member_key.as_bytes());
+    short_id(&hasher.finalize())
+}
+
 /// Whether `s` has the shape of an opaque member id: `m-` followed by exactly
 /// [`MEMBER_ID_SHORT_LEN`] base32 (lowercase, no padding) characters. Lets
 /// anonymous-mode ids be accepted wherever an e-mail or `ai:` id is otherwise

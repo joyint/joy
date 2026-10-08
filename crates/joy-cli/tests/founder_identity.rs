@@ -77,7 +77,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         &["init", "--name", "No Config", "--user", "a@b.c"],
     );
     assert!(init.status.success(), "{}", text(&init));
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(project.contains("a@b.c"), "{project}");
 
     // The enrolment takes the member from `--user`, not from a git
@@ -100,7 +100,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         "{}",
         text(&auth)
     );
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(
         project.contains("verify-key") || project.contains("verify_key"),
         "{project}"

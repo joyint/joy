@@ -176,7 +176,9 @@ fn finish_login(
         PrivacyMode::Open => email.to_string(),
         _ => attested_id.clone(),
     };
-    if let Some(att) = member.attestation.as_ref() {
+    if view.member_layout() == crate::model::project::MemberLayout::Files {
+        super::vouch::verify_origin(view, &attested_id, &member_key, member)?;
+    } else if let Some(att) = member.attestation.as_ref() {
         verify_member_attestation(view, &attested_id, member, att)?;
     } else if attestation::founder_must_be_attested(view) {
         return Err(JoyError::AuthFailed(format!(
@@ -193,6 +195,11 @@ fn finish_login(
     session::save_session(&project_id, &token)?;
 
     let relocked = relock_unlocked_files(root, view, &member_key, seed.as_bytes());
+
+    // A person is here with their key: a project from before the member
+    // files is brought over now, by whichever host this login runs in
+    // (JI-019D-46). It checked out above as what it was.
+    crate::member_migration::migrate_quietly(root, &member_key, &keypair);
 
     Ok(LoginOutcome {
         seed: *seed.as_bytes(),
@@ -299,13 +306,17 @@ pub fn maybe_auto_seal(
     acting_email: &str,
     acting_keypair: &IdentityKeypair,
 ) -> Result<Option<Project>, JoyError> {
+    // Member files carry origins, made when a person is invited; there
+    // is nothing to seal after the fact.
+    if project.member_layout() == crate::model::project::MemberLayout::Files {
+        return Ok(None);
+    }
     let has_any_attestation = project.member_values().any(|m| m.attestation.is_some());
     if has_any_attestation || project.member_count() < 2 {
         return Ok(None);
     }
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut sealed = store::read_project(&project_path)?;
+    let mut sealed = store::load_project(root)?;
 
     let targets: Vec<String> = sealed
         .member_keys()
@@ -323,9 +334,7 @@ pub fn maybe_auto_seal(
         sealed.member_by_key_mut(&target_email).unwrap().attestation = Some(att);
     }
 
-    store::write_yaml_preserve(&project_path, &sealed)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &sealed)?;
 
     Ok(Some(sealed))
 }

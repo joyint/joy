@@ -205,13 +205,14 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
             .member_by_key_mut(human)
             .expect("the human is already a member");
         founder.verify_key = Some(delegator.public_key().to_hex());
-        founder.ai_delegations.insert(
+        founder.put_delegation(
             ai.to_string(),
             AiDelegationEntry {
                 delegation_verifier: delegation.public_key().to_hex(),
                 delegation_salt: Some("00".repeat(32)),
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
             },
         );
     }
@@ -229,6 +230,7 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
             human,
             project_id: &project_id,
             ttl: None,
+            grant: None,
         },
     ));
     let redeemed = redeem_ai_session(&project, &project_id, &token).expect("the token redeems");

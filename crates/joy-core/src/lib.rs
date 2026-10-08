@@ -9,7 +9,6 @@
 joy_test_env::isolate!();
 
 pub mod auth;
-pub mod capabilities;
 pub mod commit_msg;
 pub mod context;
 pub mod crypt;
@@ -25,7 +24,9 @@ pub mod host;
 pub mod identity;
 pub mod init;
 pub mod items;
+pub mod member_files;
 pub mod member_id;
+pub mod member_migration;
 pub mod member_ref;
 pub mod members_file;
 pub mod merge;

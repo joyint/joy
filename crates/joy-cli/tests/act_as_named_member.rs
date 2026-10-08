@@ -230,12 +230,12 @@ fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
         text(&set_up)
     );
     assert!(
-        text(&set_up).contains("ai:claude@joy"),
+        text(&set_up).contains("claude"),
         "the tool member is registered: {}",
         text(&set_up)
     );
-    let project = std::fs::read_to_string(machine.root.join(".joy/project.yaml")).unwrap();
-    assert!(project.contains("ai:claude@joy"), "{project}");
+    let project = joy_test_env::project_text(&machine.root);
+    assert!(project.contains("claude"), "{project}");
 
     // Nothing was remembered: the next command needs the name again.
     // A write the guard protects (the project has an AI member now)
@@ -264,8 +264,8 @@ fn ai_init_user_sets_up_the_tools_with_no_git_identity() {
         PASSPHRASE,
     ]);
     assert!(again.status.success(), "{}", text(&again));
-    let project = std::fs::read_to_string(machine.root.join(".joy/project.yaml")).unwrap();
-    assert!(project.contains("ai:qwen@joy"), "{project}");
+    let project = joy_test_env::project_text(&machine.root);
+    assert!(project.contains("qwen"), "{project}");
     let status = machine.joy(&["auth", "status"]);
     assert!(
         !status.status.success(),
@@ -296,7 +296,7 @@ fn ai_init_user_on_a_new_machine_leaves_no_session_either() {
         PASSPHRASE,
     ]);
     assert!(set_up.status.success(), "{}", text(&set_up));
-    assert!(text(&set_up).contains("ai:claude@joy"), "{}", text(&set_up));
+    assert!(text(&set_up).contains("claude"), "{}", text(&set_up));
     assert!(
         !text(&set_up).contains("Authenticated as"),
         "no sign-in on the way: {}",
@@ -325,8 +325,8 @@ fn ai_init_user_with_the_wrong_passphrase_registers_nothing() {
         "not the passphrase at all",
     ]);
     assert!(!refused.status.success(), "{}", text(&refused));
-    let project = std::fs::read_to_string(machine.root.join(".joy/project.yaml")).unwrap();
-    assert!(!project.contains("ai:claude@joy"), "{project}");
+    let project = joy_test_env::project_text(&machine.root);
+    assert!(!project.contains("claude"), "{project}");
     let status = machine.joy(&["auth", "status"]);
     assert!(!status.status.success(), "{}", text(&status));
 }

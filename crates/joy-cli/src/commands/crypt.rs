@@ -163,8 +163,7 @@ pub fn run(args: CryptArgs) -> Result<()> {
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let project = store::read_project(&project_path)?;
+    let project = store::load_project(&root)?;
     let acting = joy_core::identity::acting_human_key(&root)?;
     Ok((root, project, acting))
 }
@@ -259,8 +258,7 @@ impl UnlockedZone {
         let m = self.project.member_by_key_mut(&self.acting_member).unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
-        let project_path = store::joy_dir(&self.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &self.project)?;
+        store::save_project(&self.root, &self.project)?;
         Ok(())
     }
 
@@ -321,8 +319,7 @@ fn run_add(zone: &str, target: &str) -> Result<()> {
         // Re-write project.yaml after we've added the path to the
         // zones registry. Wrap was already persisted above; this
         // adds the registry entry.
-        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        store::save_project(&unlocked.root, &unlocked.project)?;
         unlocked.install_zone_key();
         for file in &resolved {
             encrypt_file_in_place(file, zone, &unlocked.zone_key)?;
@@ -462,8 +459,7 @@ fn unlock_for_file(
 ) -> Result<(std::path::PathBuf, String, joy_crypt::zone::ZoneKey)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let project = store::read_project(&project_path)?;
+    let project = store::load_project(&root)?;
     let acting_key = joy_core::identity::acting_human_key(&root)?;
     let acting = project
         .member_by_key(&acting_key)
@@ -741,8 +737,7 @@ fn run_rm(zone: &str, target: &str) -> Result<()> {
         }
         joy_core::crypt::clear_active_zone_keys();
         // Persist the registry change.
-        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        store::save_project(&unlocked.root, &unlocked.project)?;
         if removed_from_registry {
             println!("Removed path '{}' from zone '{}'.", target, zone);
         }
@@ -803,8 +798,7 @@ fn run_rm_all(zone: &str) -> Result<()> {
         updated += 1;
     }
     joy_core::crypt::clear_active_zone_keys();
-    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &unlocked.project)?;
+    store::save_project(&unlocked.root, &unlocked.project)?;
     println!("Decrypted {} item(s) in zone '{}'.", updated, zone);
     unlocked.finalize(&format!("crypt rm --all (zone {zone})"))
 }
@@ -877,10 +871,7 @@ fn run_zone_rm(name: &str) -> Result<()> {
         );
     }
     project.crypt.zones.remove(name);
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
     joy_core::git_ops::auto_git_post_command(&root, &format!("crypt zone rm {name}"), &acting);
     println!("Removed zone '{}'.", name);
     Ok(())
@@ -918,8 +909,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     // before; the wrap layouts coexist in the same `project.yaml`.
     let target_is_ai = is_ai_member(target_member);
 
-    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&unlocked.root)?;
     project
         .crypt
         .zones
@@ -936,7 +926,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
         let _ = target; // target lookup was for existence check; not used further on AI path
         let mut wraps: Vec<(String, String)> = Vec::new();
         for (operator_email, member) in project.members() {
-            let Some(entry) = member.ai_delegations.get(ai_id) else {
+            let Some(entry) = member.delegation_to(ai_id) else {
                 continue;
             };
             let delegation_pk = joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
@@ -979,9 +969,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
             .entry(unlocked.zone.clone())
             .or_insert(granter_wrap);
 
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+        store::save_project(&unlocked.root, &project)?;
         joy_core::git_ops::auto_git_post_command(
             &unlocked.root,
             &format!(
@@ -1032,9 +1020,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
         .entry(unlocked.zone.clone())
         .or_insert(granter_wrap);
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+    store::save_project(&unlocked.root, &project)?;
     joy_core::git_ops::auto_git_post_command(
         &unlocked.root,
         &format!("crypt grant {target_member} (zone {})", unlocked.zone),
@@ -1086,10 +1072,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
         );
         return Ok(());
     }
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
     joy_core::git_ops::auto_git_post_command(
         &root,
         &format!("crypt revoke {target_member} (zone {zone})"),

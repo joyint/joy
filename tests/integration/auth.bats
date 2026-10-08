@@ -15,8 +15,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication initialized"* ]]
     # project.yaml should now have verify_key and kdf_nonce
-    grep -q "verify_key:" .joy/project.yaml
-    grep -q "kdf_nonce:" .joy/project.yaml
+    members_grep -q "verify_key:"
+    members_grep -q "kdf_nonce:"
 }
 
 @test "joy auth init rejects short passphrase" {
@@ -150,7 +150,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Authentication reset"* ]]
     # verify_key should be gone
-    ! grep -q "verify_key:" .joy/project.yaml
+    ! members_grep -q "verify_key:"
     # Can re-initialize
     run joy auth init --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -163,7 +163,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [ "$status" -ne 0 ]
     [[ "$output" == *"incorrect passphrase"* ]]
     # verify_key should still be there
-    grep -q "verify_key:" .joy/project.yaml
+    members_grep -q "verify_key:"
 }
 
 @test "joy auth reset other member requires manage capability" {
@@ -202,8 +202,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth token add generates token for AI member" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run --separate-stderr joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    run --separate-stderr joy auth token add testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     # stdout is exactly the bare token in double quotes (no banner, no usage
     # hints). Quotes make chat clients treat the value as one atomic string
@@ -227,7 +227,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth token add rejects unregistered AI member" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:unknown@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add unknown --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not a registered project member"* ]]
 }
@@ -235,8 +235,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth token add rejects wrong passphrase" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth token add ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add testai --passphrase "wrong wrong wrong wrong wrong wrong"
     [ "$status" -ne 0 ]
     [[ "$output" == *"incorrect passphrase"* ]]
 }
@@ -244,9 +244,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth token add with TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     # TTL is exposed through `--json`; plain stdout is just the bare token.
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --ttl 8 --json
+    run joy auth token add testai --passphrase "$TEST_PASSPHRASE" --ttl 8 --json
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.data.ttl_hours')" = "8" ]
 }
@@ -254,23 +254,23 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth delegation rotate replaces the keypair" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE"
     local before
-    before=$(grep delegation_verifier .joy/project.yaml | head -1)
-    run joy auth delegation rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    before=$(members_grep delegation_verifier | head -1)
+    run joy auth delegation rotate testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Rotated delegation for ai:test@joy"* ]]
+    [[ "$output" == *"Rotated delegation for testai"* ]]
     local after
-    after=$(grep delegation_verifier .joy/project.yaml | head -1)
+    after=$(members_grep delegation_verifier | head -1)
     [ "$before" != "$after" ]
 }
 
 @test "joy auth delegation rotate rejects when no delegation exists" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    run joy auth delegation rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    run joy auth delegation rotate testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"No delegation"* ]]
 }
@@ -278,11 +278,11 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "joy auth delegation ls lists registered delegations" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE"
     run joy auth delegation ls
     [ "$status" -eq 0 ]
-    [[ "$output" == *"ai:test@joy"* ]]
+    [[ "$output" == *"testai"* ]]
     [[ "$output" == *"OPERATOR"* ]]
 }
 
@@ -303,8 +303,8 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # times within its TTL, each redemption producing an independent session.
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    TOKEN=$(joy auth token add testai --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     [ -n "$TOKEN" ]
     run joy auth --token "$TOKEN"
@@ -322,7 +322,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     joy add task "Displacement target"
     ITEM=$(joy ls 2>/dev/null | grep Displacement | awk '{print $1}')
 
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     FIRST="$JOY_SESSION"
 
     # Second redemption of the same token, as another shell would do it.
@@ -336,7 +336,7 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     export JOY_SESSION="$FIRST"
     run joy comment "$ITEM" "first session still writes"
     [ "$status" -eq 0 ]
-    grep -q "author: ai:test@joy" .joy/items/${ITEM}-*.yaml
+    grep -q "author: testai" .joy/items/${ITEM}-*.yaml
 
     # And so does the second.
     export JOY_SESSION="$SECOND"
@@ -347,10 +347,10 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "delegation token announces 24h default TTL" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     # Default TTL is observable through `--json`; plain stdout stays bare
     # so the operator can pipe the token straight to the AI.
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --json
+    run joy auth token add testai --passphrase "$TEST_PASSPHRASE" --json
     [ "$status" -eq 0 ]
     [ "$(echo "$output" | jq -r '.data.ttl_hours')" = "24" ]
 }
@@ -410,35 +410,35 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     # Manually create tool directory and register AI member
     mkdir -p .claude
     echo "# test" > .claude/CLAUDE.md
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
     # Create a delegation token and authenticate as AI
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" | tr -d '"')
+    TOKEN=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" | tr -d '"')
     joy auth --token "$TOKEN"
     # Verify AI member exists with verify_key (set by token auth)
-    grep -q "ai:claude@joy" .joy/project.yaml
-    grep -q "verify_key" .joy/project.yaml
+    members_grep -q "claude"
+    members_grep -q "verify_key"
     # Reset the AI tool
     joy ai reset --tool claude --force
     # AI member should be removed from project.yaml
-    ! grep -q "ai:claude@joy" .joy/project.yaml
+    ! members_grep -q "claude"
 }
 
 @test "joy ai reset removes all AI members when resetting all tools" {
     joy init --name "Auth Test"
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:qwen@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    joy project member add qwen --passphrase "$TEST_PASSPHRASE"
     # Verify both exist
-    grep -q "ai:claude@joy" .joy/project.yaml
-    grep -q "ai:qwen@joy" .joy/project.yaml
+    members_grep -q "claude"
+    members_grep -q "qwen"
     # Create tool directories so reset has something to remove
     mkdir -p .claude .qwen
     touch .claude/CLAUDE.md .qwen/QWEN.md
     # Reset all
     joy ai reset --force
     # Both AI members should be removed
-    ! grep -q "ai:claude@joy" .joy/project.yaml
-    ! grep -q "ai:qwen@joy" .joy/project.yaml
+    ! members_grep -q "claude"
+    ! members_grep -q "qwen"
 }
 
 # ============================================================
@@ -453,9 +453,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     git config user.name "Test User"
     joy init --name "Project A" --acronym PRJA
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
     # Create AI token scoped to project A
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$TOKEN")
     SESS="$JOY_SESSION"
@@ -469,12 +469,12 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     git config user.email "test@example.com"
     git config user.name "Test User"
     joy init --name "Project B" --acronym PRJB
-    # Project B does not initialize auth. Register ai:claude@joy as a
+    # Project B does not initialize auth. Register claude as a
     # member via a direct yaml edit so we can exercise the cross-project
     # session isolation check without triggering the attestation-signing
     # flow (which requires an authenticated manage member).
     cat >> .joy/project.yaml <<'YAML'
-  ai:claude@joy:
+  claude:
     capabilities: all
 YAML
     # Use project A's session in project B - must be rejected
@@ -496,8 +496,8 @@ YAML
     # Auth init modifies project.yaml (adds verify_key, kdf_nonce)
     joy auth init --passphrase "$TEST_PASSPHRASE"
     # The release config must survive
-    grep -q "version-files" .joy/project.yaml
-    grep -q "Cargo.toml" .joy/project.yaml
+    members_grep -q "version-files"
+    members_grep -q "Cargo.toml"
 }
 
 @test "project.yaml extra fields survive member add" {
@@ -505,7 +505,7 @@ YAML
     joy auth init --passphrase "$TEST_PASSPHRASE"
     echo 'custom_field: preserved' >> .joy/project.yaml
     joy project member add dev@example.com --passphrase "$TEST_PASSPHRASE"
-    grep -q "custom_field: preserved" .joy/project.yaml
+    members_grep -q "custom_field: preserved"
 }
 
 @test "project.yaml extra fields survive auth reset" {
@@ -513,7 +513,7 @@ YAML
     joy auth init --passphrase "$TEST_PASSPHRASE"
     echo 'custom_field: preserved' >> .joy/project.yaml
     joy auth reset --passphrase "$TEST_PASSPHRASE"
-    grep -q "custom_field: preserved" .joy/project.yaml
+    members_grep -q "custom_field: preserved"
 }
 
 # ============================================================
@@ -572,9 +572,9 @@ YAML
     # manage/delete, so nine capability keys each render on their own
     # line). Use a generous -A range so the follow-up greps still reach
     # verify_key and signature.
-    OLD_PUB=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
-    OLD_ATT=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
-    OLD_WRAP=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "seed_wrap_passphrase:" | awk '{print $NF}')
+    OLD_PUB=$(grep "^verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    OLD_ATT=$(grep "signature:" "$(member_file alice@example.com)" | head -1)
+    OLD_WRAP=$(grep "^seed_wrap_passphrase:" "$(member_file alice@example.com)" | awk '{print $NF}')
 
     run joy auth passphrase \
         --passphrase "alpha bravo charlie delta echo foxtrot" \
@@ -585,9 +585,9 @@ YAML
     # verify_key preserved (ADR-039 wrapped-seed model: keypair derives
     # from a stable seed). seed_wrap_passphrase rotates. Attestation is
     # untouched.
-    NEW_PUB=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "verify_key:" | awk '{print $NF}')
-    NEW_ATT=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "signature:" | head -1)
-    NEW_WRAP=$(grep -A40 "^  alice@example.com:" .joy/project.yaml | grep "seed_wrap_passphrase:" | awk '{print $NF}')
+    NEW_PUB=$(grep "^verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    NEW_ATT=$(grep "signature:" "$(member_file alice@example.com)" | head -1)
+    NEW_WRAP=$(grep "^seed_wrap_passphrase:" "$(member_file alice@example.com)" | awk '{print $NF}')
     [ "$OLD_PUB" = "$NEW_PUB" ]
     [ "$OLD_ATT" = "$NEW_ATT" ]
     [ "$OLD_WRAP" != "$NEW_WRAP" ]
@@ -627,24 +627,24 @@ YAML
 @test "joy ai rotate replaces delegation keypair on working state" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     # Initial delegation.
-    OLD_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    OLD_TOKEN=$(joy auth token add testai --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
-    OLD_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
+    OLD_PUB=$(members_grep -A2 "testai:" | grep delegation_verifier | sed 's/.*: //')
 
-    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy ai rotate testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Rotated delegation"* ]]
     [[ "$output" == *"invalidated"* ]]
 
     # project.yaml has new delegation_verifier plus a rotated timestamp.
-    NEW_PUB=$(grep -A2 "ai:test@joy:" .joy/project.yaml | grep delegation_verifier | sed 's/.*: //')
+    NEW_PUB=$(members_grep -A2 "testai:" | grep delegation_verifier | sed 's/.*: //')
     [ "$OLD_PUB" != "$NEW_PUB" ]
-    grep -q "rotated:" .joy/project.yaml
+    members_grep -q "rotated:"
 
     # A newly issued token works; the old token is invalidated.
-    NEW_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    NEW_TOKEN=$(joy auth token add testai --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     run joy auth --token "$NEW_TOKEN"
     [ "$status" -eq 0 ]
@@ -655,30 +655,30 @@ YAML
 @test "joy auth token add bails on legacy delegation without salt" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
     # Simulate a legacy entry by stripping delegation_salt from project.yaml.
-    sed_inplace '/^        delegation_salt:/d' .joy/project.yaml
+    sed_inplace '/delegation_salt:/d' "$(member_file test@example.com)"
 
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"Cannot issue a new token"* ]]
     [[ "$output" == *"joy auth delegation rotate"* ]]
 
     # Rotation writes a fresh salt and unblocks subsequent issuance.
-    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy ai rotate testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy auth token add testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
 }
 
 @test "joy ai rotate refuses when no delegation entry exists" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     # No token add -> no ai_delegations entry in project.yaml.
 
-    run joy ai rotate ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    run joy ai rotate testai --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"No delegation"* ]]
     [[ "$output" == *"joy auth token add"* ]]
@@ -696,9 +696,9 @@ YAML
 @test "joy ai rotate rejects wrong passphrase" {
     joy init --name "Rotate Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    run joy ai rotate ai:test@joy --passphrase "wrong wrong wrong wrong wrong wrong"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run joy ai rotate testai --passphrase "wrong wrong wrong wrong wrong wrong"
     [ "$status" -ne 0 ]
     [[ "$output" == *"incorrect passphrase"* ]]
 }
@@ -723,8 +723,8 @@ YAML
     [[ "$output" == *"joy_r_"* ]]
 
     # Both wraps land in project.yaml.
-    grep -q "seed_wrap_passphrase:" .joy/project.yaml
-    grep -q "seed_wrap_recovery:" .joy/project.yaml
+    members_grep -q "seed_wrap_passphrase:"
+    members_grep -q "seed_wrap_recovery:"
 }
 
 @test "joy auth recover --recovery-key resets passphrase preserving keypair (ADR-039)" {
@@ -733,7 +733,7 @@ YAML
     REC=$(echo "$OUT" | sed -n 's/^.*\(joy_r_[0-9a-f]\{64\}\).*$/\1/p' | head -1)
     [ -n "$REC" ]
 
-    OLD_PUB=$(grep "verify_key:" .joy/project.yaml | head -1 | awk '{print $NF}')
+    OLD_PUB=$(members_grep "verify_key:" | head -1 | awk '{print $NF}')
 
     run joy auth recover --recovery-key \
         --recovery "$REC" \
@@ -742,7 +742,7 @@ YAML
     [[ "$output" == *"Recovery successful"* ]]
 
     # Keypair preserved (verify_key unchanged).
-    NEW_PUB=$(grep "verify_key:" .joy/project.yaml | head -1 | awk '{print $NF}')
+    NEW_PUB=$(members_grep "verify_key:" | head -1 | awk '{print $NF}')
     [ "$OLD_PUB" = "$NEW_PUB" ]
 
     # New passphrase works; old does not.
@@ -756,16 +756,16 @@ YAML
 @test "joy auth recover --regenerate-key rotates recovery wrap (ADR-039)" {
     joy init --name "Recovery Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    OLD_REC_WRAP=$(grep "seed_wrap_recovery:" .joy/project.yaml | awk '{print $NF}')
-    OLD_PASS_WRAP=$(grep "seed_wrap_passphrase:" .joy/project.yaml | awk '{print $NF}')
+    OLD_REC_WRAP=$(members_grep "seed_wrap_recovery:" | awk '{print $NF}')
+    OLD_PASS_WRAP=$(members_grep "seed_wrap_passphrase:" | awk '{print $NF}')
 
     run joy auth recover --regenerate-key --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
     [[ "$output" == *"Recovery key rotated"* ]]
     [[ "$output" == *"NEW RECOVERY KEY"* ]]
 
-    NEW_REC_WRAP=$(grep "seed_wrap_recovery:" .joy/project.yaml | awk '{print $NF}')
-    NEW_PASS_WRAP=$(grep "seed_wrap_passphrase:" .joy/project.yaml | awk '{print $NF}')
+    NEW_REC_WRAP=$(members_grep "seed_wrap_recovery:" | awk '{print $NF}')
+    NEW_PASS_WRAP=$(members_grep "seed_wrap_passphrase:" | awk '{print $NF}')
     [ "$OLD_REC_WRAP" != "$NEW_REC_WRAP" ]
     [ "$OLD_PASS_WRAP" = "$NEW_PASS_WRAP" ]
 
@@ -825,7 +825,7 @@ YAML
     [ "$status" -eq 0 ]
 
     # Path registered in project.yaml.
-    grep -q "data/customer-x/" .joy/project.yaml
+    members_grep -q "data/customer-x/"
 
     # File on disk is now ciphertext.
     HEAD8=$(head -c 8 data/customer-x/notes.txt)
@@ -859,8 +859,8 @@ YAML
     [[ "$output" == *"Granted"* ]]
 
     # Bob's member entry now has a wrap; founder still has theirs.
-    grep -A 25 "^  bob@example.com:" .joy/project.yaml | grep -q "default:"
-    grep -A 25 "^  test@example.com:" .joy/project.yaml | grep -q "default:"
+    grep -q "default:" "$(member_file bob@example.com)"
+    grep -q "default:" "$(member_file test@example.com)"
 
     # zone ls reports the default zone.
     run joy crypt zone ls
@@ -1088,12 +1088,12 @@ YAML
     mkdir -p secret
     echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
-    grep -q "crypt_wraps:" .joy/project.yaml
+    members_grep -q "crypt_wraps:"
 
     run joy crypt revoke test@example.com
     [ "$status" -eq 0 ]
     [[ "$output" == *"Revoked"* ]]
-    ! grep -A 3 "test@example.com" .joy/project.yaml | grep -q "crypt_wraps:"
+    ! grep -q "crypt_wraps:" "$(member_file test@example.com)"
 }
 
 # ============================================================
@@ -1103,10 +1103,10 @@ YAML
 @test "every delegation token embeds the delegation private key (crypt scope)" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
     # ONE token kind (JI-0175-B0): auth and chat crypto always travel
     # together, so the delegation private key is always embedded.
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    TOKEN=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     [ -n "$TOKEN" ]
     DECODED=$(echo "$TOKEN" | sed 's/^joy_t_//' | base64 -d 2>/dev/null || true)
@@ -1117,8 +1117,8 @@ YAML
 @test "token redemption produces a 76-byte JOY_SESSION payload" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    TOKEN=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | grep -o 'joy_t_[A-Za-z0-9+/=]*' | head -1)
     OUTPUT=$(joy auth --token "$TOKEN")
     # sid + ephemeral private key + delegation private key
@@ -1130,40 +1130,40 @@ YAML
 @test "joy crypt grant for AI writes zone-major delegation wraps" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
     # Bootstrap operator's delegation entry by issuing one (auth-only) token.
-    joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy auth token add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
 
     # Seed default zone so wraps can be derived.
     mkdir -p secret
     echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    run joy crypt grant ai:claude@joy --passphrase "$TEST_PASSPHRASE"
+    run joy crypt grant claude --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Granted ai:claude@joy"* ]]
+    [[ "$output" == *"Granted claude"* ]]
 
-    # The wrap landed under crypt.zones.default.delegations.ai:claude@joy.<operator>
-    grep -q "delegations:" .joy/project.yaml
-    grep -A 6 "delegations:" .joy/project.yaml | grep -q "ai:claude@joy:"
-    grep -A 6 "ai:claude@joy:" .joy/project.yaml | grep -q "test@example.com:"
+    # The wrap landed under crypt.zones.default.delegations.claude.<operator>
+    members_grep -q "delegations:"
+    members_grep -A 6 "delegations:" | grep -q "claude:"
+    members_grep -A 6 "claude:" | grep -q "test@example.com:"
 }
 
 @test "joy crypt revoke for AI removes the entire delegations.<ai> map" {
     joy init --name "AI Crypt Test" --acronym AC
     joy auth init --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    joy auth token add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
     mkdir -p secret
     echo "x" > secret/file.txt
     joy crypt add "secret/" --passphrase "$TEST_PASSPHRASE" >/dev/null
-    joy crypt grant ai:claude@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy crypt grant claude --passphrase "$TEST_PASSPHRASE" >/dev/null
 
-    run joy crypt revoke ai:claude@joy
+    run joy crypt revoke claude
     [ "$status" -eq 0 ]
     [[ "$output" == *"Revoked"* ]]
 
-    ! grep -A 6 "default:" .joy/project.yaml | grep -q "ai:claude@joy:"
+    ! grep -A 6 "default:" .joy/project.yaml | grep -q "claude:"
 }
 
 # Two more behaviours are deliberately exercised at the Rust unit-test
@@ -1198,11 +1198,11 @@ YAML
 
 @test "issuing a delegation token registers the AI member's identity key" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
 
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
     # the member now carries the key its tokens are checked against
-    run -0 awk '/^  ai:test@joy:/{f=1} f&&/^  [^ ]/&&!/ai:test/{f=0} f' .joy/project.yaml
+    run -0 cat "$(member_file testai)"
     [[ "$output" == *"verify_key:"* ]]
     local first
     first=$(printf '%s' "$output" | sed -n 's/.*verify_key: \([0-9a-f]*\).*/\1/p')
@@ -1210,7 +1210,7 @@ YAML
 
     # a second token rides the SAME identity: re-keying would silently
     # invalidate every token already out there
-    joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    run -0 awk '/^  ai:test@joy:/{f=1} f&&/^  [^ ]/&&!/ai:test/{f=0} f' .joy/project.yaml
+    joy auth token add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run -0 cat "$(member_file testai)"
     [[ "$output" == *"$first"* ]]
 }

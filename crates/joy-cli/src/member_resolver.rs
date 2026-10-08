@@ -34,7 +34,7 @@ fn build() -> Option<MemberResolver> {
     if !resolver.locked() {
         return Some(resolver);
     }
-    let project = store::read_project(&store::joy_dir(&root).join(store::PROJECT_FILE)).ok()?;
+    let project = store::load_project(&root).ok()?;
     Some(MemberResolver::anonymous(passphrase_members(
         &root, &project,
     )))

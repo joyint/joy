@@ -8,8 +8,8 @@ load setup
     joy auth init --passphrase "correct horse battery staple" >/dev/null
     run joy ai init --tool claude --passphrase "correct horse battery staple"
     [ "$status" -eq 0 ]
-    grep -q "ai:claude@joy" .joy/project.yaml
-    ! grep -q "ai:qwen@joy" .joy/project.yaml
+    members_grep -q "claude"
+    ! members_grep -q "qwen"
     [ -f .claude/CLAUDE.md ]
     [ ! -d .qwen ]
 

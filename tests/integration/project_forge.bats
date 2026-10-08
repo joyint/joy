@@ -24,7 +24,7 @@ load setup
     [[ "$output" == "none" ]]
 
     # Visible in the YAML so governance can audit it.
-    grep -q "^forge: none" .joy/project.yaml
+    members_grep -q "^forge: none"
 }
 
 @test "joy project set forge with empty value clears the field" {
@@ -38,7 +38,7 @@ load setup
     [ "$status" -ne 0 ]
 
     # No stray `forge:` line in the YAML once cleared.
-    run grep -q "^forge:" .joy/project.yaml
+    run members_grep -q "^forge:"
     [ "$status" -ne 0 ]
 }
 

@@ -127,10 +127,10 @@ fn update_qwen_permissions(root: &Path, member_id: &str, report: Report) -> Resu
 
     // Enforced level -> native approval mode (JOY-0222-4E). Overwrites a
     // hand-edited value on purpose: project.yaml is the authority here.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let level = crate::level_enforcement::setup_level(root, member_id);
     settings.as_object_mut().unwrap().insert(
         "approvalMode".into(),
-        serde_json::json!(crate::level_enforcement::qwen_approval_mode(levels.global)),
+        serde_json::json!(crate::level_enforcement::qwen_approval_mode(level)),
     );
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -172,8 +172,8 @@ fn ensure_vibe_bash_permission(
     // autonomous member, everyone else confirms each shell command. This
     // overwrites a hand-edited value on purpose (project.yaml is the
     // authority), which replaces the old keep-if-present behavior.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
-    let permission = crate::level_enforcement::vibe_bash_permission(levels.global);
+    let level = crate::level_enforcement::setup_level(root, member_id);
+    let permission = crate::level_enforcement::vibe_bash_permission(level);
     if bash.get("permission").and_then(|i| i.as_str()) == Some(permission) {
         return Ok(false);
     }
@@ -246,7 +246,49 @@ fn existing_managed_block_entries(root: &Path) -> Vec<String> {
 /// One line per touched file/action, for the caller to render.
 pub type Report<'a> = &'a mut dyn FnMut(String);
 
-pub fn is_tool_stale(root: &Path, tool: &str, _member_id: &str) -> Result<bool, JoyError> {
+/// Whether the tool's own settings still say the native mode the
+/// member's level means. They do not after the level was changed, and a
+/// tool left in the old mode would run less carefully than it was told.
+fn native_mode_is_current(root: &Path, tool: &str, member_id: &str) -> bool {
+    use crate::level_enforcement as le;
+    let level = le::setup_level(root, member_id);
+    let json_value = |path: &str, pointer: &str| -> Option<String> {
+        let content = fs::read_to_string(root.join(path)).ok()?;
+        let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+        value.pointer(pointer)?.as_str().map(str::to_string)
+    };
+    match tool {
+        "claude" => {
+            json_value(".claude/settings.json", "/permissions/defaultMode").as_deref()
+                == Some(le::claude_permission_mode(level))
+        }
+        "qwen" => {
+            json_value(".qwen/settings.json", "/approvalMode").as_deref()
+                == Some(le::qwen_approval_mode(level))
+        }
+        "vibe" => {
+            fs::read_to_string(root.join(".vibe/config.toml"))
+                .ok()
+                .and_then(|content| content.parse::<toml_edit::DocumentMut>().ok())
+                .and_then(|doc| {
+                    doc.get("tools")?
+                        .get("bash")?
+                        .get("permission")?
+                        .as_str()
+                        .map(str::to_string)
+                })
+                .as_deref()
+                == Some(le::vibe_bash_permission(level))
+        }
+        // no native mode is written for the others
+        _ => true,
+    }
+}
+
+pub fn is_tool_stale(root: &Path, tool: &str, member_id: &str) -> Result<bool, JoyError> {
+    if !native_mode_is_current(root, tool, member_id) {
+        return Ok(true);
+    }
     let workflow = crate::ai_templates::load_workflow()?;
     let agents = crate::ai_templates::load_agents()?;
 
@@ -354,7 +396,7 @@ pub fn plan_member_reset(
     }
     let delegators: Vec<String> = project
         .members()
-        .filter(|(_, m)| m.ai_delegations.contains_key(member_id))
+        .filter(|(_, m)| m.delegation_to(member_id).is_some())
         .map(|(k, _)| k.clone())
         .collect();
     let drop_caller_delegation =
@@ -600,12 +642,10 @@ fn update_claude_permissions(
 
     // Enforced level -> native permission mode (JOY-0222-4E). Overwrites a
     // hand-edited value on purpose: project.yaml is the authority here.
-    let levels = crate::level_enforcement::resolve_for_member(root, member_id);
+    let level = crate::level_enforcement::setup_level(root, member_id);
     permissions.as_object_mut().unwrap().insert(
         "defaultMode".into(),
-        serde_json::json!(crate::level_enforcement::claude_permission_mode(
-            levels.global
-        )),
+        serde_json::json!(crate::level_enforcement::claude_permission_mode(level)),
     );
 
     let json = serde_json::to_string_pretty(&settings)?;
@@ -953,7 +993,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
 /// marker still counts on its own, so a tool set up before it was
 /// registered as a member keeps working.
 pub fn is_tool_active(root: &Path, tool: &str) -> bool {
-    let member = format!("ai:{tool}@joy");
+    let member = crate::naming::member_id_at(root, tool);
     joy_core::store::load_project(root)
         .map(|p| p.has_member_key(&member))
         .unwrap_or(false)
@@ -1014,6 +1054,25 @@ pub fn unlock_acting_keypair(
 }
 
 /// Register the tool's AI member with an attestation when missing.
+/// The capabilities a new AI member gets in the project at `root`: the
+/// project's ai-defaults, else joy's work capabilities. The CLI, the
+/// desktop and the platform register an AI member with exactly these,
+/// because what is signed for it covers them.
+pub fn new_member_capabilities(root: &Path) -> joy_core::model::project::MemberCapabilities {
+    let ai_defaults = joy_core::store::load_ai_defaults(root);
+    let capabilities = if ai_defaults.capabilities.is_empty() {
+        joy_core::model::item::Capability::work_capabilities()
+    } else {
+        ai_defaults.capabilities.clone()
+    };
+    joy_core::model::project::MemberCapabilities::Specific(
+        capabilities
+            .into_iter()
+            .map(|cap| (cap, Default::default()))
+            .collect(),
+    )
+}
+
 /// Returns whether project.yaml changed.
 pub fn register_tool_member(
     project: &mut joy_core::model::Project,
@@ -1024,27 +1083,16 @@ pub fn register_tool_member(
     if project.has_member_key(member_id) {
         return Ok(false);
     }
-    let ai_defaults = joy_core::store::load_ai_defaults(root);
-    let ai_caps = if ai_defaults.capabilities.is_empty() {
-        joy_core::model::item::Capability::work_capabilities()
-    } else {
-        ai_defaults.capabilities.clone()
-    };
-    let capabilities = {
-        use joy_core::model::project::CapabilityConfig;
-        let mut map = std::collections::BTreeMap::new();
-        for cap in ai_caps {
-            map.insert(cap, CapabilityConfig::default());
-        }
-        joy_core::model::project::MemberCapabilities::Specific(map)
-    };
     let (attester_id, attester_kp) = attester;
-    let signed_fields =
-        joy_core::auth::attestation::signed_fields_for(member_id, &capabilities, None);
-    let attestation =
-        joy_core::auth::attestation::sign_attestation(attester_id, attester_kp, signed_fields);
-    let mut new_member = joy_core::model::project::Member::new(capabilities);
-    new_member.attestation = Some(attestation);
+    let mut new_member = joy_core::model::project::Member::new(new_member_capabilities(root));
+    joy_core::auth::vouch::sign(
+        project,
+        attester_id,
+        attester_kp,
+        member_id,
+        &mut new_member,
+        joy_core::auth::vouch::Occasion::New,
+    );
     project
         .register_member(member_id, new_member)
         .map_err(|e| JoyError::Other(e.to_string()))?;
@@ -1057,7 +1105,7 @@ pub fn configure_tool(root: &Path, tool: &str, report: Report) -> Result<bool, J
         .iter()
         .find(|(_, id, _, _)| *id == tool)
         .ok_or_else(|| JoyError::Other(format!("unknown tool: {tool}")))?;
-    let member_id = format!("ai:{tool}@joy");
+    let member_id = crate::naming::member_id_at(root, tool);
     (spec.3)(root, &member_id, report)
 }
 
@@ -1072,9 +1120,8 @@ pub fn init_tool(
     joy_core::embedded::sync_files(root, joy_core::init::PROJECT_FILES)?;
     configure_tool(root, tool, report)?;
 
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path)?;
-    let member_id = format!("ai:{tool}@joy");
+    let mut project = joy_core::store::load_project(root)?;
+    let member_id = crate::naming::member_id(&project, tool);
     if !project.has_member_key(&member_id) {
         // The attester is the human this device acts for (JOY-02AE-1A):
         // the operator behind a delegation session,
@@ -1084,13 +1131,7 @@ pub fn init_tool(
         let attester_key = joy_core::identity::acting_human_key(root)?;
         let attester = unlock_acting_keypair(&project, &attester_key, passphrase)?;
         if register_tool_member(&mut project, root, &member_id, &attester)? {
-            joy_core::store::write_yaml_preserve(&project_path, &project)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::save_project(root, &project)?;
             report(format!("{member_id} registered as member"));
         }
     }
@@ -1192,10 +1233,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
             }
         }
     }
-    let project = joy_core::store::read_project(
-        &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
-    )
-    .ok();
+    let project = joy_core::store::load_project(root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(root)
             .ok()
@@ -1204,7 +1242,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
     let mut member_plans = Vec::new();
     if let Some(ref p) = project {
         for (_, id, _) in &tools {
-            let member_id = format!("ai:{id}@joy");
+            let member_id = crate::naming::member_id(p, id);
             if let Some(plan) = plan_member_reset(p, root, &member_id, caller_key.as_deref()) {
                 if plan.drop_caller_delegation || plan.remove_member {
                     member_plans.push(plan);
@@ -1221,8 +1259,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
 
 /// Execute a consented reset plan. Returns the number of tools touched.
 pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usize, JoyError> {
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path).ok();
+    let mut project = joy_core::store::load_project(root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(root)
             .ok()
@@ -1249,7 +1286,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             if mp.drop_caller_delegation {
                 if let Some(ck) = caller_key.as_deref() {
                     if let Some(m) = p.member_by_key_mut(ck) {
-                        if m.ai_delegations.remove(&mp.member_id).is_some() {
+                        if m.drop_delegation(&mp.member_id).is_some() {
                             project_changed = true;
                         }
                     }
@@ -1264,7 +1301,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
                     let member_keys: Vec<String> = p.member_keys().cloned().collect();
                     for k in &member_keys {
                         if let Some(m) = p.member_by_key_mut(k) {
-                            m.ai_delegations.remove(&mp.member_id);
+                            m.drop_delegation(&mp.member_id);
                         }
                     }
                     report(format!("{} member removed", mp.member_id));
@@ -1274,13 +1311,7 @@ pub fn apply_reset(root: &Path, plan: &ResetPlan, report: Report) -> Result<usiz
             }
         }
         if project_changed {
-            joy_core::store::write_yaml_preserve(&project_path, p)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(root, &[&rel]);
+            joy_core::store::save_project(root, p)?;
         }
     }
     // Shrink the managed block to base-only when the project itself has no
@@ -1430,6 +1461,7 @@ mod setup_tests {
                 .unwrap()
                 .with_timezone(&chrono::Utc),
             rotated: None,
+            grant: None,
         }
     }
 
@@ -1444,7 +1476,7 @@ mod setup_tests {
             .unwrap();
         for d in delegators {
             let mut m = Member::new(MemberCapabilities::All);
-            m.ai_delegations.insert(ai.to_string(), deleg());
+            m.put_delegation(ai.to_string(), deleg());
             p.register_member(d, m).unwrap();
         }
         p

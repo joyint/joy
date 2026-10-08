@@ -12,6 +12,4 @@ output:
 workflow:
   auto-assign: true
   auto-git: add
-interaction-level:
-  default: proposing
 auto-sync: true

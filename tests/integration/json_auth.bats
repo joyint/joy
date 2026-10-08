@@ -5,24 +5,24 @@ load setup
 
 @test "joy auth --token --json emits session info" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    joy project member add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
+    AI_TOKEN=$(joy auth token add testai --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
 
     run joy auth --token "$AI_TOKEN" --json
     [ "$status" -eq 0 ]
     echo "$output" | jq -e '.version == 1' >/dev/null
-    echo "$output" | jq -e '.data.member == "ai:test@joy"' >/dev/null
+    echo "$output" | jq -e '.data.member == "testai"' >/dev/null
     echo "$output" | jq -e '.data.delegated_by == "test@example.com"' >/dev/null
     echo "$output" | jq -e '.data.session_env | startswith("joy_s_")' >/dev/null
 }
 
 @test "joy auth token add --json emits token + member + ttl" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE" >/dev/null
-    run joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" --json
+    joy project member add testai --passphrase "$TEST_PASSPHRASE" >/dev/null
+    run joy auth token add testai --passphrase "$TEST_PASSPHRASE" --json
     [ "$status" -eq 0 ]
-    echo "$output" | jq -e '.data.member == "ai:test@joy"' >/dev/null
+    echo "$output" | jq -e '.data.member == "testai"' >/dev/null
     echo "$output" | jq -e '.data.token | startswith("joy_t_")' >/dev/null
     echo "$output" | jq -e '.data.ttl_hours | . > 0' >/dev/null
 }

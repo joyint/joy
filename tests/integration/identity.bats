@@ -7,29 +7,29 @@ load setup
     setup_human_auth
     joy add task "Test item"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Test item" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "AI comment"
     # Check comment author in item YAML
-    grep -q "author: ai:test@joy" .joy/items/*.yaml
+    grep -q "author: testai" .joy/items/*.yaml
 }
 
 @test "AI session shows delegated-by in event log" {
     setup_human_auth
     joy add task "Log test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Log test" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "Delegated action"
     # Event log should contain delegated-by
-    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI session sets comment author" {
     setup_human_auth
     joy add task "Author flag test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Author flag" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "Via session"
-    grep -q "author: ai:test@joy" .joy/items/*.yaml
+    grep -q "author: testai" .joy/items/*.yaml
 }
 
 @test "unregistered member rejected" {
@@ -55,10 +55,10 @@ load setup
 
 @test "AI member blocked from manage actions" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     # AI trying to add a member (requires manage capability)
     # Guard blocks AI from manage even with capabilities: all
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project member add someone@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]
@@ -66,49 +66,49 @@ load setup
 
 @test "AI session works on add command" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy add task "Created by AI"
     [ "$status" -eq 0 ]
     # Event log should show AI as creator with delegated-by
-    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI session works on status command" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Status test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Status test" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy status "$ITEM_ID" in-progress
     [ "$status" -eq 0 ]
-    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "AI session works on assign command" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Assign test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Assign test" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy assign "$ITEM_ID"
     [ "$status" -eq 0 ]
     # AI should be assigned
-    grep -q "member: ai:test@joy" .joy/items/*.yaml
+    grep -q "member: testai" .joy/items/*.yaml
 }
 
 @test "AI session shows delegated-by in event log on comment" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Delegation test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Delegation test" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "Via session"
-    grep -q "ai:test@joy delegated-by:test@example.com" .joy/logs/*.log
+    grep -q "testai delegated-by:test@example.com" .joy/logs/*.log
 }
 
 @test "no warning on read-only commands with AI members" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Read-only test"
     # joy ls is read-only, should not warn
     run joy ls
@@ -118,7 +118,7 @@ load setup
 
 @test "no warning on joy show with AI members" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Show test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Show test" | awk '{print $1}')
     run joy show "$ITEM_ID"
@@ -132,56 +132,56 @@ load setup
 
 @test "AI session works via JOY_SESSION after eval" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Session handle test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Session handle" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy comment "$ITEM_ID" "Via JOY_SESSION"
     [ "$status" -eq 0 ]
-    grep -q "author: ai:test@joy" .joy/items/*.yaml
+    grep -q "author: testai" .joy/items/*.yaml
 }
 
 @test "AI without JOY_SESSION is not identified as AI" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "No session test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "No session" | awk '{print $1}')
     # Authenticate AI but do NOT set JOY_SESSION
-    AI_TOKEN=$(joy auth token add ai:test@joy --passphrase "$TEST_PASSPHRASE" \
+    AI_TOKEN=$(joy auth token add testai --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     joy auth --token "$AI_TOKEN" >/dev/null 2>&1
     # Without JOY_SESSION, falls back to human session (not AI)
     joy comment "$ITEM_ID" "As human"
     # Comment should be attributed to human, not AI
-    ! grep -q "author: ai:test@joy" .joy/items/*.yaml
+    ! grep -q "author: testai" .joy/items/*.yaml
 }
 
 @test "AI cannot impersonate another AI member" {
     setup_human_auth
-    joy project member add ai:claude@joy --passphrase "$TEST_PASSPHRASE"
-    joy project member add ai:vibe@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    joy project member add vibe --passphrase "$TEST_PASSPHRASE"
     joy add task "Impersonation test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Impersonation" | awk '{print $1}')
     # Authenticate Claude
-    CLAUDE_TOKEN=$(joy auth token add ai:claude@joy --passphrase "$TEST_PASSPHRASE" \
+    CLAUDE_TOKEN=$(joy auth token add claude --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$CLAUDE_TOKEN")
     CLAUDE_SESSION="$JOY_SESSION"
     # Authenticate Vibe
-    VIBE_TOKEN=$(joy auth token add ai:vibe@joy --passphrase "$TEST_PASSPHRASE" \
+    VIBE_TOKEN=$(joy auth token add vibe --passphrase "$TEST_PASSPHRASE" \
         | tr -d '"')
     eval $(joy auth --token "$VIBE_TOKEN")
     # Use Claude's session -- should be attributed to Claude, not Vibe
     JOY_SESSION="$CLAUDE_SESSION" joy comment "$ITEM_ID" "From Claude session"
-    grep -q "author: ai:claude@joy" .joy/items/*.yaml
+    grep -q "author: claude" .joy/items/*.yaml
 }
 
 @test "expired AI session rejected" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "Expiry test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Expiry test" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     # Expire the session by patching the file
     SESSION_FILE=$(find "$XDG_STATE_HOME/joy/sessions" -name "*.json" -newer .joy/project.yaml | head -1)
     if [ -n "$SESSION_FILE" ]; then
@@ -203,7 +203,7 @@ load setup
 
 @test "human session with TTY not usable from different context" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
     joy add task "TTY isolation test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "TTY isolation" | awk '{print $1}')
     # Re-authenticate human inside a PTY (session gets a real TTY)

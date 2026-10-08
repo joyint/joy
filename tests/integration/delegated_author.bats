@@ -4,7 +4,7 @@
 # under delegation, matching what the event log records.
 #
 # The doctrine (vision/trustship/Auth.md, vision/traceability/Judge.md)
-# requires `[ai:claude@joy delegated-by:human@...]` wherever a human
+# requires `[claude delegated-by:human@...]` wherever a human
 # reads attribution. Assignees stay member-only because they name a
 # concrete responsible actor, not an audit attribution.
 
@@ -14,19 +14,19 @@ load setup
     setup_human_auth
     joy add task "Item under delegation"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Item under delegation" | awk '{print $1}')
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy comment "$ITEM_ID" "AI comment"
 
-    grep -q "author: ai:test@joy delegated-by:test@example.com" \
+    grep -q "author: testai delegated-by:test@example.com" \
         .joy/items/${ITEM_ID}-*.yaml
 }
 
 @test "Item.created_by includes delegated-by when AI creates" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     joy add task "AI created"
 
-    grep -q "created_by: ai:test@joy delegated-by:test@example.com" \
+    grep -q "created_by: testai delegated-by:test@example.com" \
         .joy/items/*.yaml
 }
 
@@ -42,13 +42,13 @@ load setup
 
 @test "Assignees remain member-only under delegation" {
     setup_human_auth
-    joy project member add ai:test@joy --passphrase "$TEST_PASSPHRASE"
-    setup_ai_session ai:test@joy
+    joy project member add testai --passphrase "$TEST_PASSPHRASE"
+    setup_ai_session testai
     joy add task "Assignment test"
     ITEM_ID=$(joy ls 2>/dev/null | grep "Assignment test" | awk '{print $1}')
     joy assign "$ITEM_ID"
 
     # Assignee.member must NOT carry delegated-by.
-    grep -E "^- member: ai:test@joy\$" .joy/items/${ITEM_ID}-*.yaml
-    ! grep "member: ai:test@joy delegated-by" .joy/items/${ITEM_ID}-*.yaml
+    grep -E "^- member: testai\$" .joy/items/${ITEM_ID}-*.yaml
+    ! grep "member: testai delegated-by" .joy/items/${ITEM_ID}-*.yaml
 }
