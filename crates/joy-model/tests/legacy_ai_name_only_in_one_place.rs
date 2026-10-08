@@ -13,6 +13,10 @@
 //! type, and the recorded projects of an earlier release that every
 //! later version has to open.
 
+// Nothing of the developer's shell and session reaches this test
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::{Path, PathBuf};
 
 const MAY: &[&str] = &[
