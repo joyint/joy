@@ -1,0 +1,19 @@
+id: JOY-02C4-1A
+title: 'The GitHub joy merge job cannot push its merge: the merge step gets no token'
+type: bug
+status: review
+priority: high
+tags:
+- ci
+- merge
+capabilities:
+- implement
+- review
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-08T05:50:15.646154869Z
+updated: 2026-10-08T05:50:22.852472155Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Seen 2026-10-07/08 on joyint/platform #45 and #47 and joyint/app #61: 'joy merge ci' failed with 'publish the merge to origin: Sign in to GitHub to sync' whenever the PR branch was behind its target and the merge had to be pushed to the PR branch. joy publishes with its own git connection, which reads GH_TOKEN, not the credentials actions/checkout leaves in the git config, and the template's merge step sets none.
+
+  The merge step gets GH_TOKEN: ${{ github.token }} (the workflow already has contents: write). The merge behaviour is unchanged: the job pushes only to the PR branch, never to the target (Horst, 2026-10-08). The eight other repos carrying the job got the same block by PR.

@@ -1016,6 +1016,20 @@ mod ci_template_tests {
 
 #[cfg(test)]
 mod tests {
+    /// The GitHub job publishes the merge with joy's own git connection,
+    /// which reads GH_TOKEN, not the credentials actions/checkout leaves
+    /// in the git config: without it every merge that has to be pushed
+    /// fails with "Sign in to GitHub to sync".
+    #[test]
+    fn the_github_merge_step_gets_the_jobs_token() {
+        let step = CI_GITHUB
+            .content
+            .split("- name: Merge the target branch in")
+            .nth(1)
+            .expect("the merge step");
+        assert!(step.contains("GH_TOKEN: ${{ github.token }}"), "{step}");
+    }
+
     use super::*;
     use tempfile::tempdir;
 

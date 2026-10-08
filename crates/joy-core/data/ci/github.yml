@@ -38,7 +38,12 @@ jobs:
         run: |
           gh pr comment "${{ github.event.pull_request.number }}" --body \
             "This project keeps its items and logs in the repository. Please merge \`${{ github.event.pull_request.base.ref }}\` into your branch once and push: your local joy resolves the item files, and the merge button here turns green."
+      # joy publishes the merge with its own git connection, not with the
+      # credentials actions/checkout leaves in the git config, so it gets
+      # the job's token the way it reads one on a workstation.
       - name: Merge the target branch in
         if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: joy merge ci --target "${{ github.event.pull_request.base.ref }}"
 # joy:end
