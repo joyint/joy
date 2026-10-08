@@ -259,14 +259,12 @@ pub struct Member {
     pub members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
-    /// The model an AI member runs on, as its adapter names it. None is
-    /// the adapter's own default. Member files only (JI-019D-46).
+    /// The model an AI member runs on for everybody, as its adapter
+    /// names it, picked by a manager. None leaves the choice to each
+    /// person (`AiDelegationEntry::model`). Member files only
+    /// (JI-019D-46).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// What an AI member is for, in the project's words. Member files
-    /// only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
     /// The signature a manager put under an AI member's capabilities and
     /// level: the project maximum. Member files only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -430,12 +428,31 @@ pub struct AiDelegationEntry {
     /// None means the project maximum applies as it stands.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<DelegationGrant>,
+    /// The model this person runs the AI member on, where the project
+    /// leaves the choice to them: the member itself names none. None is
+    /// what the tool takes by itself. See `auth::grants::model_for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MemberCapabilities {
     All,
     Specific(BTreeMap<Capability, CapabilityConfig>),
+}
+
+impl MemberCapabilities {
+    /// Every capability an AI member can hold: all of them but manage,
+    /// which an AI member never holds.
+    pub fn all_for_ai() -> Self {
+        MemberCapabilities::Specific(
+            Capability::ALL
+                .iter()
+                .filter(|cap| **cap != Capability::Manage)
+                .map(|cap| (*cap, CapabilityConfig::default()))
+                .collect(),
+        )
+    }
 }
 
 /// What hung on a single capability of a member in a project from before
@@ -548,13 +565,20 @@ impl Member {
 
     /// Record this member's delegation to `ai`, in place of the one they
     /// had, under whichever spelling of the AI member's name it stood.
+    ///
+    /// The model the person picked stays with them across a new
+    /// delegation: it hangs on no key, so delegating again is no reason
+    /// to lose it.
     pub fn put_delegation(
         &mut self,
         ai: impl Into<String>,
-        entry: AiDelegationEntry,
+        mut entry: AiDelegationEntry,
     ) -> Option<AiDelegationEntry> {
         let ai = ai.into();
         let key = self.delegation_key(&ai).unwrap_or(ai);
+        if entry.model.is_none() {
+            entry.model = self.ai_delegations.get(&key).and_then(|d| d.model.clone());
+        }
         self.ai_delegations.insert(key, entry)
     }
 
@@ -594,7 +618,6 @@ impl Member {
             members_wrap: None,
             attestation: None,
             model: None,
-            description: None,
             granted: None,
             origin: None,
             file_id: None,
@@ -895,6 +918,15 @@ impl Project {
                  anonymous human onboarding is not yet supported (JOY-01C3-A7)"
             )));
         }
+        // An AI member never holds manage, whichever host adds it and
+        // however its capabilities were named (`all` included): the guard
+        // refuses it every manage action anyway, and a capability that
+        // can never be used must not stand in the project.
+        if is_ai_member(id) && member.has_capability(&Capability::Manage) {
+            return Err(JoyError::Other(
+                "an AI member never holds the manage capability: name what it may do".into(),
+            ));
+        }
         let mut member = member;
         if self.layout == MemberLayout::Files && member.file_id.is_none() {
             member.file_id = Some(crate::member_id::new_member_file_id());
@@ -908,6 +940,15 @@ impl Project {
         };
         self.members.insert(key, member);
         Ok(())
+    }
+
+    /// Put a member into the project as a file read from disk would:
+    /// no rule of [`Project::register_member`] is asked. For tests of
+    /// what joy does with a project written before a rule existed (an AI
+    /// member that holds manage, say).
+    #[cfg(test)]
+    pub(crate) fn insert_as_read(&mut self, id: &str, member: Member) {
+        self.members.insert(id.to_string(), member);
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.
@@ -1022,6 +1063,7 @@ mod tests {
                 created: chrono::Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         assert!(!member.delegation_usable("ai:claude@joy"));
@@ -1153,6 +1195,7 @@ mod tests {
                     .with_timezone(&chrono::Utc),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
@@ -1189,6 +1232,7 @@ mod tests {
                 created,
                 rotated: Some(rotated),
                 grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();

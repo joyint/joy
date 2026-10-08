@@ -12,7 +12,7 @@ capabilities:
 effort: 5
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:45.087142966Z
-updated: 2026-10-08T00:18:51.523539412Z
+updated: 2026-10-08T08:43:54.394952038Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: |-
   Delivery 2 of JI-019E-40, decided in JI-019D-46 section 3.
@@ -28,3 +28,6 @@ comments:
 - author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
   date: 2026-10-08T00:18:51.523537528Z
   text: 'Result: the level reaches the tool. Setup writes the tool''s native mode from the project''s side, and is_tool_stale now compares it (it never did, so a changed level did not reach the tool settings). A chat turn runs at the chosen level held to what the member may do for the sender (grants::turn_level_at, one function for desktop and platform); a refused turn says why as ''@x did not run: ...''. A job carries a level (joy add job --level), the approval fixes it: the one asked for, at most what the project allows the assignee, else that maximum. Redeeming a token now tells the AI its level and capabilities, and the AI tutorial points there instead of at the removed config key. Deviations from the item text, to be decided: (1) a job''s level is checked at the approval, not already at joy add job; (2) joy add job does not filter assignees by a capability, it only requires an AI assignee to be a member; (3) without --level the released level is the project''s maximum for the assignee, not the approver''s own grant. Tests: jobs_level.bats, interaction_level.bats, session_mode_per_turn.rs, guard.rs.'
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-08T08:43:54.394951587Z
+  text: 'Revised 2026-10-08 on the operator''s word (branch feat/job-start-and-model-choice). A job goes only to a member that holds the jobs capability for the person, at a level it may run at for them: grants::job_assignee and job_terms decide at joy assign, at new -> open and, in the guard, when the assignee starts the job. The exemption this item had put into the guard (the assignee starts its own job without the jobs capability) is removed; it contradicted the rule. Accepting a job (review -> closed) is denied to AI members by default. A job round sets its level on the agent''s session over ACP and answers its permission requests at that level (acp_lane::single_round, answer_job_permission); before, the level of a job reached the tool only as an env variable and every request with an allow option was allowed. Model: grants::model_for, the project''s or else the person''s own (AiDelegationEntry.model, set_personal_model, joy project member edit <ai> --model). Tests: grants unit tests, guard test, acp_lane test, jobs_level.bats (9), interaction_level.bats (model cases). Open for the operator: jobs is not among a new AI member''s default capabilities.'

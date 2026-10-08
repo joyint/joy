@@ -101,6 +101,19 @@ pub fn run(args: AssignArgs) -> Result<()> {
         None => Vec::new(),
     };
 
+    // A job is taken by its assignee: one that could not take it for
+    // this person is not given it (the same rule decides again when the
+    // job is set to open).
+    if matches!(item.item_type, joy_core::model::item::ItemType::Job) {
+        let mut probe = item.clone();
+        probe.assignees = vec![Assignee {
+            member: member.clone().into(),
+            capabilities: Vec::new(),
+        }];
+        joy_core::auth::grants::job_terms(&project, &probe, ctx.identity.person().id())
+            .map_err(|why| anyhow::anyhow!(why))?;
+    }
+
     // Update existing assignment or add new one
     let before = item.clone();
     if let Some(existing) = item

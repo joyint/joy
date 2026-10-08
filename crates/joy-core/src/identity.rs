@@ -97,6 +97,12 @@ impl Identity {
 
 impl Identity {
     /// Format for event log entries.
+    /// The person behind this identity: the member itself, or for an AI
+    /// member the person it acts for.
+    pub fn person(&self) -> &MemberRef {
+        self.delegated_by.as_ref().unwrap_or(&self.member)
+    }
+
     /// Returns `"member"` or `"member delegated-by:human"`.
     ///
     /// This string is written to the on-disk event log and item `created_by` /

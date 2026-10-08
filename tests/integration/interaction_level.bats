@@ -72,8 +72,87 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     grep -q "^level: confirmed" "$file"
     grep -q "^- review" "$file"
     ! grep -q "^- implement" "$file"
+    # the model the project sets holds for everybody
     run joy project member show reviewer
-    [[ "$output" == *"claude · opus"* ]]
+    [[ "$output" == *"claude"* ]]
+    [[ "$output" =~ model[[:space:]]+opus[[:space:]]+opus ]]
+}
+
+# The model (JI-019D-46): the project's for everybody, set by a manager,
+# or else each person's own, or else what the tool takes by itself.
+@test "while the project names no model each person picks their own, without a passphrase" {
+    setup_human_auth
+    joy project member add claude --capabilities implement create --passphrase "$TEST_PASSPHRASE"
+    joy auth --passphrase "$TEST_PASSPHRASE" token add claude >/dev/null
+    run joy project member show claude
+    [[ "$output" == *"user choice"*"tool default"* ]]
+
+    run joy project member edit claude --model sonnet
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"claude runs on sonnet for you"* ]]
+    run joy project member show claude
+    [[ "$output" =~ model[[:space:]]+user\ choice[[:space:]]+sonnet[[:space:]]+sonnet ]]
+    # it is in my own entry, not on the member
+    ! grep -q "^model:" "$(member_file claude)"
+
+    # handed back to the tool
+    run joy project member edit claude --model ""
+    [ "$status" -eq 0 ]
+    run joy project member show claude
+    [[ "$output" == *"user choice"*"tool default"*"tool default"* ]]
+}
+
+@test "a model the project sets holds for everybody, and my own pick is refused with it named" {
+    setup_human_auth
+    joy project member add claude --capabilities implement create --passphrase "$TEST_PASSPHRASE"
+    joy auth --passphrase "$TEST_PASSPHRASE" token add claude >/dev/null
+    joy project member edit claude --model sonnet
+    joy project member edit claude --project --model opus --passphrase "$TEST_PASSPHRASE"
+    grep -q "^model: opus" "$(member_file claude)"
+    run joy project member show claude
+    [[ "$output" =~ model[[:space:]]+opus[[:space:]]+opus ]]
+
+    run joy project member edit claude --model haiku
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"the project sets the model of claude to opus for everybody"* ]]
+
+    # the project leaves the choice again: my pick is back
+    joy project member edit claude --project --model "" --passphrase "$TEST_PASSPHRASE"
+    run joy project member show claude
+    [[ "$output" =~ model[[:space:]]+user\ choice[[:space:]]+sonnet[[:space:]]+sonnet ]]
+}
+
+@test "a model of my own needs my delegation to the AI member" {
+    setup_human_auth
+    joy project member add claude --capabilities implement create --passphrase "$TEST_PASSPHRASE"
+    run joy project member edit claude --model sonnet
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"delegate to claude first"* ]]
+}
+
+@test "an AI member never holds manage: not when it is added, not as all" {
+    setup_human_auth
+    run joy project member add claude --capabilities implement manage --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"an AI member never holds the manage capability"* ]]
+    run joy project member add claude --capabilities all --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"an AI member never holds the manage capability"* ]]
+    run joy project member
+    [[ "$output" != *"claude"* ]]
+}
+
+@test "the member table lists jobs, manage and delete last, and a new AI member holds none of them" {
+    setup_human_auth
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    run joy project member
+    [[ "$output" == *"doc crt asg job mng del"* ]]
+    local file
+    file="$(member_file claude)"
+    grep -q "^- assign" "$file"
+    ! grep -q "^- jobs" "$file"
+    ! grep -q "^- manage" "$file"
+    ! grep -q "^- delete" "$file"
 }
 
 @test "member add still reads capabilities with commas" {

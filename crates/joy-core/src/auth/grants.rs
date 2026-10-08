@@ -253,6 +253,52 @@ pub fn clear_personal(project: &mut Project, ai_key: &str, delegator_key: &str) 
     }
 }
 
+/// Set the model `ai` runs on for the person `person_key`, or with
+/// `None` leave it to the tool. It is theirs to pick only while the
+/// project sets none for everybody; a model the project sets is said in
+/// the refusal. Nothing is signed: a model is no permission.
+pub fn set_personal_model(
+    project: &mut Project,
+    ai_key: &str,
+    person_key: &str,
+    model: Option<&str>,
+) -> Result<(), JoyError> {
+    let name = ai_member_name(ai_key).to_string();
+    if !applies(project) {
+        return Err(JoyError::Other(format!(
+            "a model of your own for {name} needs the project's member files: \
+             sign in once and the project is brought over"
+        )));
+    }
+    let Some(ai) = project.member_by_key(ai_key) else {
+        return Err(JoyError::Other(format!("member not found: {name}")));
+    };
+    if let Some(set) = ai.model.as_deref().filter(|m| !m.trim().is_empty()) {
+        return Err(JoyError::Other(format!(
+            "the project sets the model of {name} to {set} for everybody"
+        )));
+    }
+    let person_key = match project.member_by_key(person_key) {
+        Some(_) => person_key.to_string(),
+        None => project
+            .member_key_for_email(person_key)
+            .ok_or_else(|| JoyError::Other(format!("{person_key} is not a project member")))?,
+    };
+    let entry = project
+        .member_by_key_mut(&person_key)
+        .and_then(|m| m.delegation_to_mut(ai_key))
+        .ok_or_else(|| {
+            JoyError::Other(format!(
+                "delegate to {name} first: joy auth token add {name}"
+            ))
+        })?;
+    entry.model = model
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    Ok(())
+}
+
 /// Change what the project allows the AI member, before a person with
 /// the manage capability signs it ([`vouch::sign`] with
 /// [`vouch::Occasion::Changed`], or its payload and apply). What is
@@ -330,6 +376,15 @@ pub struct Shown {
     pub effective_level: String,
     /// Why it may do nothing, when that is so.
     pub problem: String,
+    /// The model the project sets for everybody; empty leaves the choice
+    /// to each person.
+    pub model: String,
+    /// The model the viewer picked for themselves; empty is what the
+    /// tool takes by itself. It counts only while the project sets none.
+    pub my_model: String,
+    /// The model the AI member runs on for the viewer; empty is what the
+    /// tool takes by itself.
+    pub effective_model: String,
 }
 
 /// [`Shown`] of the AI member `ai_key` for the person `viewer_key`, on
@@ -342,7 +397,23 @@ pub fn shown(project: &Project, ai_key: &str, viewer_key: Option<&str>) -> Shown
     let names = |side: &Effective| -> Vec<String> {
         side.capabilities.iter().map(|c| c.to_string()).collect()
     };
-    let mut shown = Shown::default();
+    let mut shown = Shown {
+        model: project
+            .member_by_key(ai_key)
+            .and_then(|m| m.model.clone())
+            .unwrap_or_default(),
+        my_model: viewer_key
+            .and_then(|key| person_in(project, key))
+            .and_then(|m| m.delegation_to(ai_key))
+            .and_then(|d| d.model.clone())
+            .unwrap_or_default(),
+        ..Shown::default()
+    };
+    shown.effective_model = if shown.model.is_empty() {
+        shown.my_model.clone()
+    } else {
+        shown.model.clone()
+    };
     if !applies(project) {
         if let Some(member) = project.member_by_key(ai_key) {
             shown.capabilities = vouch::capability_list(&member.capabilities)
@@ -493,35 +564,275 @@ pub fn applies(project: &Project) -> bool {
     project.member_layout() == MemberLayout::Files
 }
 
-/// The level a job is released with, said when a person approves it.
+/// A person as the project knows them: by their key, or by an address
+/// it has for them (an anonymous project keys people by an id).
+fn person_in<'a>(project: &'a Project, key: &str) -> Option<&'a crate::model::project::Member> {
+    project.member_by_key(key).or_else(|| {
+        let key = project.member_key_for_email(key)?;
+        project.member_by_key(&key)
+    })
+}
+
+/// The model `ai` runs on for `person_key`: the one the project sets for
+/// everybody, else the one the person picked for themselves, else None,
+/// which is what the tool takes by itself. One rule for a chat turn, a
+/// job round and the card, on every host.
+pub fn model_for(project: &Project, ai_key: &str, person_key: &str) -> Option<String> {
+    let filled = |m: &Option<String>| m.clone().filter(|m| !m.trim().is_empty());
+    project
+        .member_by_key(ai_key)
+        .and_then(|m| filled(&m.model))
+        .or_else(|| {
+            person_in(project, person_key)
+                .and_then(|m| m.delegation_to(ai_key))
+                .and_then(|d| filled(&d.model))
+        })
+}
+
+/// [`model_for`] for a host that holds the project's root.
+pub fn model_for_at(root: &std::path::Path, ai_key: &str, person_key: &str) -> Option<String> {
+    let project = crate::store::load_project(root).ok()?;
+    model_for(&project, ai_key, person_key)
+}
+
+/// Whether `member` can be given a job by `person_key`, and the level it
+/// may run at for them at most.
 ///
-/// A job with an AI assignee runs at the level it asks for, and at most
-/// at the assignee's project maximum: a job that asks for more is not
-/// approved, a job that says nothing gets the maximum written in. From
-/// here on the level is the job's own, and a maximum lowered later does
-/// not reach into a job that was already approved (JI-0166-D8). A job
-/// with no AI assignee, or in a project from before the member files,
-/// keeps what it has.
-pub fn job_level_at_approval(
+/// A job is taken by its assignee, and taking it is a job status change:
+/// that needs the jobs capability (`guard`). A person holds it or not.
+/// An AI member holds it for `person_key` when the project allows it and
+/// the person did not take it away for themselves; it then runs at most
+/// at the level it may have for them. In a project from before the
+/// member files an AI member is not judged here, as it was not before.
+pub fn job_assignee(
+    project: &Project,
+    member: &str,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    if !crate::model::project::is_ai_member(member) {
+        let holds = project
+            .member_by_key(member)
+            .is_some_and(|m| vouch::capability_list(&m.capabilities).contains(&Capability::Jobs));
+        return if holds {
+            Ok(None)
+        } else {
+            Err(format!("{member} does not hold the jobs capability"))
+        };
+    }
+    if !applies(project) {
+        return Ok(None);
+    }
+    let may = effective_now(project, member, person_key)?;
+    if !may.allows(&Capability::Jobs) {
+        return Err(format!(
+            "{} does not hold the jobs capability for you",
+            ai_member_name(member)
+        ));
+    }
+    Ok(Some(may.level))
+}
+
+/// The members `person_key` can give a job to, each with the level it
+/// may run at for them at most (None for a person, who has no level):
+/// what a job form offers. The same rule decides again when the job is
+/// opened ([`job_terms`]), because a member can be changed in between.
+pub fn job_assignees(
+    project: &Project,
+    person_key: &str,
+) -> Vec<(String, Option<InteractionLevel>)> {
+    project
+        .members()
+        .filter_map(|(key, _)| {
+            job_assignee(project, key, person_key)
+                .ok()
+                .map(|level| (key.clone(), level))
+        })
+        .collect()
+}
+
+/// The levels a job can run at: proposing or autonomous, nothing in
+/// between (operator 2026-10-08). The middle level asks a person before
+/// a command runs, and a job has nobody there to ask.
+pub const JOB_LEVELS: [InteractionLevel; 2] =
+    [InteractionLevel::Proposing, InteractionLevel::Autonomous];
+
+/// The level every job has until somebody says otherwise.
+pub const JOB_DEFAULT_LEVEL: InteractionLevel = InteractionLevel::Proposing;
+
+/// A level as a job may name it, or the sentence that says which it may.
+pub fn job_level(level: InteractionLevel) -> Result<InteractionLevel, String> {
+    if JOB_LEVELS.contains(&level) {
+        Ok(level)
+    } else {
+        Err(format!(
+            "a job runs at proposing or at autonomous, not at {level}"
+        ))
+    }
+}
+
+/// The level a job runs at, checked for `person_key`: when they write
+/// the job, when they change it, and when they approve it (new -> open),
+/// after which its assignee takes it.
+///
+/// A job runs at proposing unless it says autonomous, and autonomous
+/// only where its AI assignee may run at autonomous for the person. An
+/// assignee without the jobs capability is refused. From the approval on
+/// the level is the job's own, and a member changed later does not reach
+/// into a job that is already open (JI-0166-D8). A job with no AI
+/// assignee, or in a project from before the member files, is not
+/// judged on its assignee; it still names one of the two levels.
+pub fn job_terms(
     project: &Project,
     job: &crate::model::item::Item,
+    person_key: &str,
 ) -> Result<Option<InteractionLevel>, String> {
+    let wanted = job_level(job.interaction_level.unwrap_or(JOB_DEFAULT_LEVEL))?;
     let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
-        return Ok(job.interaction_level);
+        return Ok(Some(wanted));
     };
-    if !applies(project) || !crate::model::project::is_ai_member(assignee) {
-        return Ok(job.interaction_level);
+    let Some(most) = job_assignee(project, assignee, person_key)? else {
+        return Ok(Some(wanted));
+    };
+    if wanted == InteractionLevel::Autonomous && most != InteractionLevel::Autonomous {
+        return Err(format!(
+            "this job asks for autonomous, and {} may run at most at {most} for you",
+            ai_member_name(assignee)
+        ));
     }
+    Ok(Some(wanted))
+}
+
+/// A job's level, changed by `person_key`: allowed as long as the job is
+/// not finished, also after its approval and between two rounds. That is
+/// how a person lets a job that proposed go on to do the work: they
+/// switch it to autonomous once the proposal is settled (operator
+/// 2026-10-08). The same rule as when the job was written decides
+/// ([`job_terms`]); what does not reach into an open job is a change of
+/// the MEMBER, not a change the person makes to the job.
+pub fn job_level_change(
+    project: &Project,
+    job: &crate::model::item::Item,
+    level: InteractionLevel,
+    person_key: &str,
+) -> Result<InteractionLevel, String> {
+    use crate::model::item::Status;
+    if matches!(job.status, Status::Closed | Status::Deferred) {
+        return Err(format!(
+            "job {} is {}; its level is no longer changed",
+            job.id, job.status
+        ));
+    }
+    let mut wanted = job.clone();
+    wanted.interaction_level = Some(level);
+    job_terms(project, &wanted, person_key).map(|granted| granted.unwrap_or(level))
+}
+
+/// A job that is already open, when it is started: its level is its own
+/// since the approval and stays, also one from before jobs had two
+/// levels. What is asked again is whether the assignee can still take
+/// it for the person: the jobs capability, and a level it may run at.
+fn job_start_terms(
+    project: &Project,
+    job: &crate::model::item::Item,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    let level = job.interaction_level.unwrap_or(JOB_DEFAULT_LEVEL);
+    let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
+        return Ok(Some(level));
+    };
+    let Some(most) = job_assignee(project, assignee, person_key)? else {
+        return Ok(Some(level));
+    };
+    if more_oversight(level, most) != level {
+        return Err(format!(
+            "this job runs at {level}, and {} may run at most at {most} for you",
+            ai_member_name(assignee)
+        ));
+    }
+    Ok(Some(level))
+}
+
+/// The level a job has after a status step by `person_key`, or why the
+/// step is refused: THE rule every host asks when a job changes status.
+///
+/// Two steps put a job to work, and both ask [`job_terms`]: approving it
+/// (`new -> open`), after which its AI assignee may take it, and
+/// starting it (`open -> in-progress`), by the assignee or by a person
+/// who orders exactly this job. Every other step leaves the level alone.
+pub fn job_step(
+    project: &Project,
+    job: &crate::model::item::Item,
+    from: &crate::model::item::Status,
+    to: &crate::model::item::Status,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    use crate::model::item::Status;
+    match (from, to) {
+        (Status::New, Status::Open) => job_terms(project, job, person_key),
+        (Status::Open, Status::InProgress) => job_start_terms(project, job, person_key),
+        _ => Ok(job.interaction_level),
+    }
+}
+
+/// Where a job stands against the times it was given: before its start,
+/// inside them, or past its end. An AI member takes an open job only
+/// inside them; a job without times is always inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobWindowState {
+    NotYet,
+    Open,
+    Over,
+}
+
+pub fn job_window(job: &crate::model::item::Item, now: chrono::DateTime<Utc>) -> JobWindowState {
+    let Some(window) = job.job.as_ref().and_then(|spec| spec.window.as_ref()) else {
+        return JobWindowState::Open;
+    };
+    if window.deadline.is_some_and(|end| now > end) {
+        JobWindowState::Over
+    } else if window.not_before.is_some_and(|start| now < start) {
+        JobWindowState::NotYet
+    } else {
+        JobWindowState::Open
+    }
+}
+
+/// The open jobs an AI member may take now, in the order it takes them:
+/// by priority, then the oldest first. Only jobs inside their times
+/// ([`job_window`]) and never run before; `jobs` is every job of the
+/// project. One at a time is the caller's to keep.
+pub fn jobs_to_take<'a>(
+    jobs: &'a [crate::model::item::Item],
+    assignee: &str,
+    now: chrono::DateTime<Utc>,
+) -> Vec<&'a crate::model::item::Item> {
+    use crate::model::item::{Priority, Status};
+    let rank = |p: &Priority| match p {
+        Priority::Extreme => 0,
+        Priority::Critical => 1,
+        Priority::High => 2,
+        Priority::Medium => 3,
+        Priority::Low => 4,
+    };
     let name = ai_member_name(assignee);
-    let max = maximum(project, assignee)?;
-    match job.interaction_level {
-        None => Ok(Some(max.level)),
-        Some(wanted) if more_oversight(wanted, max.level) == wanted => Ok(Some(wanted)),
-        Some(wanted) => Err(format!(
-            "this job asks for {wanted}, and the project allows {name} at most {}",
-            max.level
-        )),
-    }
+    let mut mine: Vec<&crate::model::item::Item> = jobs
+        .iter()
+        .filter(|job| job.status == Status::Open)
+        .filter(|job| {
+            job.assignees
+                .first()
+                .is_some_and(|a| ai_member_name(a.member.id()) == name)
+        })
+        .filter(|job| job.job.as_ref().is_none_or(|spec| spec.activity.is_empty()))
+        .filter(|job| job_window(job, now) == JobWindowState::Open)
+        .collect();
+    mine.sort_by(|a, b| {
+        rank(&a.priority)
+            .cmp(&rank(&b.priority))
+            .then(a.created.cmp(&b.created))
+            .then(a.id.cmp(&b.id))
+    });
+    mine
 }
 
 /// [`turn_level`] for a host that holds the project's root: THE level a
@@ -581,6 +892,7 @@ mod tests {
                 created: Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         member
@@ -808,5 +1120,273 @@ mod tests {
             .set_capabilities(caps(&[Plan, Implement, Review, Create]));
         let why = effective(&project, "claude", DEV, None).unwrap_err();
         assert!(why.contains("changed without a signature"), "{why}");
+    }
+    /// The project of [`project`], with claude allowed `list` at `level`.
+    fn project_where_claude_may(
+        list: &[Capability],
+        level: InteractionLevel,
+    ) -> (Project, IdentityKeypair, IdentityKeypair) {
+        let (mut project, founder_kp, dev_kp) = project();
+        let mut claude = project.member_by_key("claude").cloned().unwrap();
+        change_maximum(&mut claude, Some(list), Some(level)).unwrap();
+        vouch::sign(
+            &project,
+            FOUNDER,
+            &founder_kp,
+            "claude",
+            &mut claude,
+            Occasion::Changed,
+        );
+        *project.member_by_key_mut("claude").unwrap() = claude;
+        (project, founder_kp, dev_kp)
+    }
+
+    fn job_for(assignee: &str, level: Option<InteractionLevel>) -> crate::model::item::Item {
+        let mut job = crate::templates::render_item(
+            &crate::model::item::ItemType::Job,
+            "SH-JOB-0001-AA",
+            "Do it",
+        )
+        .unwrap();
+        job.assignees.push(crate::model::item::Assignee {
+            member: assignee.into(),
+            capabilities: Vec::new(),
+        });
+        job.interaction_level = level;
+        job
+    }
+
+    /// A job is offered to, and taken by, a member that holds the jobs
+    /// capability for the person: the list a form shows and the rule
+    /// that decides when the job is opened are the same function.
+    #[test]
+    fn a_job_goes_only_to_a_member_that_holds_jobs_for_the_person() {
+        use Capability::Jobs;
+        // claude as the project stands: no jobs capability
+        let (project, _, _) = project();
+        let offered: Vec<String> = job_assignees(&project, DEV)
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(offered, [FOUNDER], "the developer holds no jobs either");
+        let why = job_terms(&project, &job_for("claude", None), DEV).unwrap_err();
+        assert!(
+            why.contains("does not hold the jobs capability for you"),
+            "{why}"
+        );
+        let why = job_terms(&project, &job_for(DEV, None), FOUNDER).unwrap_err();
+        assert!(why.contains("does not hold the jobs capability"), "{why}");
+
+        // the project allows it jobs at confirmed: it is offered, and a
+        // job runs at proposing, which is what a job says when it says
+        // nothing
+        let (project, _, _) = project_where_claude_may(&[Implement, Jobs], Confirmed);
+        assert!(job_assignees(&project, DEV).contains(&("claude".to_string(), Some(Confirmed))));
+        assert_eq!(
+            job_terms(&project, &job_for("claude", None), DEV).unwrap(),
+            Some(Proposing)
+        );
+        assert_eq!(
+            job_terms(&project, &job_for("claude", Some(Proposing)), DEV).unwrap(),
+            Some(Proposing)
+        );
+        // autonomous only where the member may run at autonomous
+        let why = job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).unwrap_err();
+        assert!(
+            why.contains("may run at most at confirmed for you"),
+            "{why}"
+        );
+        // a job has two levels, nothing in between
+        let why = job_terms(&project, &job_for("claude", Some(Confirmed)), DEV).unwrap_err();
+        assert!(why.contains("proposing or at autonomous"), "{why}");
+        assert!(job_level(Confirmed).is_err());
+
+        let (mut project, _, dev_kp) = project_where_claude_may(&[Implement, Jobs], Autonomous);
+        assert_eq!(
+            job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).unwrap(),
+            Some(Autonomous)
+        );
+        // changed after the job was written: the person takes jobs away
+        // for themselves, and approving the job is refused for them only
+        grant(&mut project, &dev_kp, DEV, &[Implement], Autonomous);
+        assert!(job_terms(&project, &job_for("claude", None), DEV).is_err());
+        assert!(job_terms(&project, &job_for("claude", None), FOUNDER).is_ok());
+        assert!(!job_assignees(&project, DEV)
+            .iter()
+            .any(|(key, _)| key == "claude"));
+        // a person's own level holds the job too: no autonomous for them
+        grant(&mut project, &dev_kp, DEV, &[Implement, Jobs], Proposing);
+        assert!(job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).is_err());
+        assert!(job_terms(&project, &job_for("claude", Some(Autonomous)), FOUNDER).is_ok());
+    }
+
+    /// The model: the project's for everybody, else each person's own,
+    /// else what the tool takes by itself.
+    #[test]
+    fn the_model_is_the_projects_or_else_each_persons_own() {
+        let (mut project, _, _) = project();
+        assert_eq!(model_for(&project, "claude", DEV), None);
+
+        // the project leaves the choice: the developer picks, for them only
+        set_personal_model(&mut project, "claude", DEV, Some("sonnet")).unwrap();
+        assert_eq!(
+            model_for(&project, "claude", DEV).as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(
+            model_for(&project, "ai:claude@joy", DEV).as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(model_for(&project, "claude", FOUNDER), None);
+        let card = shown(&project, "claude", Some(DEV));
+        assert_eq!(
+            (
+                card.model.as_str(),
+                card.my_model.as_str(),
+                card.effective_model.as_str()
+            ),
+            ("", "sonnet", "sonnet")
+        );
+
+        // a new delegation keeps the pick
+        let fresh = AiDelegationEntry {
+            delegation_verifier: "22".repeat(32),
+            delegation_salt: Some("33".repeat(32)),
+            created: Utc::now(),
+            rotated: None,
+            grant: None,
+            model: None,
+        };
+        project
+            .member_by_key_mut(DEV)
+            .unwrap()
+            .put_delegation("claude", fresh);
+        assert_eq!(
+            model_for(&project, "claude", DEV).as_deref(),
+            Some("sonnet")
+        );
+
+        // the project sets one: it holds for everybody, and a person's
+        // own pick is refused with the model named
+        project.member_by_key_mut("claude").unwrap().model = Some("opus".into());
+        assert_eq!(model_for(&project, "claude", DEV).as_deref(), Some("opus"));
+        assert_eq!(
+            model_for(&project, "claude", FOUNDER).as_deref(),
+            Some("opus")
+        );
+        let why = set_personal_model(&mut project, "claude", DEV, Some("haiku"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains("sets the model of claude to opus for everybody"),
+            "{why}"
+        );
+        assert_eq!(shown(&project, "claude", Some(DEV)).effective_model, "opus");
+
+        // handed back to the tool
+        project.member_by_key_mut("claude").unwrap().model = None;
+        set_personal_model(&mut project, "claude", DEV, None).unwrap();
+        assert_eq!(model_for(&project, "claude", DEV), None);
+    }
+
+    /// The open jobs an AI member takes, in its order: the most urgent
+    /// first, then the oldest, only inside the times a job was given,
+    /// and never one that already ran.
+    #[test]
+    fn an_ai_member_takes_open_jobs_by_priority_and_inside_their_times() {
+        use crate::model::item::{JobWindow, Priority, Status};
+        let now = Utc::now();
+        let job = |id: &str, priority: Priority, age_minutes: i64| {
+            let mut job = job_for("claude", None);
+            job.id = id.into();
+            job.status = Status::Open;
+            job.priority = priority;
+            job.created = now - chrono::Duration::minutes(age_minutes);
+            job
+        };
+        let window = |job: &mut crate::model::item::Item, start: i64, end: i64| {
+            job.job = Some(crate::model::item::JobSpec {
+                scope: vec!["SH-0001-AA".into()],
+                budget: None,
+                window: Some(JobWindow {
+                    not_before: Some(now + chrono::Duration::minutes(start)),
+                    deadline: Some(now + chrono::Duration::minutes(end)),
+                }),
+                feedback: None,
+                activity: Vec::new(),
+                base_branch: None,
+                result_branch: None,
+            });
+        };
+        let mut later = job("later", Priority::Extreme, 50);
+        window(&mut later, 30, 90);
+        let mut over = job("over", Priority::Extreme, 50);
+        window(&mut over, -90, -30);
+        let mut inside = job("inside", Priority::Low, 5);
+        window(&mut inside, -10, 10);
+        let mut not_open = job("new", Priority::Extreme, 50);
+        not_open.status = Status::New;
+        let mut others = job("vibes", Priority::Extreme, 50);
+        others.assignees[0].member = "vibe".into();
+        let jobs = vec![
+            job("medium-old", Priority::Medium, 40),
+            later,
+            job("high", Priority::High, 1),
+            over,
+            job("medium-new", Priority::Medium, 10),
+            inside,
+            not_open,
+            others,
+        ];
+        assert_eq!(job_window(&jobs[1], now), JobWindowState::NotYet);
+        assert_eq!(job_window(&jobs[3], now), JobWindowState::Over);
+        assert_eq!(job_window(&jobs[0], now), JobWindowState::Open);
+        let order: Vec<&str> = jobs_to_take(&jobs, "ai:claude@joy", now)
+            .into_iter()
+            .map(|job| job.id.as_str())
+            .collect();
+        assert_eq!(order, ["high", "medium-old", "medium-new", "inside"]);
+    }
+
+    /// Approving a job gives it one of the two job levels; starting an
+    /// open job leaves its level alone and asks only whether the assignee
+    /// can still take it; other steps judge nothing.
+    #[test]
+    fn approving_a_job_sets_its_level_and_starting_it_keeps_it() {
+        use crate::model::item::Status;
+        use Capability::Jobs;
+        let (project, _, _) = project_where_claude_may(&[Implement, Jobs], Confirmed);
+        let (approve, start) = (
+            (Status::New, Status::Open),
+            (Status::Open, Status::InProgress),
+        );
+        let step = |job: &crate::model::item::Item, (from, to): &(Status, Status)| {
+            job_step(&project, job, from, to, DEV)
+        };
+        assert_eq!(
+            step(&job_for("claude", None), &approve).unwrap(),
+            Some(Proposing)
+        );
+        assert!(step(&job_for("claude", Some(Autonomous)), &approve).is_err());
+        assert!(step(&job_for("claude", Some(Confirmed)), &approve).is_err());
+        // an open job from before jobs had two levels keeps its level
+        assert_eq!(
+            step(&job_for("claude", Some(Confirmed)), &start).unwrap(),
+            Some(Confirmed)
+        );
+        // ...unless the member may no longer run at it
+        assert!(step(&job_for("claude", Some(Autonomous)), &start).is_err());
+        // stopping judges nothing
+        assert_eq!(
+            job_step(
+                &project,
+                &job_for("claude", Some(Autonomous)),
+                &Status::InProgress,
+                &Status::Open,
+                DEV
+            )
+            .unwrap(),
+            Some(Autonomous)
+        );
     }
 }

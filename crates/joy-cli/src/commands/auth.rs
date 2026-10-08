@@ -1231,6 +1231,7 @@ pub(crate) fn create_delegation_token(
                 created: chrono::Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
     }

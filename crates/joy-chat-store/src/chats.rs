@@ -703,9 +703,12 @@ mod tests {
             ("a@x", [8u8; 32]),
             ("x@y.z", [9u8; 32]),
         ] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
-            );
+            let capabilities = if joy_core::model::project::is_ai_member(member) {
+                joy_core::model::project::MemberCapabilities::all_for_ai()
+            } else {
+                joy_core::model::project::MemberCapabilities::All
+            };
+            let mut m = joy_core::model::project::Member::new(capabilities);
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&other_seed)
                     .public_key()
@@ -823,7 +826,11 @@ mod tests {
             ("ai:claude@joy", 7u8),
         ] {
             let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
@@ -877,7 +884,11 @@ mod tests {
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for (member, seed_byte) in [("horst@example.com", 5u8), ("geordi@example.org", 6u8)] {
             let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
@@ -1123,7 +1134,11 @@ mod channel_tests {
             ("x@y.z", [9u8; 32]),
         ] {
             let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&other_seed)

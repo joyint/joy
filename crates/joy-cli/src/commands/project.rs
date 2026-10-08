@@ -195,13 +195,9 @@ struct MemberAddArgs {
     #[arg(long)]
     adapter: Option<String>,
 
-    /// The model an AI member runs on. Default: the tool's own.
+    /// The model an AI member runs on for everybody. Default: each person picks their own.
     #[arg(long)]
     model: Option<String>,
-
-    /// What an AI member is for.
-    #[arg(long)]
-    description: Option<String>,
 
     /// Issue a delegation token for an AI member right away.
     #[arg(long = "with-token")]
@@ -241,13 +237,9 @@ struct MemberEditArgs {
     #[arg(long)]
     project: bool,
 
-    /// The model an AI member runs on (with --project).
+    /// The model an AI member runs on: with --project for everybody, without for yourself.
     #[arg(long)]
     model: Option<String>,
-
-    /// What an AI member is for (with --project).
-    #[arg(long)]
-    description: Option<String>,
 }
 
 pub fn run(args: ProjectArgs) -> Result<()> {
@@ -872,7 +864,6 @@ pub(crate) fn add_ai_member(
         level: None,
         adapter,
         model,
-        description: None,
         with_token: true,
     };
     run_member(
@@ -972,16 +963,8 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
 
             match &may {
                 Some(view) => {
-                    let runs_on = [member.adapter.as_deref(), member.model.as_deref()]
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>()
-                        .join(" · ");
-                    if !runs_on.is_empty() {
-                        println!("  {}", color::inactive(&runs_on));
-                    }
-                    if let Some(description) = &member.description {
-                        println!("  {description}");
+                    if let Some(adapter) = member.adapter.as_deref() {
+                        println!("  {}", color::inactive(adapter));
                     }
                     let project_side = view.project.as_ref().ok();
                     let mine = view.mine.as_ref();
@@ -1014,6 +997,28 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                         level(project_side),
                         level(mine),
                         level(effective)
+                    );
+                    // The model: the project's for everybody, or each
+                    // person's own while the project names none, or what
+                    // the tool takes by itself.
+                    let shown = joy_core::auth::grants::shown(project, &key, viewer.as_deref());
+                    let or = |model: &str, unset: &str| -> String {
+                        if model.is_empty() {
+                            unset.to_string()
+                        } else {
+                            model.to_string()
+                        }
+                    };
+                    println!(
+                        "  {:<12} {:<12} {:<12} {}",
+                        "model",
+                        or(&shown.model, "user choice"),
+                        if shown.model.is_empty() {
+                            or(&shown.my_model, "tool default")
+                        } else {
+                            String::new()
+                        },
+                        or(&shown.effective_model, "tool default")
                     );
                     for why in [view.project.as_ref().err(), view.effective.as_ref().err()]
                         .into_iter()
@@ -1056,13 +1061,8 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 );
             }
             let is_ai = joy_core::model::project::is_ai_member(&a.id);
-            if !is_ai
-                && (a.level.is_some()
-                    || a.adapter.is_some()
-                    || a.model.is_some()
-                    || a.description.is_some())
-            {
-                bail!("--level, --adapter, --model and --description are for an AI member");
+            if !is_ai && (a.level.is_some() || a.adapter.is_some() || a.model.is_some()) {
+                bail!("--level, --adapter and --model are for an AI member");
             }
             let capabilities = match parse_capabilities(&a.capabilities)? {
                 NamedCapabilities::All => MemberCapabilities::All,
@@ -1123,7 +1123,6 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     None => joy_ai::naming::tool_adapter(name).map(String::from),
                 };
                 new_member.model = a.model.clone();
-                new_member.description = a.description.clone();
             }
             joy_core::auth::vouch::sign(
                 project,
@@ -1209,12 +1208,11 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 && a.add_capability.is_empty()
                 && a.rm_capability.is_empty()
                 && level.is_none()
-                && a.model.is_none()
-                && a.description.is_none();
+                && a.model.is_none();
             if nothing_said {
                 bail!(
                     "nothing to edit: pass --capabilities, --add-capability, \
-                     --rm-capability, --level, --model or --description"
+                     --rm-capability, --level or --model"
                 );
             }
 
@@ -1226,10 +1224,8 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 .or_else(|| joy_core::privacy::member_key_for_email(project, &a.id))
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
             let is_ai = joy_core::model::project::is_ai_member(&key);
-            if !is_ai
-                && (level.is_some() || a.project || a.model.is_some() || a.description.is_some())
-            {
-                bail!("--level, --project, --model and --description are for an AI member");
+            if !is_ai && (level.is_some() || a.project || a.model.is_some()) {
+                bail!("--level, --project and --model are for an AI member");
             }
             let parse_all = |words: &[String]| -> Result<Vec<Capability>> {
                 words
@@ -1247,10 +1243,40 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 // What I allow this AI member myself, within what the
                 // project allows it: signed with my own key, and nobody
                 // needs to hold manage for it (JI-019D-46).
-                if a.model.is_some() || a.description.is_some() {
-                    bail!("--model and --description change the project's side: add --project");
-                }
                 let me = joy_core::identity::acting_human_key(&ctx.root)?;
+                // My own model, while the project leaves the choice to
+                // each person; empty hands it back to the tool. A model
+                // is no permission, so nothing is signed for it.
+                if let Some(model) = &a.model {
+                    joy_core::auth::grants::set_personal_model(
+                        project,
+                        &key,
+                        &me,
+                        Some(model.as_str()),
+                    )?;
+                }
+                let grant_said = !matches!(named, NamedCapabilities::Unsaid)
+                    || !a.add_capability.is_empty()
+                    || !a.rm_capability.is_empty()
+                    || level.is_some();
+                if !grant_said {
+                    joy_core::store::save_project(&ctx.root, project)?;
+                    println!(
+                        "{} runs on {} for you.",
+                        joy_core::model::project::ai_member_name(&key),
+                        a.model
+                            .as_deref()
+                            .filter(|m| !m.is_empty())
+                            .unwrap_or("what the tool takes by itself")
+                    );
+                    let log_user = ctx.log_user();
+                    joy_core::git_ops::auto_git_post_command(
+                        &ctx.root,
+                        &format!("project member edit {}", a.id),
+                        &log_user,
+                    );
+                    return Ok(());
+                }
                 let unlocked = crate::auth_gate::unlock(&ctx.root, project, &me)?;
                 let view = joy_core::auth::grants::view(project, &key, Some(&me));
                 let allowed = view.project.clone().map_err(|why| anyhow::anyhow!(why))?;
@@ -1319,9 +1345,6 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     joy_core::auth::grants::change_maximum(&mut member, None, level)?;
                     if let Some(model) = &a.model {
                         member.model = (!model.is_empty()).then(|| model.clone());
-                    }
-                    if let Some(description) = &a.description {
-                        member.description = (!description.is_empty()).then(|| description.clone());
                     }
                 }
 
@@ -1579,9 +1602,9 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
         ("tst", Capability::Test),
         ("rev", Capability::Review),
         ("doc", Capability::Document),
-        ("job", Capability::Jobs),
         ("crt", Capability::Create),
         ("asg", Capability::Assign),
+        ("job", Capability::Jobs),
         ("mng", Capability::Manage),
         ("del", Capability::Delete),
     ];

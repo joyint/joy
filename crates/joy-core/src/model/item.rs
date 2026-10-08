@@ -27,8 +27,8 @@ pub struct Item {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
     /// The level a job runs at (JI-019D-46): what it asks for while it
-    /// is new, and what it was released at once approved
-    /// (`auth::grants::job_level_at_approval`). Other items carry none.
+    /// is new, and what it runs at once it is open
+    /// (`auth::grants::job_terms`). Other items carry none.
     #[serde(
         default,
         rename = "interaction-level",
@@ -107,7 +107,7 @@ pub enum Capability {
     Review,
     Document,
     /// Direct delegated work: move `job` items through their gates --
-    /// approving a job at triage authorizes its spend, reviewing it
+    /// setting a job to open lets its assignee take it and spend, reviewing it
     /// accepts the delivered work. Deliberately separate from `Review`
     /// so job acceptance and item acceptance can belong to different
     /// people. See JOY-01FE-37.
@@ -129,9 +129,11 @@ impl Capability {
         Capability::Test,
         Capability::Review,
         Capability::Document,
-        Capability::Jobs,
         Capability::Create,
         Capability::Assign,
+        // The three a new AI member does not get by itself, last
+        // (operator 2026-10-08): jobs, manage, delete.
+        Capability::Jobs,
         Capability::Manage,
         Capability::Delete,
     ];

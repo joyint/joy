@@ -68,7 +68,14 @@ fn form(project: &Project, member_id: &str) -> Form {
 /// The capabilities of a member as a list, in their fixed order.
 pub fn capability_list(capabilities: &MemberCapabilities) -> Vec<Capability> {
     match capabilities {
-        MemberCapabilities::All => Capability::ALL.to_vec(),
+        // Both arms in the capability's own order, never in the order
+        // lists are SHOWN in (`Capability::ALL`): this list is part of
+        // signed texts, and a display order must be free to change.
+        MemberCapabilities::All => {
+            let mut all = Capability::ALL.to_vec();
+            all.sort();
+            all
+        }
         MemberCapabilities::Specific(map) => map.keys().copied().collect(),
     }
 }
