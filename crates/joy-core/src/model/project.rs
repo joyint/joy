@@ -259,8 +259,10 @@ pub struct Member {
     pub members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
-    /// The model an AI member runs on, as its adapter names it. None is
-    /// the adapter's own default. Member files only (JI-019D-46).
+    /// The model an AI member runs on for everybody, as its adapter
+    /// names it, picked by a manager. None leaves the choice to each
+    /// person (`AiDelegationEntry::model`). Member files only
+    /// (JI-019D-46).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     /// What an AI member is for, in the project's words. Member files
@@ -430,6 +432,11 @@ pub struct AiDelegationEntry {
     /// None means the project maximum applies as it stands.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<DelegationGrant>,
+    /// The model this person runs the AI member on, where the project
+    /// leaves the choice to them: the member itself names none. None is
+    /// what the tool takes by itself. See `auth::grants::model_for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -548,13 +555,20 @@ impl Member {
 
     /// Record this member's delegation to `ai`, in place of the one they
     /// had, under whichever spelling of the AI member's name it stood.
+    ///
+    /// The model the person picked stays with them across a new
+    /// delegation: it hangs on no key, so delegating again is no reason
+    /// to lose it.
     pub fn put_delegation(
         &mut self,
         ai: impl Into<String>,
-        entry: AiDelegationEntry,
+        mut entry: AiDelegationEntry,
     ) -> Option<AiDelegationEntry> {
         let ai = ai.into();
         let key = self.delegation_key(&ai).unwrap_or(ai);
+        if entry.model.is_none() {
+            entry.model = self.ai_delegations.get(&key).and_then(|d| d.model.clone());
+        }
         self.ai_delegations.insert(key, entry)
     }
 
@@ -1022,6 +1036,7 @@ mod tests {
                 created: chrono::Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         assert!(!member.delegation_usable("ai:claude@joy"));
@@ -1153,6 +1168,7 @@ mod tests {
                     .with_timezone(&chrono::Utc),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
@@ -1189,6 +1205,7 @@ mod tests {
                 created,
                 rotated: Some(rotated),
                 grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();

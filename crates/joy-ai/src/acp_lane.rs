@@ -605,39 +605,34 @@ pub fn answer_chat_permission(
     }
 }
 
-/// A JOB round's permission: the human approved the job, so whatever
-/// offers an allow option is allowed (the joy CLI's guard bounds item
-/// writes inside the sandbox). A request WITHOUT an allow option is a
-/// gate escalation — a human must decide; the round ends cleanly and the
-/// question rides back to the operator.
-pub fn answer_job_permission(request: &RequestPermissionRequest) -> PermissionAnswer {
+/// A JOB round's permission. The job runs at its own level, and that
+/// level answers here exactly as it answers a chat turn nobody attends
+/// (`answer_chat_permission`): what the level allows is allowed, what it
+/// does not is refused to the agent, and joy itself is always allowed,
+/// its guard bounds the item writes. A request WITHOUT an allow option
+/// is a gate escalation: a human must decide, the round ends cleanly and
+/// the question rides back to the operator.
+pub fn answer_job_permission(
+    mode: joy_chat::model::AgentMode,
+    request: &RequestPermissionRequest,
+    known: &KnownCall,
+) -> PermissionAnswer {
+    if offers_allow(request) {
+        return answer_chat_permission(mode, request, known);
+    }
     let title = request
         .tool_call
         .fields
         .title
         .clone()
+        .or_else(|| known.title.clone())
         .unwrap_or_else(|| "tool call".into());
-    match pick_option(
-        request,
-        [
-            PermissionOptionKind::AllowOnce,
-            PermissionOptionKind::AllowAlways,
-        ],
-    ) {
-        Some(option) => PermissionAnswer {
-            selected: Some(option),
-            title,
-            answered: "allowed",
-            question: None,
-            decision: joy_chat::model::permission::Decision::Allow,
-        },
-        None => PermissionAnswer {
-            selected: None,
-            title: title.clone(),
-            answered: "escalated to operator",
-            question: Some(title),
-            decision: joy_chat::model::permission::Decision::Deny,
-        },
+    PermissionAnswer {
+        selected: None,
+        title: title.clone(),
+        answered: "escalated to operator",
+        question: Some(title),
+        decision: joy_chat::model::permission::Decision::Deny,
     }
 }
 
@@ -1645,18 +1640,28 @@ pub struct RoundOutcome {
 /// Run ONE round as a fresh ACP session (a job's `--rm` container, or any
 /// other single-prompt use). The cumulative UsageUpdate IS the round
 /// total, no delta bookkeeping needed.
+///
+/// The round runs at `mode`, the level of the job, the way a chat turn
+/// runs at its level: the mode is set on the session over ACP where the
+/// agent advertises one for it, and it answers the agent's permission
+/// requests (`answer_job_permission`).
 pub async fn single_round(
     config: &LaneConfig,
     prompt: &str,
+    mode: joy_chat::model::AgentMode,
     timeout: std::time::Duration,
 ) -> anyhow::Result<RoundOutcome> {
-    match tokio::time::timeout(timeout, single_round_inner(config, prompt)).await {
+    match tokio::time::timeout(timeout, single_round_inner(config, prompt, mode)).await {
         Ok(result) => result,
         Err(_) => anyhow::bail!("acp round timed out after {}s", timeout.as_secs()),
     }
 }
 
-async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result<RoundOutcome> {
+async fn single_round_inner(
+    config: &LaneConfig,
+    prompt: &str,
+    mode: joy_chat::model::AgentMode,
+) -> anyhow::Result<RoundOutcome> {
     let agent =
         AcpAgent::from_str(&config.command).map_err(|e| anyhow::anyhow!("acp agent spawn: {e}"))?;
     let agent = match &config.prepare {
@@ -1686,7 +1691,11 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
-                let answer = answer_job_permission(&request);
+                let known = perms
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .known(request.tool_call.tool_call_id.0.as_ref());
+                let answer = answer_job_permission(mode, &request, &known);
                 {
                     let mut state = perms.lock().unwrap_or_else(|e| e.into_inner());
                     state.record_permission(
@@ -1722,6 +1731,46 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
                     ))
                     .block_task()
                     .await?;
+            }
+            // The job's level reaches the tool itself, as a turn's does
+            // (JOY-0280-A5): an agent that never asks would otherwise run
+            // in whatever mode its setup says.
+            let offered: Vec<String> = session
+                .modes
+                .as_ref()
+                .map(|state| {
+                    state
+                        .available_modes
+                        .iter()
+                        .map(|m| m.id.0.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            match crate::level_enforcement::pick_session_mode(
+                offered.iter().map(String::as_str),
+                mode,
+            ) {
+                Some(mode_id) => {
+                    match connection
+                        .send_request(SetSessionModeRequest::new(
+                            session.session_id.clone(),
+                            mode_id,
+                        ))
+                        .block_task()
+                        .await
+                    {
+                        Ok(_) => tracing::info!(mode = mode_id, "session mode set for the round"),
+                        Err(e) => tracing::warn!(
+                            mode = mode_id,
+                            error = %e,
+                            "the agent refused the session mode; permission answers govern"
+                        ),
+                    }
+                }
+                None => tracing::info!(
+                    round_mode = ?mode,
+                    "the agent advertises no session mode for this level; permission answers govern"
+                ),
             }
             connection
                 .send_request(PromptRequest::new(
@@ -2265,19 +2314,56 @@ mod tests {
                 { "optionId": "n", "name": "reject", "kind": "reject_once" },
             ],
         }));
-        let answer = answer_job_permission(&request);
+        let answer = answer_job_permission(
+            joy_chat::model::AgentMode::Autonomous,
+            &request,
+            &KnownCall::default(),
+        );
         assert_eq!(answer.answered, "escalated to operator");
         assert!(answer.selected.is_none());
         assert_eq!(answer.question.as_deref(), Some("push to production"));
-        // with an allow option the approved job just runs
-        let allowed = answer_job_permission(&permission_request(serde_json::json!({
-            "sessionId": "s1",
-            "toolCall": { "toolCallId": "t2", "title": "bash: cargo test" },
-            "options": [
-                { "optionId": "y", "name": "allow", "kind": "allow_once" },
-            ],
-        })));
-        assert_eq!(allowed.answered, "allowed");
-        assert!(allowed.question.is_none());
+    }
+
+    /// A job runs at its own level (JI-019D-46), and the level answers
+    /// the agent's requests the way it answers a chat turn nobody
+    /// attends: it used to allow whatever offered an allow option, at
+    /// every level.
+    #[test]
+    fn a_job_round_answers_at_the_level_of_the_job() {
+        use joy_chat::model::AgentMode::{AcceptEdits, Autonomous, Plan};
+        let call = |title: &str, kind: &str| {
+            permission_request(serde_json::json!({
+                "sessionId": "s1",
+                "toolCall": { "toolCallId": "t2", "title": title, "kind": kind },
+                "options": [
+                    { "optionId": "y", "name": "allow", "kind": "allow_once" },
+                    { "optionId": "n", "name": "reject", "kind": "reject_once" },
+                ],
+            }))
+        };
+        let none = KnownCall::default();
+        let shell = call("bash: cargo test", "execute");
+        let edit = call("edit src/lib.rs", "edit");
+        // autonomous: the round just runs
+        let ran = answer_job_permission(Autonomous, &shell, &none);
+        assert_eq!(ran.answered, "allowed");
+        assert!(ran.question.is_none());
+        // confirmed: edits pass, a command is refused to the agent, and
+        // the round goes on without a question to anybody
+        assert_eq!(
+            answer_job_permission(AcceptEdits, &edit, &none).answered,
+            "allowed"
+        );
+        let refused = answer_job_permission(AcceptEdits, &shell, &none);
+        assert_eq!(refused.answered, "denied");
+        assert_eq!(refused.selected.as_ref().map(|o| o.0.as_ref()), Some("n"));
+        assert!(refused.question.is_none());
+        // proposing: no edit either, and joy itself always
+        assert_eq!(answer_job_permission(Plan, &edit, &none).answered, "denied");
+        let joy = call("joy comment IT-0001 \"done\"", "execute");
+        assert_eq!(
+            answer_job_permission(Plan, &joy, &none).answered,
+            "allowed (joy)"
+        );
     }
 }

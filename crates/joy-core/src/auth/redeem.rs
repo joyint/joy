@@ -195,6 +195,7 @@ mod tests {
                 created: chrono::Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         project.register_member(HUMAN, human).unwrap();

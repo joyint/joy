@@ -1462,6 +1462,7 @@ mod setup_tests {
                 .with_timezone(&chrono::Utc),
             rotated: None,
             grant: None,
+            model: None,
         }
     }
 

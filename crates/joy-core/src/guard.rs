@@ -33,8 +33,8 @@ pub enum Action {
     /// Status change on a `job` item. Separate from [`Action::ChangeStatus`]
     /// because the whole job lifecycle is governed by the `jobs`
     /// capability, and the triage gate (`new -> open`) denies AI members
-    /// by default -- approving a job authorizes its spend, and that
-    /// release belongs to a human unless a `job: new -> open` status
+    /// by default -- setting a job to open lets its assignee take it and
+    /// spend, and that belongs to a human unless a `job: new -> open` status
     /// rule explicitly says otherwise. See JOY-01FE-37.
     /// The job's assignee rides along (JOY-027A-AB): a job is under its
     /// assignee's control, so only the assignee moves it from open to
@@ -288,13 +288,21 @@ impl Guard {
             }
 
             // Job gates use `job: `-prefixed status_rules keys. The triage
-            // gate defaults to allow_ai: false -- approving a job is the
-            // human release that authorizes spend.
+            // gate defaults to allow_ai: false -- setting a job to open is what
+            // lets its assignee take it and spend, a human's step.
             if let Action::ChangeJobStatus { from, to, .. } = action {
                 let key = format!("job: {} -> {}", status_str(from), status_str(to));
+                // Two steps of a job are a human's by default: setting it
+                // to open, which lets its assignee take it and spend, and
+                // accepting its result. An AI member that takes jobs
+                // holds the jobs capability (`grants::job_assignee`), and
+                // that must not make it the one who accepts its own work.
                 let allow_ai = match self.gates.get(&key) {
                     Some(gate) => gate.allow_ai,
-                    None => !matches!((from, to), (Status::New, Status::Open)),
+                    None => !matches!(
+                        (from, to),
+                        (Status::New, Status::Open) | (Status::Review, Status::Closed)
+                    ),
                 };
                 if !allow_ai {
                     return Verdict::Deny(format!(
@@ -328,22 +336,11 @@ impl Guard {
         // no capability; no capability, no action, whichever kind.
         if is_ai_member(&identity.member) && crate::auth::grants::applies(&self.project) {
             let required = action.required_capability();
-            // Starting its own job and handing it to review is the
-            // assignee's by being the assignee (checked above): it needs
-            // no `jobs` capability, which is about releasing and
-            // accepting other members' jobs.
-            let own_job_step = matches!(
-                action,
-                Action::ChangeJobStatus {
-                    from: Status::Open,
-                    to: Status::InProgress,
-                    ..
-                } | Action::ChangeJobStatus {
-                    from: Status::InProgress,
-                    to: Status::Review,
-                    ..
-                }
-            );
+            // A job step is no exception: the assignee that starts its
+            // own job holds the jobs capability for the person it acts
+            // for, the same rule that offered it the job and decided
+            // when the job was set to open (`grants::job_terms`). A
+            // member changed since then is refused here.
             let delegator = identity
                 .delegated_by
                 .as_ref()
@@ -356,7 +353,6 @@ impl Guard {
                 identity.grant.as_deref(),
             ) {
                 Err(reason) => Verdict::Deny(reason),
-                Ok(_) if own_job_step => Verdict::Allow,
                 Ok(may) if may.allows(&required) => Verdict::Allow,
                 Ok(_) => Verdict::Deny(format!(
                     "{} does not have '{}' capability",
@@ -536,7 +532,7 @@ mod tests {
 
     /// A job is under its assignee's control (JOY-027A-AB): only the
     /// assignee starts it and hands it to review; everyone with the jobs
-    /// capability still approves, stops, reopens or reassigns.
+    /// capability still opens, stops, reopens or reassigns it.
     #[test]
     fn only_the_assignee_starts_a_job_and_hands_it_to_review() {
         let project = project_with_members(vec![
@@ -598,7 +594,7 @@ mod tests {
             guard.check(&nobody, &identity("dev@example.com")),
             Verdict::Deny(_)
         ));
-        // the rest of the lifecycle is not the assignee's alone: approve,
+        // the rest of the lifecycle is not the assignee's alone: open,
         // stop, reopen
         for (from, to) in [
             (Status::New, Status::Open),
@@ -691,6 +687,19 @@ mod tests {
             to: Status::Closed,
         };
         assert_eq!(guard.check(&close, &ai), Verdict::Allow);
+        // its own job is no exception: taking a job needs the jobs
+        // capability, as the rule that offers the job says
+        // (`grants::job_assignee`); a member changed after the job was
+        // set to open is refused when it starts
+        let take = Action::ChangeJobStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+            assignee: Some("claude".into()),
+        };
+        match guard.check(&take, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'jobs'"), "{reason}"),
+            other => panic!("a job taken without the jobs capability: {other:?}"),
+        }
     }
 
     #[test]

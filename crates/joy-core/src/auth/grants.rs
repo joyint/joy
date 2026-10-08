@@ -253,6 +253,52 @@ pub fn clear_personal(project: &mut Project, ai_key: &str, delegator_key: &str) 
     }
 }
 
+/// Set the model `ai` runs on for the person `person_key`, or with
+/// `None` leave it to the tool. It is theirs to pick only while the
+/// project sets none for everybody; a model the project sets is said in
+/// the refusal. Nothing is signed: a model is no permission.
+pub fn set_personal_model(
+    project: &mut Project,
+    ai_key: &str,
+    person_key: &str,
+    model: Option<&str>,
+) -> Result<(), JoyError> {
+    let name = ai_member_name(ai_key).to_string();
+    if !applies(project) {
+        return Err(JoyError::Other(format!(
+            "a model of your own for {name} needs the project's member files: \
+             sign in once and the project is brought over"
+        )));
+    }
+    let Some(ai) = project.member_by_key(ai_key) else {
+        return Err(JoyError::Other(format!("member not found: {name}")));
+    };
+    if let Some(set) = ai.model.as_deref().filter(|m| !m.trim().is_empty()) {
+        return Err(JoyError::Other(format!(
+            "the project sets the model of {name} to {set} for everybody"
+        )));
+    }
+    let person_key = match project.member_by_key(person_key) {
+        Some(_) => person_key.to_string(),
+        None => project
+            .member_key_for_email(person_key)
+            .ok_or_else(|| JoyError::Other(format!("{person_key} is not a project member")))?,
+    };
+    let entry = project
+        .member_by_key_mut(&person_key)
+        .and_then(|m| m.delegation_to_mut(ai_key))
+        .ok_or_else(|| {
+            JoyError::Other(format!(
+                "delegate to {name} first: joy auth token add {name}"
+            ))
+        })?;
+    entry.model = model
+        .map(str::trim)
+        .filter(|m| !m.is_empty())
+        .map(str::to_string);
+    Ok(())
+}
+
 /// Change what the project allows the AI member, before a person with
 /// the manage capability signs it ([`vouch::sign`] with
 /// [`vouch::Occasion::Changed`], or its payload and apply). What is
@@ -330,6 +376,15 @@ pub struct Shown {
     pub effective_level: String,
     /// Why it may do nothing, when that is so.
     pub problem: String,
+    /// The model the project sets for everybody; empty leaves the choice
+    /// to each person.
+    pub model: String,
+    /// The model the viewer picked for themselves; empty is what the
+    /// tool takes by itself. It counts only while the project sets none.
+    pub my_model: String,
+    /// The model the AI member runs on for the viewer; empty is what the
+    /// tool takes by itself.
+    pub effective_model: String,
 }
 
 /// [`Shown`] of the AI member `ai_key` for the person `viewer_key`, on
@@ -342,7 +397,23 @@ pub fn shown(project: &Project, ai_key: &str, viewer_key: Option<&str>) -> Shown
     let names = |side: &Effective| -> Vec<String> {
         side.capabilities.iter().map(|c| c.to_string()).collect()
     };
-    let mut shown = Shown::default();
+    let mut shown = Shown {
+        model: project
+            .member_by_key(ai_key)
+            .and_then(|m| m.model.clone())
+            .unwrap_or_default(),
+        my_model: viewer_key
+            .and_then(|key| person_in(project, key))
+            .and_then(|m| m.delegation_to(ai_key))
+            .and_then(|d| d.model.clone())
+            .unwrap_or_default(),
+        ..Shown::default()
+    };
+    shown.effective_model = if shown.model.is_empty() {
+        shown.my_model.clone()
+    } else {
+        shown.model.clone()
+    };
     if !applies(project) {
         if let Some(member) = project.member_by_key(ai_key) {
             shown.capabilities = vouch::capability_list(&member.capabilities)
@@ -493,33 +564,122 @@ pub fn applies(project: &Project) -> bool {
     project.member_layout() == MemberLayout::Files
 }
 
-/// The level a job is released with, said when a person approves it.
+/// A person as the project knows them: by their key, or by an address
+/// it has for them (an anonymous project keys people by an id).
+fn person_in<'a>(project: &'a Project, key: &str) -> Option<&'a crate::model::project::Member> {
+    project.member_by_key(key).or_else(|| {
+        let key = project.member_key_for_email(key)?;
+        project.member_by_key(&key)
+    })
+}
+
+/// The model `ai` runs on for `person_key`: the one the project sets for
+/// everybody, else the one the person picked for themselves, else None,
+/// which is what the tool takes by itself. One rule for a chat turn, a
+/// job round and the card, on every host.
+pub fn model_for(project: &Project, ai_key: &str, person_key: &str) -> Option<String> {
+    let filled = |m: &Option<String>| m.clone().filter(|m| !m.trim().is_empty());
+    project
+        .member_by_key(ai_key)
+        .and_then(|m| filled(&m.model))
+        .or_else(|| {
+            person_in(project, person_key)
+                .and_then(|m| m.delegation_to(ai_key))
+                .and_then(|d| filled(&d.model))
+        })
+}
+
+/// [`model_for`] for a host that holds the project's root.
+pub fn model_for_at(root: &std::path::Path, ai_key: &str, person_key: &str) -> Option<String> {
+    let project = crate::store::load_project(root).ok()?;
+    model_for(&project, ai_key, person_key)
+}
+
+/// Whether `member` can be given a job by `person_key`, and the level it
+/// may run at for them at most.
+///
+/// A job is taken by its assignee, and taking it is a job status change:
+/// that needs the jobs capability (`guard`). A person holds it or not.
+/// An AI member holds it for `person_key` when the project allows it and
+/// the person did not take it away for themselves; it then runs at most
+/// at the level it may have for them. In a project from before the
+/// member files an AI member is not judged here, as it was not before.
+pub fn job_assignee(
+    project: &Project,
+    member: &str,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    if !crate::model::project::is_ai_member(member) {
+        let holds = project
+            .member_by_key(member)
+            .is_some_and(|m| vouch::capability_list(&m.capabilities).contains(&Capability::Jobs));
+        return if holds {
+            Ok(None)
+        } else {
+            Err(format!("{member} does not hold the jobs capability"))
+        };
+    }
+    if !applies(project) {
+        return Ok(None);
+    }
+    let may = effective_now(project, member, person_key)?;
+    if !may.allows(&Capability::Jobs) {
+        return Err(format!(
+            "{} does not hold the jobs capability for you",
+            ai_member_name(member)
+        ));
+    }
+    Ok(Some(may.level))
+}
+
+/// The members `person_key` can give a job to, each with the level it
+/// may run at for them at most (None for a person, who has no level):
+/// what a job form offers. The same rule decides again when the job is
+/// opened ([`job_terms`]), because a member can be changed in between.
+pub fn job_assignees(
+    project: &Project,
+    person_key: &str,
+) -> Vec<(String, Option<InteractionLevel>)> {
+    project
+        .members()
+        .filter_map(|(key, _)| {
+            job_assignee(project, key, person_key)
+                .ok()
+                .map(|level| (key.clone(), level))
+        })
+        .collect()
+}
+
+/// The level a job runs at, checked for `person_key`: when they write
+/// the job, when they change it, and when they set it to open, which is
+/// when its assignee takes it.
 ///
 /// A job with an AI assignee runs at the level it asks for, and at most
-/// at the assignee's project maximum: a job that asks for more is not
-/// approved, a job that says nothing gets the maximum written in. From
-/// here on the level is the job's own, and a maximum lowered later does
-/// not reach into a job that was already approved (JI-0166-D8). A job
-/// with no AI assignee, or in a project from before the member files,
-/// keeps what it has.
-pub fn job_level_at_approval(
+/// at the level the assignee may have for the person: a job that asks
+/// for more is refused, and so is an assignee without the jobs
+/// capability. A job that names no level gets the assignee's level
+/// (the caller writes it in when the job is opened). From then on the
+/// level is the job's own, and a member changed later does not reach
+/// into a job that is already open (JI-0166-D8). A job with no AI
+/// assignee, or in a project from before the member files, keeps what
+/// it has.
+pub fn job_terms(
     project: &Project,
     job: &crate::model::item::Item,
+    person_key: &str,
 ) -> Result<Option<InteractionLevel>, String> {
     let Some(assignee) = job.assignees.first().map(|a| a.member.id()) else {
         return Ok(job.interaction_level);
     };
-    if !applies(project) || !crate::model::project::is_ai_member(assignee) {
+    let Some(most) = job_assignee(project, assignee, person_key)? else {
         return Ok(job.interaction_level);
-    }
-    let name = ai_member_name(assignee);
-    let max = maximum(project, assignee)?;
+    };
     match job.interaction_level {
-        None => Ok(Some(max.level)),
-        Some(wanted) if more_oversight(wanted, max.level) == wanted => Ok(Some(wanted)),
+        None => Ok(Some(most)),
+        Some(wanted) if more_oversight(wanted, most) == wanted => Ok(Some(wanted)),
         Some(wanted) => Err(format!(
-            "this job asks for {wanted}, and the project allows {name} at most {}",
-            max.level
+            "this job asks for {wanted}, and {} may run at most at {most} for you",
+            ai_member_name(assignee)
         )),
     }
 }
@@ -581,6 +741,7 @@ mod tests {
                 created: Utc::now(),
                 rotated: None,
                 grant: None,
+                model: None,
             },
         );
         member
@@ -808,5 +969,164 @@ mod tests {
             .set_capabilities(caps(&[Plan, Implement, Review, Create]));
         let why = effective(&project, "claude", DEV, None).unwrap_err();
         assert!(why.contains("changed without a signature"), "{why}");
+    }
+    /// The project of [`project`], with claude allowed `list` at `level`.
+    fn project_where_claude_may(
+        list: &[Capability],
+        level: InteractionLevel,
+    ) -> (Project, IdentityKeypair, IdentityKeypair) {
+        let (mut project, founder_kp, dev_kp) = project();
+        let mut claude = project.member_by_key("claude").cloned().unwrap();
+        change_maximum(&mut claude, Some(list), Some(level)).unwrap();
+        vouch::sign(
+            &project,
+            FOUNDER,
+            &founder_kp,
+            "claude",
+            &mut claude,
+            Occasion::Changed,
+        );
+        *project.member_by_key_mut("claude").unwrap() = claude;
+        (project, founder_kp, dev_kp)
+    }
+
+    fn job_for(assignee: &str, level: Option<InteractionLevel>) -> crate::model::item::Item {
+        let mut job = crate::templates::render_item(
+            &crate::model::item::ItemType::Job,
+            "SH-JOB-0001-AA",
+            "Do it",
+        )
+        .unwrap();
+        job.assignees.push(crate::model::item::Assignee {
+            member: assignee.into(),
+            capabilities: Vec::new(),
+        });
+        job.interaction_level = level;
+        job
+    }
+
+    /// A job is offered to, and taken by, a member that holds the jobs
+    /// capability for the person: the list a form shows and the rule
+    /// that decides when the job is opened are the same function.
+    #[test]
+    fn a_job_goes_only_to_a_member_that_holds_jobs_for_the_person() {
+        use Capability::Jobs;
+        // claude as the project stands: no jobs capability
+        let (project, _, _) = project();
+        let offered: Vec<String> = job_assignees(&project, DEV)
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
+        assert_eq!(offered, [FOUNDER], "the developer holds no jobs either");
+        let why = job_terms(&project, &job_for("claude", None), DEV).unwrap_err();
+        assert!(
+            why.contains("does not hold the jobs capability for you"),
+            "{why}"
+        );
+        let why = job_terms(&project, &job_for(DEV, None), FOUNDER).unwrap_err();
+        assert!(why.contains("does not hold the jobs capability"), "{why}");
+
+        // the project allows it jobs at confirmed
+        let (mut project, _, dev_kp) = project_where_claude_may(&[Implement, Jobs], Confirmed);
+        assert!(job_assignees(&project, DEV).contains(&("claude".to_string(), Some(Confirmed))));
+        // a job that names no level gets the member's when it is opened
+        assert_eq!(
+            job_terms(&project, &job_for("claude", None), DEV).unwrap(),
+            Some(Confirmed)
+        );
+        // less say for the AI is the job's to ask for, more is refused
+        assert_eq!(
+            job_terms(&project, &job_for("claude", Some(Proposing)), DEV).unwrap(),
+            Some(Proposing)
+        );
+        let why = job_terms(&project, &job_for("claude", Some(Autonomous)), DEV).unwrap_err();
+        assert!(
+            why.contains("may run at most at confirmed for you"),
+            "{why}"
+        );
+
+        // changed after the job was written: the person takes jobs away
+        // for themselves, and opening the job is refused for them only
+        grant(&mut project, &dev_kp, DEV, &[Implement], Confirmed);
+        assert!(job_terms(&project, &job_for("claude", None), DEV).is_err());
+        assert!(job_terms(&project, &job_for("claude", None), FOUNDER).is_ok());
+        assert!(!job_assignees(&project, DEV)
+            .iter()
+            .any(|(key, _)| key == "claude"));
+        // a person's own level holds the job too
+        grant(&mut project, &dev_kp, DEV, &[Implement, Jobs], Proposing);
+        assert_eq!(
+            job_terms(&project, &job_for("claude", None), DEV).unwrap(),
+            Some(Proposing)
+        );
+    }
+
+    /// The model: the project's for everybody, else each person's own,
+    /// else what the tool takes by itself.
+    #[test]
+    fn the_model_is_the_projects_or_else_each_persons_own() {
+        let (mut project, _, _) = project();
+        assert_eq!(model_for(&project, "claude", DEV), None);
+
+        // the project leaves the choice: the developer picks, for them only
+        set_personal_model(&mut project, "claude", DEV, Some("sonnet")).unwrap();
+        assert_eq!(
+            model_for(&project, "claude", DEV).as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(
+            model_for(&project, "ai:claude@joy", DEV).as_deref(),
+            Some("sonnet")
+        );
+        assert_eq!(model_for(&project, "claude", FOUNDER), None);
+        let card = shown(&project, "claude", Some(DEV));
+        assert_eq!(
+            (
+                card.model.as_str(),
+                card.my_model.as_str(),
+                card.effective_model.as_str()
+            ),
+            ("", "sonnet", "sonnet")
+        );
+
+        // a new delegation keeps the pick
+        let fresh = AiDelegationEntry {
+            delegation_verifier: "22".repeat(32),
+            delegation_salt: Some("33".repeat(32)),
+            created: Utc::now(),
+            rotated: None,
+            grant: None,
+            model: None,
+        };
+        project
+            .member_by_key_mut(DEV)
+            .unwrap()
+            .put_delegation("claude", fresh);
+        assert_eq!(
+            model_for(&project, "claude", DEV).as_deref(),
+            Some("sonnet")
+        );
+
+        // the project sets one: it holds for everybody, and a person's
+        // own pick is refused with the model named
+        project.member_by_key_mut("claude").unwrap().model = Some("opus".into());
+        assert_eq!(model_for(&project, "claude", DEV).as_deref(), Some("opus"));
+        assert_eq!(
+            model_for(&project, "claude", FOUNDER).as_deref(),
+            Some("opus")
+        );
+        let why = set_personal_model(&mut project, "claude", DEV, Some("haiku"))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            why.contains("sets the model of claude to opus for everybody"),
+            "{why}"
+        );
+        assert_eq!(shown(&project, "claude", Some(DEV)).effective_model, "opus");
+
+        // handed back to the tool
+        project.member_by_key_mut("claude").unwrap().model = None;
+        set_personal_model(&mut project, "claude", DEV, None).unwrap();
+        assert_eq!(model_for(&project, "claude", DEV), None);
     }
 }

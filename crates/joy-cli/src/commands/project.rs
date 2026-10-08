@@ -195,7 +195,7 @@ struct MemberAddArgs {
     #[arg(long)]
     adapter: Option<String>,
 
-    /// The model an AI member runs on. Default: the tool's own.
+    /// The model an AI member runs on for everybody. Default: each person picks their own.
     #[arg(long)]
     model: Option<String>,
 
@@ -241,7 +241,7 @@ struct MemberEditArgs {
     #[arg(long)]
     project: bool,
 
-    /// The model an AI member runs on (with --project).
+    /// The model an AI member runs on: with --project for everybody, without for yourself.
     #[arg(long)]
     model: Option<String>,
 
@@ -972,13 +972,8 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
 
             match &may {
                 Some(view) => {
-                    let runs_on = [member.adapter.as_deref(), member.model.as_deref()]
-                        .into_iter()
-                        .flatten()
-                        .collect::<Vec<_>>()
-                        .join(" · ");
-                    if !runs_on.is_empty() {
-                        println!("  {}", color::inactive(&runs_on));
+                    if let Some(adapter) = member.adapter.as_deref() {
+                        println!("  {}", color::inactive(adapter));
                     }
                     if let Some(description) = &member.description {
                         println!("  {description}");
@@ -1014,6 +1009,28 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                         level(project_side),
                         level(mine),
                         level(effective)
+                    );
+                    // The model: the project's for everybody, or each
+                    // person's own while the project names none, or what
+                    // the tool takes by itself.
+                    let shown = joy_core::auth::grants::shown(project, &key, viewer.as_deref());
+                    let or = |model: &str, unset: &str| -> String {
+                        if model.is_empty() {
+                            unset.to_string()
+                        } else {
+                            model.to_string()
+                        }
+                    };
+                    println!(
+                        "  {:<12} {:<12} {:<12} {}",
+                        "model",
+                        or(&shown.model, "user choice"),
+                        if shown.model.is_empty() {
+                            or(&shown.my_model, "tool default")
+                        } else {
+                            String::new()
+                        },
+                        or(&shown.effective_model, "tool default")
                     );
                     for why in [view.project.as_ref().err(), view.effective.as_ref().err()]
                         .into_iter()
@@ -1247,10 +1264,43 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 // What I allow this AI member myself, within what the
                 // project allows it: signed with my own key, and nobody
                 // needs to hold manage for it (JI-019D-46).
-                if a.model.is_some() || a.description.is_some() {
-                    bail!("--model and --description change the project's side: add --project");
+                if a.description.is_some() {
+                    bail!("--description changes the project's side: add --project");
                 }
                 let me = joy_core::identity::acting_human_key(&ctx.root)?;
+                // My own model, while the project leaves the choice to
+                // each person; empty hands it back to the tool. A model
+                // is no permission, so nothing is signed for it.
+                if let Some(model) = &a.model {
+                    joy_core::auth::grants::set_personal_model(
+                        project,
+                        &key,
+                        &me,
+                        Some(model.as_str()),
+                    )?;
+                }
+                let grant_said = !matches!(named, NamedCapabilities::Unsaid)
+                    || !a.add_capability.is_empty()
+                    || !a.rm_capability.is_empty()
+                    || level.is_some();
+                if !grant_said {
+                    joy_core::store::save_project(&ctx.root, project)?;
+                    println!(
+                        "{} runs on {} for you.",
+                        joy_core::model::project::ai_member_name(&key),
+                        a.model
+                            .as_deref()
+                            .filter(|m| !m.is_empty())
+                            .unwrap_or("what the tool takes by itself")
+                    );
+                    let log_user = ctx.log_user();
+                    joy_core::git_ops::auto_git_post_command(
+                        &ctx.root,
+                        &format!("project member edit {}", a.id),
+                        &log_user,
+                    );
+                    return Ok(());
+                }
                 let unlocked = crate::auth_gate::unlock(&ctx.root, project, &me)?;
                 let view = joy_core::auth::grants::view(project, &key, Some(&me));
                 let allowed = view.project.clone().map_err(|why| anyhow::anyhow!(why))?;
