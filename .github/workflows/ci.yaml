@@ -11,6 +11,13 @@ on:
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
+    inputs:
+      # A branch that needs a crypt branch is checked before either is
+      # merged: name the crypt branch here. Every other run takes main.
+      crypt-ref:
+        description: "Branch of joyint/crypt to build against"
+        required: false
+        default: main
 
 env:
   CARGO_TERM_COLOR: always
@@ -47,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
-          ref: main
+          ref: ${{ inputs.crypt-ref || 'main' }}
           path: crypt
           token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
@@ -67,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
-          ref: main
+          ref: ${{ inputs.crypt-ref || 'main' }}
           path: crypt
           token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
@@ -107,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
-          ref: main
+          ref: ${{ inputs.crypt-ref || 'main' }}
           path: crypt
           token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
@@ -145,7 +152,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
-          ref: main
+          ref: ${{ inputs.crypt-ref || 'main' }}
           path: crypt
           token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
@@ -193,7 +200,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: joyint/crypt
-          ref: main
+          ref: ${{ inputs.crypt-ref || 'main' }}
           path: crypt
           token: ${{ secrets.ORG_READ_TOKEN || github.token }}
       - uses: dtolnay/rust-toolchain@stable
