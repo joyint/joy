@@ -16,19 +16,19 @@ load setup
 
 @test "joy config get --describe adds a one-line description to scalar values" {
     joy init --name "T" >/dev/null
-    run joy config get interaction-level.default --describe
+    run joy config get workflow.auto-git --describe
     [ "$status" -eq 0 ]
-    [[ "$output" == *"proposing"* ]]
-    [[ "$output" == *"propose"* ]]
+    [[ "$output" == *"add"* ]]
+    [[ "$output" == *"git add changed files after each write"* ]]
 }
 
 @test "joy config get <prefix>.* --describe annotates each leaf" {
     joy init --name "T" >/dev/null
-    run joy config get interaction-level.* --describe
+    run joy config get workflow.* --describe
     [ "$status" -eq 0 ]
-    [[ "$output" == *"interaction-level.default"* ]]
-    [[ "$output" == *"proposing"* ]]
-    [[ "$output" == *"propose"* ]]
+    [[ "$output" == *"workflow.auto-git"* ]]
+    [[ "$output" == *"git add changed files after each write"* ]]
+    [[ "$output" == *"workflow.auto-assign"* ]]
 }
 
 @test "joy config get <prefix>.* --describe --json returns entries array" {

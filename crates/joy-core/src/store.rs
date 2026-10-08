@@ -643,18 +643,6 @@ pub fn load_interaction_level_defaults(
     serde_json::from_value(base).unwrap_or_default()
 }
 
-/// Load the raw interaction-level defaults from project.defaults.yaml (before
-/// the project.yaml merge). Used for source tracking in resolve_interaction_level().
-pub fn load_raw_interaction_level_defaults(
-    root: &Path,
-) -> crate::model::project::InteractionLevelDefaults {
-    let path = project_defaults_path(root);
-    read_yaml_value(&path)
-        .and_then(|v| v.get("interaction-level").cloned())
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default()
-}
-
 /// Load AI defaults (capabilities granted to AI members) from project.defaults.yaml,
 /// with project.yaml ai-defaults overlay.
 pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
@@ -936,39 +924,6 @@ interaction-level:
         assert_eq!(
             defaults.capabilities[&Capability::Implement],
             InteractionLevel::Confirmed
-        );
-    }
-
-    #[test]
-    fn load_raw_interaction_level_defaults_ignores_project_overrides() {
-        let dir = tempdir().unwrap();
-        setup_project_dir(dir.path());
-
-        let defaults_content = r#"
-interaction-level:
-  implement: proposing
-"#;
-        std::fs::write(
-            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
-            defaults_content,
-        )
-        .unwrap();
-
-        let project_content = r#"
-name: test
-acronym: TST
-language: en
-created: "2026-01-01T00:00:00+00:00"
-members: {}
-interaction-level:
-  implement: confirmed
-"#;
-        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
-
-        let raw = load_raw_interaction_level_defaults(dir.path());
-        assert_eq!(
-            raw.capabilities[&Capability::Implement],
-            InteractionLevel::Proposing
         );
     }
 

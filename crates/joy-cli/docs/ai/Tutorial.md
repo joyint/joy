@@ -6,27 +6,23 @@ Re-run `joy ai tutorial` whenever a `joy` invocation prints `joy X.Y.Z: synced t
 
 ## Session start
 
-At session start, run two `joy` commands yourself to pick up project context:
+At session start, pick up two things about this project.
 
-```
-joy config get interaction-level.default
-```
+Your **interaction level**. It comes with your session: the answer to `joy auth --token` names your `level` (see Authentication below), and `joy project member show <YOUR-MEMBER-ID>` shows it again at any time, in the `effective` column. Treat that value as authoritative; do not guess. The three levels, from the most say for the person to the least:
 
-returns your default interaction level for this project. Treat the resolved value as authoritative; do not guess. The three levels, from least to most oversight:
+- `proposing` - propose and wait; change nothing by yourself
+- `confirmed` - work, and ask before each step that changes something
+- `autonomous` - work on your own and report the result
 
-- `autonomous` - work independently; only stop at governance gates
-- `confirmed` - work independently; confirm before irreversible actions
-- `proposing` - propose; the human decides every step
-
-Confirm the resolved level to the user in one line at session start, e.g. "Working at the proposing level. Want to change that for this session?". Accept natural language overrides at any time (e.g. "be more autonomous", "just do it").
+Confirm the level to the user in one line at session start, e.g. "Working at the proposing level." The user may ask for more care at any time ("ask me first"), and you follow. You cannot give yourself more than the level you were given: that is the project's and the person's to change, with `joy project member edit`.
 
 ```
 joy project get language
 ```
 
-returns the configured project language. Start the session communicating with the user in that language. Switch to the user's language as soon as they speak a different one. All written artifacts (item titles, descriptions, comments, commit messages) must stay in the project language regardless of the chat language.
+returns the configured project language, the second thing. Start the session communicating with the user in that language. Switch to the user's language as soon as they speak a different one. All written artifacts (item titles, descriptions, comments, commit messages) must stay in the project language regardless of the chat language.
 
-Beyond these two checks plus reading the project's authoritative docs (see next section), run further joy commands only when the activity at hand requires them. Do not preemptively browse the backlog, roadmap, member state, or other project state when neither the user nor your current activity asks for it.
+Beyond these two plus reading the project's authoritative docs (see next section), run further joy commands only when the activity at hand requires them. Do not preemptively browse the backlog, roadmap, member state, or other project state when neither the user nor your current activity asks for it.
 
 ## Reading the project
 
@@ -106,14 +102,14 @@ If you do not see your row, you are not registered. Ask the operator to register
 
 ```
 joy ai init
-joy project member add ai:<name>@joy --with-token
+joy project member add <name> --with-token
 ```
 
-`joy ai init` is the one to ask for if Joy can detect you. It writes your instruction files and registers you; afterwards the operator runs `joy auth token add ai:<name>@joy` for the token. If you are GitHub Copilot, this covers you in every form: the `copilot` command, `gh copilot`, and Copilot Chat inside a VS Code-family editor, which reads the same files. All three are the one member `ai:copilot@joy`, so do not ask for `ai:copilot-chat@joy`.
+`joy ai init` is the one to ask for if Joy can detect you. It writes your instruction files and registers you; afterwards the operator runs `joy auth token add <name>` for the token. If you are GitHub Copilot, this covers you in every form: the `copilot` command, `gh copilot`, and Copilot Chat inside a VS Code-family editor, which reads the same files. All three are the one member `copilot`, so do not ask for `copilot-chat`.
 
 `member add --with-token` is for an AI Joy cannot detect at all. It registers you and prints a token in one step, but writes no instruction files.
 
-Suggest a name based on the tool you are, for example `ai:cursor@joy`. This is only a suggestion. The real ID is returned with the token.
+Suggest a name based on the tool you are, for example `cursor`. This is only a suggestion. The real ID is returned with the token. (An AI member used to be written `ai:cursor@joy`; that spelling still works.)
 
 The operator gives you a token starting with `joy_t_`. Redeem it yourself, one time:
 
@@ -121,17 +117,19 @@ The operator gives you a token starting with `joy_t_`. Redeem it yourself, one t
 joy auth --token <TOKEN> --json
 ```
 
-The response contains three values:
+The response contains:
 
 ```
 { "data": {
     "session_env": "joy_s_...",
-    "member": "ai:copilot@joy",
-    "delegated_by": "operator@example.com"
+    "member": "copilot",
+    "delegated_by": "operator@example.com",
+    "level": "confirmed",
+    "capabilities": ["implement", "test", "review", "create"]
 } }
 ```
 
-`session_env` is your session credential. Pass it as `--session` on every write. `member` is your real ID; use it in item references and when describing your actions. Never infer your Joy identity from an instruction file or another tool's configuration. `delegated_by` goes into the `Delegated-By:` trailer of every delegated commit.
+`session_env` is your session credential. Pass it as `--session` on every write. `member` is your real ID; use it in item references and when describing your actions. Never infer your Joy identity from an instruction file or another tool's configuration. `delegated_by` goes into the `Delegated-By:` trailer of every delegated commit. `level` is the interaction level you work at for that person, and `capabilities` is what you may do for them: the project allows an AI member so much, and the person may allow less.
 
 Reuse the same `session_env` for the whole session. Redeeming the token again creates a new session and makes the old `session_env` invalid. The old one then fails with "guard denied".
 
@@ -218,7 +216,7 @@ The words you will meet, and what to say about each:
 
 ## Capabilities and gates
 
-Your capabilities (what kind of work you are allowed to do) and the per-capability interaction level are shown in full form by `joy project member show <YOUR-MEMBER-ID>`. The `joy project` member table is the compact overview of the same data for all members. You discover a missing capability when a `joy` command refuses with a capability warning. **A capability warning is a hard stop.** Surface it to the user, do not activity a workaround.
+Your capabilities (what kind of work you are allowed to do) and your one interaction level are shown by `joy project member show <YOUR-MEMBER-ID>`: what the project allows you, what the person you act for allows, and what comes out. The `joy project` member table is the compact overview for all members. A `joy` command you hold no capability for is refused. **A refusal is a hard stop.** Surface it to the user, do not activity a workaround.
 
 Status transitions may be restricted by per-project gates. `joy project` shows the workflow diagram and the list of configured gates. When a gate blocks an AI-initiated transition, the CLI refuses with a clear message. Tell the user and stop; do not search for another path.
 

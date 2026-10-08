@@ -9,7 +9,6 @@
 joy_test_env::isolate!();
 
 pub mod auth;
-pub mod capabilities;
 pub mod commit_msg;
 pub mod context;
 pub mod crypt;

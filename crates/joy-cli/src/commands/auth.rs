@@ -614,6 +614,15 @@ fn auth_with_token(
 
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
+    // What this AI member may do for the person it acts for, said with
+    // the session, so it knows its level and its capabilities from the
+    // first moment and has nothing to look up or guess (JI-019D-46). A
+    // project from before the member files has no such answer.
+    let may = joy_core::auth::grants::applies(project)
+        .then(|| {
+            joy_core::auth::grants::shown(project, &redeemed.member, Some(&redeemed.delegated_by))
+        })
+        .filter(|may| may.problem.is_empty());
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
         struct TokenAuthPayload<'a> {
@@ -621,12 +630,22 @@ fn auth_with_token(
             member: &'a str,
             delegated_by: &'a str,
             project_id: &'a str,
+            /// The level this AI member works at for its delegator.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            level: Option<&'a str>,
+            /// What it may do for them.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            capabilities: Option<&'a [String]>,
         }
         crate::output::emit(TokenAuthPayload {
             session_env: env_value.clone(),
             member: &redeemed.member,
             delegated_by: &redeemed.delegated_by,
             project_id,
+            level: may.as_ref().map(|may| may.effective_level.as_str()),
+            capabilities: may
+                .as_ref()
+                .map(|may| may.effective_capabilities.as_slice()),
         })?;
     } else {
         println!("export JOY_SESSION={env_value}");
@@ -634,6 +653,13 @@ fn auth_with_token(
             "Authenticated as {} (delegated by {}). Session active (24h).",
             redeemed.member, redeemed.delegated_by
         );
+        if let Some(may) = &may {
+            eprintln!(
+                "Level: {}. Capabilities: {}.",
+                may.effective_level,
+                may.effective_capabilities.join(", ")
+            );
+        }
     }
 
     // Record the delegating operator by their at-rest member key (opaque id in

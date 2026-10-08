@@ -1,23 +1,17 @@
 #!/usr/bin/env bats
-# Integration tests for interaction-level defaults, resolution, and display.
+# Integration tests for what a member may do: an AI member's capabilities
+# and its one interaction level (JI-019D-46), and the defaults joy writes.
 
 load setup
 
 TEST_PASSPHRASE="correct horse battery staple extra words"
 
-@test "joy init creates project.defaults.yaml" {
+@test "joy init creates project.defaults.yaml with what a new AI member gets" {
     joy init --name "Test Project"
     [ -f ".joy/project.defaults.yaml" ]
-    grep -q "interaction-level:" .joy/project.defaults.yaml
-    grep -q "default: proposing" .joy/project.defaults.yaml
-}
-
-@test "project.defaults.yaml contains per-capability levels" {
-    joy init --name "Test Project"
-    grep -q "conceive: proposing" .joy/project.defaults.yaml
-    grep -q "implement: confirmed" .joy/project.defaults.yaml
-    grep -q "review: proposing" .joy/project.defaults.yaml
-    grep -q "test: autonomous" .joy/project.defaults.yaml
+    grep -q "ai-defaults:" .joy/project.defaults.yaml
+    # no level hangs on a capability any more
+    ! grep -q "interaction-level" .joy/project.defaults.yaml
 }
 
 @test "project.defaults.yaml contains ai-defaults capabilities" {
@@ -30,28 +24,6 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
 @test "project.defaults.yaml is gitignored" {
     joy init --name "Test Project"
     grep -q "project.defaults.yaml" .gitignore
-}
-
-@test "joy config get interaction-level.default returns proposing" {
-    joy init --name "Test Project"
-    run joy config get interaction-level.default
-    [ "$status" -eq 0 ]
-    [[ "$output" == "proposing" ]]
-}
-
-@test "joy config set interaction-level.default changes the default" {
-    joy init --name "Test Project"
-    joy config set interaction-level.default autonomous
-    run joy config get interaction-level.default
-    [ "$status" -eq 0 ]
-    [[ "$output" == "autonomous" ]]
-}
-
-@test "pre-2.0 level value is rejected by config set" {
-    joy init --name "Test Project"
-    run joy config set interaction-level.default collaborative
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"allowed values: autonomous, confirmed, proposing"* ]]
 }
 
 @test "old agents.default.mode key is rejected" {
@@ -269,8 +241,8 @@ EOF
     run joy update
     [ "$status" -eq 0 ]
 
-    grep -q "interaction-level:" .joy/config.yaml
-    grep -q "default: proposing" .joy/config.yaml
+    # the personal section is renamed with the rest; nothing reads it any
+    # more (JI-019D-46), and a config that carries it still parses
     ! grep -q "^interaction:" .joy/config.yaml
     members_grep -q "interaction-level:"
     members_grep -q "implement: confirmed"
@@ -279,10 +251,11 @@ EOF
         ! grep -q "^mode:" "$f"
     done
 
-    # And the migrated repo resolves cleanly.
-    run joy config get interaction-level.default
+    # And the migrated repo reads cleanly.
+    run joy config
     [ "$status" -eq 0 ]
-    [[ "$output" == "proposing" ]]
+    run joy ls
+    [ "$status" -eq 0 ]
 }
 
 @test "joy ai init syncs project.defaults.yaml" {

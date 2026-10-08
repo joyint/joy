@@ -49,10 +49,6 @@ pub enum Action {
     ManageProject,
     ManageMilestone,
     CreateRelease,
-    StartJob {
-        capability: Capability,
-        estimated_cost: Option<f64>,
-    },
 }
 
 impl Action {
@@ -77,7 +73,6 @@ impl Action {
                 Status::New => Capability::Create,
             },
             Action::ChangeJobStatus { .. } => Capability::Jobs,
-            Action::StartJob { capability, .. } => *capability,
         }
     }
 }
@@ -379,25 +374,6 @@ impl Guard {
 
         // Check if the member has the required capability
         if member.has_capability(&required) {
-            // Budget pre-check for StartJob
-            if let Action::StartJob {
-                capability,
-                estimated_cost: Some(cost),
-            } = action
-            {
-                if let MemberCapabilities::Specific(ref map) = member.capabilities {
-                    if let Some(config) = map.get(capability) {
-                        if let Some(max_cost) = config.max_cost_per_job {
-                            if *cost > max_cost {
-                                return Verdict::Deny(format!(
-                                    "{} estimated cost {:.2} exceeds max_cost_per_job {:.2} for '{}'",
-                                    identity.member, cost, max_cost, capability
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
             Verdict::Allow
         } else if required.is_management() {
             // Management actions are hard-denied (not just warned)
@@ -1143,16 +1119,6 @@ mod tests {
         assert_eq!(cs(Status::Deferred).required_capability(), Capability::Plan);
         assert_eq!(cs(Status::Open).required_capability(), Capability::Plan);
         assert_eq!(cs(Status::New).required_capability(), Capability::Create);
-
-        // StartJob delegates to its capability
-        assert_eq!(
-            Action::StartJob {
-                capability: Capability::Implement,
-                estimated_cost: None
-            }
-            .required_capability(),
-            Capability::Implement
-        );
     }
 
     #[test]
@@ -1191,129 +1157,6 @@ mod tests {
         assert_eq!(events[0].event_type, "guard.warned");
         assert_eq!(events[0].target, "TST-0001");
         assert_eq!(events[0].details.as_deref(), Some("caution"));
-    }
-
-    #[test]
-    fn budget_precheck_allows_within_limit() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // Within budget -> Allow
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(3.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-
-        // Exactly at limit -> Allow
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(5.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-    }
-
-    #[test]
-    fn budget_precheck_denies_over_limit() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // Over budget -> Deny
-        let verdict = guard.check(
-            &Action::StartJob {
-                capability: Capability::Implement,
-                estimated_cost: Some(7.50),
-            },
-            &ai,
-        );
-        assert!(matches!(verdict, Verdict::Deny(_)));
-        if let Verdict::Deny(reason) = verdict {
-            assert!(reason.contains("7.50"));
-            assert!(reason.contains("5.00"));
-        }
-    }
-
-    #[test]
-    fn budget_precheck_allows_without_cost_limit() {
-        let project = project_with_members(vec![(
-            "ai:claude@joy",
-            specific_caps(&[Capability::Implement]),
-        )]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // No max_cost_per_job configured -> Allow regardless of cost
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(999.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-    }
-
-    #[test]
-    fn budget_precheck_allows_without_estimate() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // No estimated cost -> Allow (can't pre-check what we don't know)
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: None,
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
     }
 
     #[test]

@@ -183,7 +183,7 @@ struct MemberAddArgs {
     /// Member: a person's address, or a name for an AI member
     id: String,
 
-    /// Capabilities, or `all`. Default: everything but manage and delete.
+    /// Capabilities, or `all`. Default: the work capabilities, create and assign.
     #[arg(short = 'c', long, num_args = 1.., value_delimiter = ',')]
     capabilities: Vec<String>,
 

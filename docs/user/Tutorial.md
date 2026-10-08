@@ -313,7 +313,7 @@ Every joy command leaves a trace in `.joy/logs/` - one file per day, append-only
 2026-03-11T16:14:32.320Z CB-0005 item.created [mac@example.com]
 2026-03-11T16:15:01.440Z CB-0005 item.status_changed "new -> in-progress" [mac@example.com]
 2026-03-11T16:42:18.100Z CB-0005 comment.added [pete@example.com]
-2026-03-11T17:00:00.000Z CB-0005 comment.added [ai:claude@joy delegated-by:mac@example.com]
+2026-03-11T17:00:00.000Z CB-0005 comment.added [claude delegated-by:mac@example.com]
 ```
 
 The log records only structural facts: who did what, when, on which item. Titles, descriptions, and comment text are not written to the log - they live in the item file itself, behind whatever Crypt zone protects it. The log stays as a faithful audit trail even when item content is later encrypted. State transitions (`new -> in-progress`), member IDs, and item / milestone IDs do appear, because they are needed to interpret the event.
@@ -426,25 +426,36 @@ This does four things:
 1. Checks if your project has the Vision, Architecture, and Contributing docs (offers to create templates if missing).
 2. Bootstraps your authentication inline if `joy auth init` has not run yet, so the whole setup is one passphrase.
 3. Detects your installed AI tools (Claude Code, Qwen Code, Mistral Vibe, Google Antigravity's `agy`, GitHub Copilot CLI) and writes their instructions (`.claude/CLAUDE.md`, `.qwen/QWEN.md`, shared `AGENTS.md`, `.github/copilot-instructions.md`) plus the `/joy` skill where the tool supports skills. Antigravity discovers the skill at `.agents/skills/joy/SKILL.md` and its Joy capability agents under `.agents/agents/joy-*/agent.md`.
-4. Registers each detected tool as an `ai:<name>@joy` member with attested capabilities.
+4. Registers each detected tool as an AI member under the tool's name (`claude`, `qwen`, `vibe`, ...), with what the project allows it signed by you.
 
 The generated instructions point agents at `joy ai tutorial` and tell them to use the `member`, `session_env`, and `delegated_by` fields returned by token redemption. No tool-specific identity or co-author attribution is required in shared instructions. `joy ai tutorial` covers the CLI surface, authentication, the item lifecycle, commit conventions, and minimum hygiene rules; together with the project's authoritative docs, that is everything the AI needs.
 
-GitHub Copilot needs no special handling any more, in the editor or out of it. `joy ai init` finds it under `copilot`, under `gh copilot`, and in a VS Code-family editor even when neither command is installed: Copilot Chat is built into VS Code and reads the very files joy writes. All of it registers the one member `ai:copilot@joy`. If the run happens somewhere the editor cannot be seen from (inside tmux, over ssh, under sudo), name it directly:
+GitHub Copilot needs no special handling any more, in the editor or out of it. `joy ai init` finds it under `copilot`, under `gh copilot`, and in a VS Code-family editor even when neither command is installed: Copilot Chat is built into VS Code and reads the very files joy writes. All of it registers the one member `copilot`. If the run happens somewhere the editor cannot be seen from (inside tmux, over ssh, under sudo), name it directly:
 
 ```sh
 joy ai init --tool copilot
 ```
 
-If `agy` is not on your shell's PATH (for example, you only use the Antigravity editor), configure it explicitly with `joy ai init --tool agy`. It registers `ai:agy@joy`. The shared root `AGENTS.md` contains no tool identity; each agent uses the member and delegator returned by its own token redemption. Resetting one of Antigravity or Vibe keeps that block while the other still uses it.
+If `agy` is not on your shell's PATH (for example, you only use the Antigravity editor), configure it explicitly with `joy ai init --tool agy`. It registers the member `agy`. The shared root `AGENTS.md` contains no tool identity; each agent uses the member and delegator returned by its own token redemption. Resetting one of Antigravity or Vibe keeps that block while the other still uses it.
+
+To add one AI member by itself, ready to work with one passphrase entry:
+
+```sh
+joy ai add claude                                   # the member claude, on the tool claude
+joy ai add reviewer --adapter claude --model opus   # a second member on the same tool
+```
+
+`joy ai add` registers the member, sets its tool up in this checkout and prints its delegation token. A name that is a tool's name needs no `--adapter`.
 
 For an AI joy genuinely cannot detect, such as a chat assistant with no CLI and no instruction files of its own, register a member by hand:
 
 ```sh
-joy project member add ai:my-assistant@joy
+joy project member add my-assistant
 ```
 
-`joy project member add` for an `ai:` ID skips the OTP machinery and prints the next steps for issuing a delegation token.
+`joy project member add` for a name (not an address) registers an AI member: no one-time password, and the next steps for issuing a delegation token are printed. `--with-token` issues it right away.
+
+An AI member used to be written `claude`. That spelling still works wherever a member is named, and joy says once what the member is called now.
 
 ### The Trust Model
 
@@ -456,20 +467,20 @@ The rest of this mission covers the parts you can use today: identity (Trustship
 
 ### AI Identity
 
-AI tools are registered as project members with an `ai:` prefix:
+AI tools are project members, known by a name instead of an address:
 
 ```sh
-joy project member add ai:claude@joy          # detected automatically by `joy ai init`
-joy project member add ai:my-assistant@joy   # manual entry for an AI joy cannot detect
+joy project member add claude          # detected automatically by `joy ai init`
+joy project member add my-assistant    # manual entry for an AI joy cannot detect
 ```
 
 When an AI runs a Joy command, it authenticates with the delegation token you handed it; the token tells the CLI which AI member is acting and which human delegated. There is no `--author` flag, and the AI does not need to repeat its identity per call. The event log traces accountability back to that human:
 
 ```
-[ai:claude@joy delegated-by:horst@joydev.com]
+[claude delegated-by:horst@joydev.com]
 ```
 
-AI members have the same capabilities as human members, with one exception: **AI members cannot perform manage actions** (adding members, changing capabilities, modifying project settings). Management stays with humans.
+An AI member does what it is allowed and nothing else: an action whose capability it does not hold is refused, not just warned about. And **AI members never hold `manage`** (adding members, changing capabilities, modifying project settings). Management stays with people.
 
 ### Chats, Sealing, and the Delegate Button
 
@@ -520,12 +531,14 @@ Joy tracks project members and their capabilities. The founding member is added 
 
 ```sh
 joy project member add pete@example.com
-joy project member add ai:claude@joy --capabilities "implement,review"
+joy project member add claude --capabilities implement review
 joy project member show pete@example.com
 joy project member rm pete@example.com
 ```
 
-Joy defines eleven capabilities across two groups.
+Each member is a file of its own under `.joy/members/`; `project.yaml` lists them.
+
+Joy defines twelve capabilities across two groups.
 
 **Lifecycle capabilities** govern what a member can do on items:
 
@@ -538,6 +551,7 @@ Joy defines eleven capabilities across two groups.
 | `test` | Verify behaviour and add tests. |
 | `review` | Approve work from someone else and gate `submit -> closed`. |
 | `document` | Update user- or developer-facing docs. |
+| `jobs` | Move job items through their gates; approve execution and spend. |
 
 **Management capabilities** govern project-level operations:
 
@@ -548,34 +562,59 @@ Joy defines eleven capabilities across two groups.
 | `manage` | Add/edit members, change project settings. |
 | `delete` | Remove items (`joy rm`). |
 
-`joy project member add` defaults to the lifecycle set plus `create` and `assign`. `manage` and `delete` must be granted explicitly. AI members never get `manage` even when their entry says so - that is enforced at runtime.
+`joy project member add` defaults to the seven work capabilities from `conceive` to `document` plus `create` and `assign`, for a person and for an AI member alike. `jobs`, `manage` and `delete` must be granted explicitly, and an AI member never holds `manage`.
 
-### Interaction Levels
-
-Each capability also carries an interaction level that tells AI tools how much autonomy they have. Levels apply to every member; for humans they are a team agreement, for AI members they are enforced through the tools. Joy defines three levels, from least to most oversight:
-
-- `autonomous` - work independently; only stop at governance gates
-- `confirmed` - work independently; confirm before irreversible actions
-- `proposing` - propose; the human decides every step
-
-The effective level for a `(member, capability)` pair is resolved across these layers, each overriding the previous:
-
-1. **Project defaults** (`.joy/project.defaults.yaml`) - ship with sensible defaults per capability (e.g. `proposing` for `conceive`, `confirmed` for `implement`, `autonomous` for `test`).
-2. **Project overrides** (`.joy/project.yaml`) - per-capability settings the team agrees on for this project, under `interaction-level`.
-3. **Member defaults** (`.joy/project.yaml`) - the member's own default next to its capabilities: a global `interaction-level` on the member entry, plus per-capability values in the expert view.
-4. **Personal preference** (`.joy/config.yaml`) - per-user override under `interaction-level.default`, applied to capabilities the project hasn't pinned.
-5. **Item override** - a single item can request a different level via its `interaction-level` field, taking effect only for that item.
-
-A per-capability `max-interaction-level` on the member entry acts as a floor on oversight: the resolved level is clamped toward `proposing`, never relaxed.
-
-Inspect what is in force with:
+Change what a member may do with `joy project member edit`:
 
 ```sh
-joy project member show ai:claude@joy   # All capabilities, current level + source
-joy project member show pete@example.com
+joy project member edit pete@example.com --add-capability review
+joy project member edit pete@example.com --capabilities plan implement test
 ```
 
-The output's third column shows the level and (in brackets) where it was set. Tools and AI agents read this command and follow the level shown - they do not re-derive it.
+### What an AI Member May Do
+
+A person has capabilities. An AI member has two settings: its **capabilities** and one **interaction level**, which says how much it does on its own:
+
+- `proposing` - proposes and waits; it changes nothing by itself
+- `confirmed` - works and asks before each step that changes something
+- `autonomous` - works on its own and reports the result
+
+A new AI member starts `autonomous`. The level reaches the tool: joy puts the AI tool into the matching mode when the tool is set up and on every chat turn, and a job runs at the level it was released at.
+
+Two people have a say, and both sign what they say with their own key:
+
+1. **The project** says what the AI member may do at most. A member with `manage` sets it:
+
+   ```sh
+   joy project member edit claude --project --capabilities implement review --level confirmed
+   joy project member edit claude --project --model opus --description "writes the code"
+   ```
+
+2. **You** say what it may do when it works for you, within what the project allows. Nobody needs `manage` for that:
+
+   ```sh
+   joy project member edit claude --level proposing
+   joy project member edit claude --rm-capability review
+   ```
+
+What comes out for you is the narrower of the two. Inspect it with:
+
+```sh
+joy project member show claude
+```
+
+```
+               project      mine         effective
+  implement    x            x            x
+  review       x            -            -
+  level        confirmed    proposing    proposing
+```
+
+`project` is what the project allows, `mine` what you allow for yourself (empty while you follow the project), `effective` what the AI member may do when it works for you. Tools and AI agents follow the effective column; they do not re-derive it.
+
+A job carries a level of its own (`joy add job ... --level confirmed`). When the job is approved, the level is fixed: the one the job asks for, at most what the project allows its assignee.
+
+A project from before this layout keeps working as it is. The first person who signs in with their passphrase brings it over to member files, once and without a question.
 
 ### Gates (Status Rules)
 
@@ -596,8 +635,8 @@ Today only `allow_ai` is honored at runtime; more rule kinds (e.g. `requires_rol
 Joy scales to the level of ceremony you actually need:
 
 - **Solo:** one member, `capabilities: all`, no `status_rules`. Run `joy init` and start working.
-- **Small team:** add members with explicit capability sets (e.g. AI tools restricted to `implement,review,document`). Interaction levels stay at project defaults.
-- **Enterprise:** turn on gates (`status_rules`), tighten interaction levels per capability, set `allow_ai: false` on transitions where humans must sign off, and rely on the event log for audit.
+- **Small team:** add members with explicit capability sets (e.g. AI tools restricted to `implement review document`). AI members stay at the level they start with.
+- **Enterprise:** turn on gates (`status_rules`), lower the level the project allows its AI members, set `allow_ai: false` on transitions where humans must sign off, and rely on the event log for audit.
 
 The same workflow works at every scale - you only opt into more controls.
 
@@ -748,7 +787,7 @@ AI members authenticate via short-lived delegation tokens rather than passphrase
 You run:
 
 ```sh
-joy auth token add ai:claude@joy             # prints a joy_t_... token string
+joy auth token add claude             # prints a joy_t_... token string
 ```
 
 Share the token string with the AI in chat. The AI runs:
@@ -777,7 +816,7 @@ When both are set, `--session` wins. Tokens are multi-use within their TTL (defa
 If you suspect a delegation keypair has been compromised, rotate it. All prior tokens for that AI immediately become invalid:
 
 ```sh
-joy ai rotate ai:claude@joy
+joy ai rotate claude
 ```
 
 ### Configuration Layering
@@ -997,15 +1036,15 @@ AI Tools (Claude Code, Qwen, Mistral Vibe, Copilot, ...) work
 differently. Each operator has their own per-(operator, AI) delegation
 keypair, derived deterministically from the operator's seed at
 passphrase entry; the public key is registered once in `project.yaml`,
-the private key is never persisted. A `joy crypt grant ai:claude@joy
+the private key is never persisted. A `joy crypt grant claude
 --zone customer-x` writes one wrap per operator-delegation, all in one
 commit. Each operator's tokens then pick up the access:
 
 ```sh
-joy auth token add ai:claude@joy             # auth-only token, default 24h
-joy auth token add ai:claude@joy --crypt --ttl 30m   # auth + crypt, 30 min
-joy crypt grant   ai:claude@joy --zone customer-x    # per-operator wraps
-joy crypt revoke  ai:claude@joy --zone customer-x    # remove all of them
+joy auth token add claude             # auth-only token, default 24h
+joy auth token add claude --crypt --ttl 30m   # auth + crypt, 30 min
+joy crypt grant   claude --zone customer-x    # per-operator wraps
+joy crypt revoke  claude --zone customer-x    # remove all of them
 ```
 
 The `--crypt` flag embeds your delegation private key in the token
@@ -1021,7 +1060,7 @@ default. The AI cannot extend its own access beyond the token window.
 **Rotation when something looks off:**
 
 ```sh
-joy ai rotate ai:claude@joy   # nuclear: every operator's delegation for claude is gone
+joy ai rotate claude   # nuclear: every operator's delegation for claude is gone
 ```
 
 Per-operator rotation - kills your outstanding tokens for one AI
