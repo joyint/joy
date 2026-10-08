@@ -1,0 +1,4 @@
+2026-10-08T05:50:15.526Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-08T05:50:15.649Z JOY-02C4-1A item.created [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-08T05:50:22.746Z auth auth.session_created "session created for ai:claude@joy via delegation token" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
+2026-10-08T05:50:22.856Z JOY-02C4-1A item.status_changed "new -> review" [ai:claude@joy delegated-by:horst.schwarz@joydev.com]
