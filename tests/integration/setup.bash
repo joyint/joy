@@ -219,6 +219,11 @@ members_grep() {
     members_text | grep "$@"
 }
 
+# The name of the first AI member the project has, or nothing.
+first_ai_member() {
+    grep -h '^name: ' .joy/members/*.yaml 2>/dev/null | head -1 | cut -d' ' -f2
+}
+
 # The file of one member, by address or by an AI member's name.
 member_file() {
     grep -lE "^(email|name): $1\$" .joy/members/*.yaml 2>/dev/null | head -1

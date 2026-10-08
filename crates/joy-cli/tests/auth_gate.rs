@@ -98,7 +98,7 @@ impl Machine {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--capabilities",
             "implement",
             "--passphrase",

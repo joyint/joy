@@ -88,7 +88,7 @@ impl GitignoreBlockItem {
     /// holds the full fixed set (base entries plus every tool's ignore
     /// entries), so `joy update` stops stripping the per-tool lines
     /// `joy ai init` writes; with no AI member it stays the base-only set
-    /// `joy init` produces (JOY-01FE-98). The signal is `ai:*` membership in
+    /// `joy init` produces (JOY-01FE-98). The signal is an AI member in
     /// `.joy/project.yaml`, not the machine-local marker files: those are
     /// git-ignored, so a fresh checkout would otherwise read "nothing
     /// configured" and strip the committed tool lines (JOY-0264-89).
@@ -216,10 +216,9 @@ impl AiMemberAdapterItem {
             .map(|(key, _)| key.clone())
             .collect()
     }
-    /// The adapter for an `ai:<tool>@joy` member key, if the tool is known.
+    /// The adapter of the tool an AI member is named after, if it is one.
     fn adapter_for(member_key: &str) -> Option<&'static str> {
-        let tool = member_key.strip_prefix("ai:")?.split('@').next()?;
-        joy_ai::naming::tool_adapter(tool)
+        joy_ai::naming::tool_adapter(member_key)
     }
 }
 
@@ -273,8 +272,8 @@ impl AiToolItem {
     fn display_name(&self) -> &'static str {
         ai::tool_display_name(self.id).unwrap_or(self.id)
     }
-    fn member_id(&self, root: &Path) -> String {
-        joy_ai::naming::member_id_at(root, self.id)
+    fn member_id(&self) -> String {
+        joy_ai::naming::member_id(self.id)
     }
 }
 
@@ -289,7 +288,7 @@ impl UpdateItem for AiToolItem {
         // not configured" and "not installed" are informational, not
         // stale (the user must run joy ai init to opt in).
         let (mark, detail) = if configured {
-            let stale = ai::is_tool_stale_pub(root, self.id, &self.member_id(root))?;
+            let stale = ai::is_tool_stale_pub(root, self.id, &self.member_id())?;
             if stale {
                 (RowMark::Stale, "outdated".to_string())
             } else {
@@ -314,7 +313,7 @@ impl UpdateItem for AiToolItem {
             // Not configured -> not joy's job to install; skip silently.
             return Ok(Vec::new());
         }
-        let changed = ai::refresh_tool_by_id(root, self.id, &self.member_id(root))?;
+        let changed = ai::refresh_tool_by_id(root, self.id, &self.member_id())?;
         // Keep the configured-tools .gitignore entries fresh too.
         let _ = ai::sync_gitignore_for_configured_tools(root);
         Ok(vec![RefreshRow {
@@ -411,7 +410,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         seed_project_yaml(
             tmp.path(),
-            "members:\n  \"ai:claude@joy\":\n    capabilities: all\n",
+            "members:\n  \"claude\":\n    capabilities: all\n",
         );
         let entries = GitignoreBlockItem::expected_entries(tmp.path());
         assert_eq!(entries, joy_ai::ai_setup::managed_gitignore_entries());

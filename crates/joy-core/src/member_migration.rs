@@ -3,9 +3,9 @@
 
 //! Bringing a project from before the member files over (JI-019D-46).
 //!
-//! Such a project keeps its whole member map in project.yaml, calls an AI
-//! member `ai:<name>@joy`, and has a manager's attestation over every
-//! entry. Brought over, it has one file per member, AI members known by
+//! Such a project keeps its whole member map in project.yaml, writes an
+//! AI member by its older id ([`joy_model::older_id`]), and has a
+//! manager's attestation over every entry. Brought over, it has one file per member, AI members known by
 //! their name, an origin for every person and a signed maximum for every
 //! AI member.
 //!
@@ -30,10 +30,10 @@ use crate::auth::{session, IdentityKeypair};
 use crate::error::JoyError;
 use crate::member_id;
 use crate::model::project::{
-    ai_member_name, is_ai_member, Member, MemberCapabilities, MemberLayout, Origin, Project,
+    is_ai_member, Member, MemberCapabilities, MemberLayout, Origin, Project,
 };
 use crate::store;
-use joy_model::InteractionLevel;
+use joy_model::{older_id, InteractionLevel};
 
 /// Whether the project at `root` still keeps its members in project.yaml.
 pub fn pending(root: &Path) -> bool {
@@ -58,28 +58,27 @@ fn level_before(member: &Member) -> InteractionLevel {
     floors.unwrap_or(vouch::DEFAULT_AI_LEVEL)
 }
 
-/// The member as its file will have it, and the key it is known by.
-/// Unsigned: [`migrate`] signs the AI members afterwards.
+/// The member as its file will have it. Unsigned: [`migrate`] signs the
+/// AI members afterwards.
 fn convert(
     project_id: &str,
     anonymous: bool,
     head: Option<&str>,
-    old_key: &str,
+    key: &str,
     mut member: Member,
-) -> (String, Member) {
-    let ai = is_ai_member(old_key);
-    let key = if ai {
-        ai_member_name(old_key).to_string()
-    } else {
-        old_key.to_string()
-    };
+) -> Member {
+    let ai = is_ai_member(key);
     // A person of an anonymous project is already known everywhere by an
     // id; it stays, and becomes the file's name. Everybody else gets one
-    // that two people bringing the same project over arrive at alike.
+    // that two people bringing the same project over arrive at alike:
+    // for an AI member over its older id, which is what such a project
+    // has on disk.
     member.file_id = Some(if anonymous && !ai {
-        old_key.to_string()
+        key.to_string()
+    } else if ai {
+        member_id::migrated_member_file_id(project_id, &older_id::spelled(key))
     } else {
-        member_id::migrated_member_file_id(project_id, old_key)
+        member_id::migrated_member_file_id(project_id, key)
     });
     let attestation = member.attestation.take();
     if ai {
@@ -103,12 +102,7 @@ fn convert(
             *config = Default::default();
         }
     }
-    // The AI members a person delegated to are known by their names now.
-    member.ai_delegations = std::mem::take(&mut member.ai_delegations)
-        .into_iter()
-        .map(|(ai, entry)| (ai_member_name(&ai).to_string(), entry))
-        .collect();
-    (key, member)
+    member
 }
 
 /// A project converted and waiting for the signatures under what its AI
@@ -157,10 +151,13 @@ pub fn prepare(root: &Path, signer_key: &str) -> Result<Option<Prepared>, JoyErr
 
     let mut renamed: Vec<(String, String)> = Vec::new();
     let mut members: BTreeMap<String, Member> = BTreeMap::new();
-    for (old_key, member) in project.take_members() {
-        let (key, member) = convert(&project_id, anonymous, head.as_deref(), &old_key, member);
-        if key != old_key {
-            renamed.push((old_key, key.clone()));
+    for (key, member) in project.take_members() {
+        let member = convert(&project_id, anonymous, head.as_deref(), &key, member);
+        // What is read is the name already; the files that are not
+        // read through the model (items, logs, releases) still carry
+        // the older id and are rewritten below.
+        if is_ai_member(&key) {
+            renamed.push((older_id::spelled(&key), key.clone()));
         }
         members.insert(key, member);
     }
@@ -225,8 +222,9 @@ pub fn finish(
 
     store::save_project(root, &project)?;
 
-    // Everything else that names an AI member the old way: the crypt
-    // zones in project.yaml, items, jobs, milestones, releases, logs.
+    // Everything else that names an AI member by its older id: the
+    // crypt zones in project.yaml, items, jobs, milestones, releases,
+    // logs.
     let joy = store::joy_dir(root);
     crate::privacy::rewrite_project_keeping_the_member_list(
         &joy.join(store::PROJECT_FILE),

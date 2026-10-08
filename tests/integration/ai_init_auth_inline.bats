@@ -86,5 +86,5 @@ load setup
     [[ "$output" == *"--user <address>"* ]]
     # And it refused BEFORE registering anything: no AI member was
     # written by a command that could not name its attester.
-    ! members_grep -q "ai:"
+    [ -z "$(first_ai_member)" ]
 }

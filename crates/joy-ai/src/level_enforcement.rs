@@ -212,8 +212,6 @@ mod tests {
         project.register_member("claude", claude).unwrap();
         joy_core::store::save_project(dir.path(), &project).unwrap();
         assert_eq!(setup_level(dir.path(), "claude"), Confirmed);
-        // the older spelling names the same member
-        assert_eq!(setup_level(dir.path(), "ai:claude@joy"), Confirmed);
 
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
         project

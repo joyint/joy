@@ -101,31 +101,13 @@ fn matches_item_id(id: &str, prefix: &str) -> bool {
     rewrite_candidate(id, prefix).is_some()
 }
 
-/// Match a member ID against a completion prefix, handling colon as a
-/// possible word boundary that the shell may have stripped (bash's
-/// COMP_WORDBREAKS includes `:`). Matching is case-insensitive on both
-/// branches so `p` finds `Peter.Schmidt@joydev.com` without forcing the
-/// user to type uppercase.
-///
-/// Cases (id = `ai:claude@joy`):
-/// * prefix `ai`         -> `ai:claude@joy` (full)
-/// * prefix `ai:cl`      -> `ai:claude@joy` (full, prefix carries the colon)
-/// * prefix `cl`         -> `claude@joy`    (bash stripped `ai:`)
-/// * prefix `xyz`        -> None
+/// Match a member ID against a completion prefix. Case-insensitive, so
+/// `p` finds `Peter.Schmidt@joydev.com` without forcing the user to type
+/// uppercase.
 fn match_member(id: &str, prefix: &str) -> Option<String> {
-    let id_lc = id.to_ascii_lowercase();
-    let prefix_lc = prefix.to_ascii_lowercase();
-    if id_lc.starts_with(&prefix_lc) {
-        return Some(id.to_string());
-    }
-    if !prefix.contains(':') {
-        if let Some((_head, tail)) = id.rsplit_once(':') {
-            if tail.to_ascii_lowercase().starts_with(&prefix_lc) {
-                return Some(tail.to_string());
-            }
-        }
-    }
-    None
+    id.to_ascii_lowercase()
+        .starts_with(&prefix.to_ascii_lowercase())
+        .then(|| id.to_string())
 }
 
 /// Filter members against the prefix, returning the appropriately
@@ -262,77 +244,49 @@ mod tests {
     fn member_candidates_ai_only() {
         let members: Vec<String> = vec![
             "horst@joydev.com".into(),
-            "ai:claude@joy".into(),
-            "ai:qwen@joy".into(),
+            "claude".into(),
+            "qwen".into(),
             "alice@team.com".into(),
         ];
         let out = member_candidates(members.iter(), "", ai_only);
-        assert_eq!(out, vec!["ai:claude@joy", "ai:qwen@joy"]);
+        assert_eq!(out, vec!["claude", "qwen"]);
     }
 
     #[test]
     fn member_candidates_includes_humans_when_unfiltered() {
         let members: Vec<String> = vec![
             "alice@team.com".into(),
-            "ai:claude@joy".into(),
+            "claude".into(),
             "bob@team.com".into(),
         ];
         let out = member_candidates(members.iter(), "", |_| true);
-        assert_eq!(out, vec!["ai:claude@joy", "alice@team.com", "bob@team.com"]);
+        assert_eq!(out, vec!["alice@team.com", "bob@team.com", "claude"]);
     }
 
     #[test]
     fn member_candidates_respects_prefix() {
-        let members: Vec<String> = vec![
-            "ai:claude@joy".into(),
-            "ai:qwen@joy".into(),
-            "ai:copilot@joy".into(),
-        ];
-        let out = member_candidates(members.iter(), "ai:c", ai_only);
-        assert_eq!(out, vec!["ai:claude@joy", "ai:copilot@joy"]);
+        let members: Vec<String> = vec!["claude".into(), "qwen".into(), "copilot".into()];
+        let out = member_candidates(members.iter(), "c", ai_only);
+        assert_eq!(out, vec!["claude", "copilot"]);
     }
 
     #[test]
     fn member_candidates_empty_on_no_match() {
-        let members: Vec<String> = vec!["ai:claude@joy".into()];
-        let out = member_candidates(members.iter(), "ai:x", ai_only);
+        let members: Vec<String> = vec!["claude".into()];
+        let out = member_candidates(members.iter(), "x", ai_only);
         assert!(out.is_empty());
     }
 
     #[test]
-    fn match_member_full_prefix() {
-        assert_eq!(
-            match_member("ai:claude@joy", "ai"),
-            Some("ai:claude@joy".to_string())
-        );
-        assert_eq!(
-            match_member("ai:claude@joy", "ai:cl"),
-            Some("ai:claude@joy".to_string())
-        );
-        assert_eq!(
-            match_member("ai:claude@joy", "ai:claude@joy"),
-            Some("ai:claude@joy".to_string())
-        );
-    }
-
-    #[test]
-    fn match_member_post_colon_prefix() {
-        // bash's COMP_WORDBREAKS strips up to the last colon: the prefix
-        // arrives without the `ai:` part. The candidate should be the
-        // suffix only so the shell appends correctly.
-        assert_eq!(
-            match_member("ai:claude@joy", "cl"),
-            Some("claude@joy".to_string())
-        );
-        assert_eq!(
-            match_member("ai:claude@joy", "claude"),
-            Some("claude@joy".to_string())
-        );
+    fn match_member_by_prefix_and_in_full() {
+        assert_eq!(match_member("claude", "cl"), Some("claude".to_string()));
+        assert_eq!(match_member("claude", "CL"), Some("claude".to_string()));
+        assert_eq!(match_member("claude", "claude"), Some("claude".to_string()));
     }
 
     #[test]
     fn match_member_no_match() {
-        assert_eq!(match_member("ai:claude@joy", "xyz"), None);
+        assert_eq!(match_member("claude", "xyz"), None);
         assert_eq!(match_member("alice@team.com", "bob"), None);
     }
 
@@ -345,7 +299,7 @@ mod tests {
     }
 
     #[test]
-    fn match_member_is_case_insensitive_on_full_prefix() {
+    fn match_member_is_case_insensitive() {
         assert_eq!(
             match_member("Peter.Schmidt@joydev.com", "p"),
             Some("Peter.Schmidt@joydev.com".to_string())
@@ -353,20 +307,6 @@ mod tests {
         assert_eq!(
             match_member("Peter.Schmidt@joydev.com", "PETER"),
             Some("Peter.Schmidt@joydev.com".to_string())
-        );
-    }
-
-    #[test]
-    fn match_member_is_case_insensitive_on_post_colon_branch() {
-        // bash strip leaves prefix as 'CL'; the candidate id has lowercase
-        // 'claude'. Match should still hit and return the suffix.
-        assert_eq!(
-            match_member("ai:claude@joy", "CL"),
-            Some("claude@joy".to_string())
-        );
-        assert_eq!(
-            match_member("ai:Claude@joy", "cl"),
-            Some("Claude@joy".to_string())
         );
     }
 

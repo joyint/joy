@@ -619,8 +619,7 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             {
                 anyhow::bail!(
                     "@{} answers only when addressed from the app (an AI turn runs under the sender's chat session there); nothing sent. Address {} in the app, or send the message without the mention.",
-                    joy_chat::mentions::alias(ai),
-                    joy_chat::mentions::alias(ai)
+                    ai, ai
                 );
             }
             // An @name at the START takes that member into the chat (Horst

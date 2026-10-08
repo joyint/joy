@@ -39,9 +39,7 @@ fn is_ai(id: &str) -> bool {
     joy_model::is_ai_member(id)
 }
 
-pub use crate::mentions::{
-    alias, leading_mentions, leads_with_mention, mentions, unknown_mentions,
-};
+pub use crate::mentions::{leading_mentions, leads_with_mention, mentions, unknown_mentions};
 
 /// Decide what `ai_member` should do about the newest message.
 ///
@@ -190,7 +188,7 @@ pub fn context_prompt(chat: &Chat, ai_member: &str) -> String {
     let roster: Vec<String> = chat
         .participants
         .iter()
-        .map(|p| format!("@{}", alias(p.id())))
+        .map(|p| format!("@{}", p.id()))
         .collect();
     let mut prompt = format!("You are {ai_member}, a member of the chat \"{title}\".\n");
     if !roster.is_empty() {
@@ -401,8 +399,8 @@ mod tests {
             "t1",
             vec![
                 MemberRef::new("horst@example.com"),
-                MemberRef::new("ai:claude@joy"),
-                MemberRef::new("ai:vibe@joy"),
+                MemberRef::new("claude"),
+                MemberRef::new("vibe"),
             ],
             now,
         );
@@ -436,13 +434,10 @@ mod tests {
                 "@vibe alles im lot?",
                 MessageKind::Text,
             ),
-            ("ai:vibe@joy", "Nicht alles im Lot.", MessageKind::Text),
+            ("vibe", "Nicht alles im Lot.", MessageKind::Text),
             ("horst@example.com", line, MessageKind::Text),
         ]);
-        chat.participants = vec![
-            MemberRef::new("horst@example.com"),
-            MemberRef::new("ai:vibe@joy"),
-        ];
+        chat.participants = vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")];
         let newest = chat.messages.last().cloned().unwrap();
         (chat, newest)
     }
@@ -450,21 +445,21 @@ mod tests {
     #[test]
     fn a_leading_name_outside_the_chat_is_still_an_address_and_the_last_speaker_stays_silent() {
         let (chat, newest) = one_to_one_after_vibe_answered("@alex@werklust.com bist du da?");
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Silent);
     }
 
     #[test]
     fn a_leading_name_of_someone_who_joined_addresses_only_them() {
         let (mut chat, newest) = one_to_one_after_vibe_answered("@alex@werklust.com bist du da?");
         chat.participants.push(MemberRef::new("alex@werklust.com"));
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Silent);
     }
 
     #[test]
     fn a_name_inside_the_sentence_is_a_reference_and_the_last_speaker_answers() {
         let (chat, newest) =
             one_to_one_after_vibe_answered("hast du @alex@werklust.com schon gefragt?");
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Respond);
     }
 
     #[test]
@@ -472,7 +467,7 @@ mod tests {
         let members = vec![
             "horst@example.com".to_string(),
             "alex@werklust.com".to_string(),
-            "ai:vibe@joy".to_string(),
+            "vibe".to_string(),
         ];
         let (mut chat, _) = one_to_one_after_vibe_answered("");
         assert!(take_along(&mut chat, "hast du @alex@werklust.com gefragt?", &members).is_empty());
@@ -494,15 +489,12 @@ mod tests {
     }
 
     #[test]
-    fn mentions_match_alias_and_full_ref() {
-        let candidates = vec![
-            "ai:claude@joy".to_string(),
-            "geordi@example.org".to_string(),
-        ];
+    fn mentions_match_a_name_and_an_address() {
+        let candidates = vec!["claude".to_string(), "geordi@example.org".to_string()];
         let found = mentions("@claude please ask @geordi@example.org.", &candidates);
         assert_eq!(found.len(), 2);
         assert!(mentions("no at all", &candidates).is_empty());
-        assert!(mentions("mail me claude@joy", &candidates).is_empty());
+        assert!(mentions("mail me claude@example.org", &candidates).is_empty());
     }
 
     #[test]
@@ -516,23 +508,17 @@ mod tests {
             "/joy ls --tree",
             MessageKind::Text,
         )]);
-        solo.participants = vec![
-            MemberRef::new("horst@example.com"),
-            MemberRef::new("ai:vibe@joy"),
-        ];
+        solo.participants = vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")];
         let newest = solo.messages.last().unwrap().clone();
-        assert_eq!(decide(&solo, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&solo, &newest, "vibe"), TurnDecision::Silent);
 
         let follow = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             ("horst@example.com", "/joy ls", MessageKind::Text),
         ]);
         let newest = follow.messages.last().unwrap().clone();
-        assert_eq!(
-            decide(&follow, &newest, "ai:vibe@joy"),
-            TurnDecision::Silent
-        );
+        assert_eq!(decide(&follow, &newest, "vibe"), TurnDecision::Silent);
 
         let arg = chat_with(vec![(
             "horst@example.com",
@@ -540,7 +526,7 @@ mod tests {
             MessageKind::Text,
         )]);
         let newest = arg.messages.last().unwrap().clone();
-        assert_eq!(decide(&arg, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&arg, &newest, "vibe"), TurnDecision::Silent);
     }
 
     #[test]
@@ -550,13 +536,10 @@ mod tests {
         // the result of `/joy ls` once triggered a turn via the solo rule.
         for kind in [MessageKind::Tool, MessageKind::Error] {
             let mut solo = chat_with(vec![("horst@example.com", "[tree result]", kind)]);
-            solo.participants = vec![
-                MemberRef::new("horst@example.com"),
-                MemberRef::new("ai:vibe@joy"),
-            ];
+            solo.participants = vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")];
             let newest = solo.messages.last().unwrap().clone();
             assert_eq!(
-                decide(&solo, &newest, "ai:vibe@joy"),
+                decide(&solo, &newest, "vibe"),
                 TurnDecision::Silent,
                 "{kind:?} must not trigger a turn"
             );
@@ -570,17 +553,17 @@ mod tests {
     fn a_running_turn_marker_is_silent_and_invisible_to_prompts() {
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             ("horst@example.com", "and the version?", MessageKind::Text),
-            ("ai:vibe@joy", "", MessageKind::Turn),
+            ("vibe", "", MessageKind::Turn),
         ]);
         let newest = chat.messages.last().unwrap().clone();
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Silent);
         // the delta counts from the reply, not from the marker written
         // after the human's line: the agent must see that line
-        let delta = delta_prompt(&chat, "ai:vibe@joy").expect("the member spoke before");
+        let delta = delta_prompt(&chat, "vibe").expect("the member spoke before");
         assert!(delta.contains("and the version?"), "{delta}");
-        assert!(!delta.contains("ai:vibe@joy: \n"), "{delta}");
+        assert!(!delta.contains("vibe: \n"), "{delta}");
     }
 
     #[test]
@@ -589,7 +572,7 @@ mod tests {
         // schreiben?" right after vibe's answer got NO reply
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             (
                 "horst@example.com",
                 "write that into README.md?",
@@ -597,16 +580,16 @@ mod tests {
             ),
         ]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Respond);
         // the OTHER AI stays silent: the human is answering vibe
-        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "claude"), TurnDecision::Silent);
     }
 
     #[test]
     fn consecutive_human_messages_keep_the_exchange_alive() {
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             ("horst@example.com", "ok", MessageKind::Text),
             (
                 "horst@example.com",
@@ -615,14 +598,14 @@ mod tests {
             ),
         ]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Respond);
     }
 
     #[test]
     fn another_voice_breaks_the_unmentioned_chain() {
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             ("geordi@example.org", "interesting!", MessageKind::Text),
             (
                 "horst@example.com",
@@ -631,8 +614,8 @@ mod tests {
             ),
         ]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
-        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "claude"), TurnDecision::Silent);
     }
 
     #[test]
@@ -644,10 +627,7 @@ mod tests {
         let now = Utc.with_ymd_and_hms(2026, 7, 4, 12, 0, 0).unwrap();
         let mut chat = Chat::new(
             "solo",
-            vec![
-                MemberRef::new("horst@example.com"),
-                MemberRef::new("ai:vibe@joy"),
-            ],
+            vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")],
             now,
         );
         fn line(chat: &mut Chat, now: chrono::DateTime<Utc>, text: &str) {
@@ -669,11 +649,11 @@ mod tests {
         }
         line(&mut chat, now, "which model do you use?");
         let newest = chat.messages.last().unwrap().clone();
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Silent);
 
         line(&mut chat, now, "@vibe which model do you use?");
         let newest = chat.messages.last().unwrap().clone();
-        assert_eq!(decide(&chat, &newest, "ai:vibe@joy"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, &newest, "vibe"), TurnDecision::Respond);
     }
 
     #[test]
@@ -682,7 +662,7 @@ mod tests {
         // last, the next message went to @claude, and vibe answered it too.
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             (
                 "horst@example.com",
                 "@claude what do you think?",
@@ -690,11 +670,8 @@ mod tests {
             ),
         ]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
-        assert_eq!(
-            decide(&chat, newest, "ai:claude@joy"),
-            TurnDecision::Respond
-        );
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "claude"), TurnDecision::Respond);
     }
 
     #[test]
@@ -704,7 +681,7 @@ mod tests {
         // exchange with whoever spoke last.
         let chat = chat_with(vec![
             ("horst@example.com", "@vibe which model?", MessageKind::Text),
-            ("ai:vibe@joy", "mistral-medium-3.5.", MessageKind::Text),
+            ("vibe", "mistral-medium-3.5.", MessageKind::Text),
             (
                 "horst@example.com",
                 "thanks, I already asked @claude about that",
@@ -712,8 +689,8 @@ mod tests {
             ),
         ]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(decide(&chat, newest, "ai:claude@joy"), TurnDecision::Silent);
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, newest, "claude"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Respond);
     }
 
     #[test]
@@ -724,11 +701,8 @@ mod tests {
             MessageKind::Text,
         )]);
         let newest = chat.messages.last().unwrap();
-        assert_eq!(
-            decide(&chat, newest, "ai:claude@joy"),
-            TurnDecision::Respond
-        );
-        assert_eq!(decide(&chat, newest, "ai:vibe@joy"), TurnDecision::Silent);
+        assert_eq!(decide(&chat, newest, "claude"), TurnDecision::Respond);
+        assert_eq!(decide(&chat, newest, "vibe"), TurnDecision::Silent);
     }
 
     #[test]
@@ -738,7 +712,7 @@ mod tests {
             "@vibe which model?",
             MessageKind::Text,
         )]);
-        let prompt = context_prompt(&chat, "ai:vibe@joy");
+        let prompt = context_prompt(&chat, "vibe");
         // roster is built from the live participants: AIs by short alias,
         // humans by their id, so members added over time appear on their own
         assert!(prompt.contains("@horst@example.com"));
@@ -760,48 +734,38 @@ mod tests {
                 "@claude kick it off",
                 MessageKind::Text,
             ),
-            (
-                "ai:claude@joy",
-                "@vibe what is the state?",
-                MessageKind::Text,
-            ),
-            ("ai:vibe@joy", "@claude two tests fail", MessageKind::Text),
-            ("ai:claude@joy", "@vibe which ones?", MessageKind::Text),
-            ("ai:vibe@joy", "@claude the auth pair", MessageKind::Text),
+            ("claude", "@vibe what is the state?", MessageKind::Text),
+            ("vibe", "@claude two tests fail", MessageKind::Text),
+            ("claude", "@vibe which ones?", MessageKind::Text),
+            ("vibe", "@claude the auth pair", MessageKind::Text),
         ]);
         let newest = chat.messages.last().unwrap();
         assert_eq!(
-            decide(&chat, newest, "ai:claude@joy"),
+            decide(&chat, newest, "claude"),
             TurnDecision::NeedsModeration
         );
         // vibe addressed by claude at this point would also be over budget
         let chat2 = chat_with(vec![
             ("horst@example.com", "@claude go", MessageKind::Text),
-            ("ai:claude@joy", "@vibe q1", MessageKind::Text),
-            ("ai:vibe@joy", "@claude a1", MessageKind::Text),
-            ("ai:claude@joy", "@vibe q2", MessageKind::Text),
+            ("claude", "@vibe q1", MessageKind::Text),
+            ("vibe", "@claude a1", MessageKind::Text),
+            ("claude", "@vibe q2", MessageKind::Text),
         ]);
         let newest2 = chat2.messages.last().unwrap();
-        assert_eq!(
-            decide(&chat2, newest2, "ai:vibe@joy"),
-            TurnDecision::Respond
-        );
+        assert_eq!(decide(&chat2, newest2, "vibe"), TurnDecision::Respond);
         // a human speaking resets the chain
         let chat3 = chat_with(vec![
-            ("ai:claude@joy", "@vibe q", MessageKind::Text),
-            ("ai:vibe@joy", "@claude a", MessageKind::Text),
+            ("claude", "@vibe q", MessageKind::Text),
+            ("vibe", "@claude a", MessageKind::Text),
             ("horst@example.com", "@claude summarize", MessageKind::Text),
         ]);
         let newest3 = chat3.messages.last().unwrap();
-        assert_eq!(
-            decide(&chat3, newest3, "ai:claude@joy"),
-            TurnDecision::Respond
-        );
+        assert_eq!(decide(&chat3, newest3, "claude"), TurnDecision::Respond);
     }
 
     #[test]
     fn unknown_mentions_surface_and_known_ones_do_not() {
-        let candidates = vec!["ai:claude@joy".to_string(), "horst@example.com".to_string()];
+        let candidates = vec!["claude".to_string(), "horst@example.com".to_string()];
         // known by alias and by full ref: no error
         assert!(unknown_mentions("@claude please check", &candidates).is_empty());
         assert!(unknown_mentions("cc @horst@example.com", &candidates).is_empty());
@@ -821,7 +785,7 @@ mod tests {
 
     #[test]
     fn moderation_notice_posts_once() {
-        let mut chat = chat_with(vec![("ai:claude@joy", "@vibe q", MessageKind::Text)]);
+        let mut chat = chat_with(vec![("claude", "@vibe q", MessageKind::Text)]);
         assert!(!moderation_already_posted(&chat));
         chat.messages.push(ChatMessage {
             id: uuid::Uuid::now_v7().to_string(),
@@ -834,7 +798,7 @@ mod tests {
             attempt: 0,
             parts: Vec::new(),
             at: chat.updated,
-            author: MemberRef::new("ai:claude@joy"),
+            author: MemberRef::new("claude"),
             text: MODERATION_NOTICE.into(),
             kind: MessageKind::Notice,
         });
@@ -845,29 +809,29 @@ mod tests {
     fn context_prompt_carries_the_whole_transcript() {
         let chat = chat_with(vec![
             ("horst@example.com", "hello", MessageKind::Text),
-            ("ai:vibe@joy", "hi @claude", MessageKind::Text),
+            ("vibe", "hi @claude", MessageKind::Text),
         ]);
-        let prompt = context_prompt(&chat, "ai:claude@joy");
-        assert!(prompt.contains("You are ai:claude@joy"));
+        let prompt = context_prompt(&chat, "claude");
+        assert!(prompt.contains("You are claude"));
         assert!(prompt.contains("horst@example.com: hello"));
-        assert!(prompt.contains("ai:vibe@joy: hi @claude"));
+        assert!(prompt.contains("vibe: hi @claude"));
     }
 
     #[test]
     fn the_delta_prompt_carries_only_whats_new_to_the_member() {
         let chat = chat_with(vec![
             ("horst@example.com", "hi claude", MessageKind::Text),
-            ("ai:claude@joy", "hello!", MessageKind::Text),
+            ("claude", "hello!", MessageKind::Text),
             ("horst@example.com", "and now?", MessageKind::Text),
-            ("ai:vibe@joy", "vibe here", MessageKind::Text),
+            ("vibe", "vibe here", MessageKind::Text),
         ]);
-        let delta = delta_prompt(&chat, "ai:claude@joy").expect("spoke before");
+        let delta = delta_prompt(&chat, "claude").expect("spoke before");
         assert!(delta.contains("and now?"));
         assert!(delta.contains("vibe here"));
         assert!(!delta.contains("hi claude"), "already in the session");
         assert!(!delta.contains("hello!"), "own message never repeats");
         // a member who never spoke gets NO delta: full replay instead
         let chat2 = chat_with(vec![("horst@example.com", "hi", MessageKind::Text)]);
-        assert!(delta_prompt(&chat2, "ai:claude@joy").is_none());
+        assert!(delta_prompt(&chat2, "claude").is_none());
     }
 }

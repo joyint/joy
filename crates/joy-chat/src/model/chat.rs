@@ -231,7 +231,11 @@ pub struct Chat {
     pub participants: Vec<MemberRef>,
     /// ACP session id per participating AI member (keyed by member id),
     /// so the AI-side conversation thread survives restarts.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::older_id::de_by_member"
+    )]
     pub ai_sessions: BTreeMap<String, String>,
     /// Per-delegator interaction-level overrides (ADR JAPP-00F3-E8 as
     /// revised by JI-0166-D8 §5): outer key = AI participant member id,
@@ -259,7 +263,11 @@ pub struct Chat {
     /// a desktop clone carries its own markers. A member's EFFECTIVE
     /// watermark also advances to their own last authored message (you have
     /// read what you wrote); use [`Chat::effective_watermark`].
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::older_id::de_by_member"
+    )]
     pub read_markers: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]
     pub messages: Vec<ChatMessage>,
@@ -360,7 +368,7 @@ mod tests {
         );
 
         chat.interaction_levels
-            .entry("ai:claude@joy".to_string())
+            .entry("claude".to_string())
             .or_default()
             .insert("horst@example.com".to_string(), InteractionLevel::Confirmed);
         let yaml = serde_yaml_ng::to_string(&chat).unwrap();
@@ -370,15 +378,15 @@ mod tests {
         let back: Chat = serde_yaml_ng::from_str(&yaml).unwrap();
         assert_eq!(back, chat);
         assert_eq!(
-            back.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            back.interaction_level_override("claude", "horst@example.com"),
             Some(InteractionLevel::Confirmed)
         );
         assert_eq!(
-            back.interaction_level_override("ai:claude@joy", "geordi@example.org"),
+            back.interaction_level_override("claude", "geordi@example.org"),
             None
         );
         assert_eq!(
-            back.interaction_level_override("ai:copilot@joy", "horst@example.com"),
+            back.interaction_level_override("copilot", "horst@example.com"),
             None
         );
     }
@@ -388,15 +396,15 @@ mod tests {
         // A pre-2.0 sealed blob carries `modes:` with agent-mode names;
         // deserialization maps it and the next persist writes level names.
         let yaml = "id: c\ncreated: 2026-07-11T00:00:00Z\nupdated: 2026-07-11T00:00:00Z\n\
-                    participants:\n  - horst@example.com\nmodes:\n  ai:claude@joy:\n    \
+                    participants:\n  - horst@example.com\nmodes:\n  claude:\n    \
                     horst@example.com: accept-edits\n    geordi@example.org: plan\n";
         let chat: Chat = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(
-            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            chat.interaction_level_override("claude", "horst@example.com"),
             Some(InteractionLevel::Confirmed)
         );
         assert_eq!(
-            chat.interaction_level_override("ai:claude@joy", "geordi@example.org"),
+            chat.interaction_level_override("claude", "geordi@example.org"),
             Some(InteractionLevel::Proposing)
         );
         let rewritten = serde_yaml_ng::to_string(&chat).unwrap();
@@ -412,7 +420,7 @@ mod tests {
             vec![
                 MemberRef::new("a@e"),
                 MemberRef::new("b@e"),
-                MemberRef::new("ai:v@joy"),
+                MemberRef::new("v"),
             ],
             now,
         );
@@ -431,7 +439,7 @@ mod tests {
             attempt: 0,
             parts: Vec::new(),
         };
-        chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "ai:v@joy")];
+        chat.messages = vec![mk(1, "a@e"), mk(2, "b@e"), mk(3, "v")];
         // b@e has an explicit read marker up to t2; a@e and the AI only have
         // authorship (a authored t1, the AI authored the last at t3).
         chat.read_markers.insert("b@e".into(), chat.messages[1].at);
@@ -439,18 +447,15 @@ mod tests {
         // effective watermark = max(explicit, own last authored)
         assert_eq!(chat.effective_watermark("a@e"), Some(chat.messages[0].at));
         assert_eq!(chat.effective_watermark("b@e"), Some(chat.messages[1].at));
-        assert_eq!(
-            chat.effective_watermark("ai:v@joy"),
-            Some(chat.messages[2].at)
-        );
+        assert_eq!(chat.effective_watermark("v"), Some(chat.messages[2].at));
 
         // only the AI (author of the last, t3) has read the latest message
         let last = chat.messages.last().unwrap().clone();
-        assert_eq!(chat.read_by(&last), vec!["ai:v@joy".to_string()]);
+        assert_eq!(chat.read_by(&last), vec!["v".to_string()]);
 
         // unread = messages strictly after the effective watermark
         assert_eq!(chat.unread_count("a@e"), 2); // m2, m3
         assert_eq!(chat.unread_count("b@e"), 1); // m3
-        assert_eq!(chat.unread_count("ai:v@joy"), 0);
+        assert_eq!(chat.unread_count("v"), 0);
     }
 }

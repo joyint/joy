@@ -441,7 +441,7 @@ fn detect_copilot() -> bool {
     // What still must NOT count is `gh` being on the PATH: it sits on
     // virtually every CI runner and dev machine and says nothing about
     // whether Copilot is installed behind it, and keying detection off the
-    // binary alone produced spurious `ai:copilot@joy` registrations. So
+    // binary alone produced spurious `copilot` registrations. So
     // the gh launch earns its answer by running, which is exactly what
     // the registry's `verify` argv is for.
     copilot_present(command_succeeds)
@@ -984,7 +984,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
 }
 
 /// Whether the tool's AI member may act in this project: the member
-/// `ai:<tool>@joy` is registered in `.joy/project.yaml`, which travels
+/// named after the tool is registered in `.joy/project.yaml`, which travels
 /// with the repo (the same reasoning as [`has_ai_member`], JOY-0264-89).
 /// The machine-local marker [`is_tool_configured`] is NOT the gate here:
 /// it is git-ignored and vanishes with a clean checkout while the
@@ -993,7 +993,7 @@ pub fn is_tool_configured(root: &Path, tool: &str) -> bool {
 /// marker still counts on its own, so a tool set up before it was
 /// registered as a member keeps working.
 pub fn is_tool_active(root: &Path, tool: &str) -> bool {
-    let member = crate::naming::member_id_at(root, tool);
+    let member = crate::naming::member_id(tool);
     joy_core::store::load_project(root)
         .map(|p| p.has_member_key(&member))
         .unwrap_or(false)
@@ -1008,7 +1008,7 @@ pub fn shared_agents_md_needed(root: &Path, resetting: &[&str]) -> bool {
 }
 
 /// Repo-portable "any AI tool is configured" signal: true when
-/// `.joy/project.yaml` carries any `ai:*` member. The marker files
+/// `.joy/project.yaml` carries any AI member. The marker files
 /// [`is_tool_configured`] tests are git-ignored and thus machine-local, so
 /// they must not decide the content of a committed file like `.gitignore`:
 /// a fresh checkout reads "nothing configured" and strips what the init
@@ -1105,7 +1105,7 @@ pub fn configure_tool(root: &Path, tool: &str, report: Report) -> Result<bool, J
         .iter()
         .find(|(_, id, _, _)| *id == tool)
         .ok_or_else(|| JoyError::Other(format!("unknown tool: {tool}")))?;
-    let member_id = crate::naming::member_id_at(root, tool);
+    let member_id = crate::naming::member_id(tool);
     (spec.3)(root, &member_id, report)
 }
 
@@ -1121,7 +1121,7 @@ pub fn init_tool(
     configure_tool(root, tool, report)?;
 
     let mut project = joy_core::store::load_project(root)?;
-    let member_id = crate::naming::member_id(&project, tool);
+    let member_id = crate::naming::member_id(tool);
     if !project.has_member_key(&member_id) {
         // The attester is the human this device acts for (JOY-02AE-1A):
         // the operator behind a delegation session,
@@ -1242,7 +1242,7 @@ pub fn plan_reset(root: &Path, only: Option<&str>) -> Result<ResetPlan, JoyError
     let mut member_plans = Vec::new();
     if let Some(ref p) = project {
         for (_, id, _) in &tools {
-            let member_id = crate::naming::member_id(p, id);
+            let member_id = crate::naming::member_id(id);
             if let Some(plan) = plan_member_reset(p, root, &member_id, caller_key.as_deref()) {
                 if plan.drop_caller_delegation || plan.remove_member {
                     member_plans.push(plan);
@@ -1496,15 +1496,14 @@ mod setup_tests {
 
     #[test]
     fn plan_absent_member_is_none() {
-        let p = project_with("ai:claude@joy", &[]);
-        assert!(plan_member_reset(&p, no_root(), "ai:qwen@joy", None).is_none());
+        let p = project_with("claude", &[]);
+        assert!(plan_member_reset(&p, no_root(), "qwen", None).is_none());
     }
 
     #[test]
     fn plan_sole_delegator_removes_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com"]);
-        let plan =
-            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
+        let p = project_with("claude", &["op1@example.com"]);
+        let plan = plan_member_reset(&p, no_root(), "claude", Some("op1@example.com")).unwrap();
         assert!(plan.drop_caller_delegation);
         assert_eq!(plan.other_delegators, 0);
         assert!(plan.remove_member);
@@ -1513,9 +1512,8 @@ mod setup_tests {
 
     #[test]
     fn plan_other_delegator_keeps_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com", "op2@example.com"]);
-        let plan =
-            plan_member_reset(&p, no_root(), "ai:claude@joy", Some("op1@example.com")).unwrap();
+        let p = project_with("claude", &["op1@example.com", "op2@example.com"]);
+        let plan = plan_member_reset(&p, no_root(), "claude", Some("op1@example.com")).unwrap();
         assert!(plan.drop_caller_delegation);
         assert_eq!(plan.other_delegators, 1);
         assert!(!plan.remove_member, "member kept while op2 still delegates");
@@ -1523,8 +1521,8 @@ mod setup_tests {
 
     #[test]
     fn plan_unknown_caller_keeps_delegated_member() {
-        let p = project_with("ai:claude@joy", &["op1@example.com"]);
-        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
+        let p = project_with("claude", &["op1@example.com"]);
+        let plan = plan_member_reset(&p, no_root(), "claude", None).unwrap();
         assert!(!plan.drop_caller_delegation);
         assert_eq!(plan.other_delegators, 1);
         assert!(!plan.remove_member);
@@ -1535,8 +1533,8 @@ mod setup_tests {
         // Member present but delegated by nobody (e.g. the delegation was
         // already removed): orphaned and removable, but only via the confirmed
         // path in reset(), never silently.
-        let p = project_with("ai:claude@joy", &[]);
-        let plan = plan_member_reset(&p, no_root(), "ai:claude@joy", None).unwrap();
+        let p = project_with("claude", &[]);
+        let plan = plan_member_reset(&p, no_root(), "claude", None).unwrap();
         assert!(!plan.drop_caller_delegation);
         assert_eq!(plan.other_delegators, 0);
         assert!(plan.remove_member);
@@ -1558,7 +1556,7 @@ mod setup_tests {
         let tmp = tempfile::tempdir().unwrap();
         write_level_defaults(tmp.path(), "autonomous");
         let path = tmp.path().join("config.toml");
-        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "test").unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("[tools.bash]"));
@@ -1571,7 +1569,7 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "autonomous");
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[models]\ndefault = \"mistral-large\"\n").unwrap();
-        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "test").unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("default = \"mistral-large\""));
@@ -1586,7 +1584,7 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "confirmed");
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[tools.bash]\npermission = \"always\"\n").unwrap();
-        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "test").unwrap();
         assert!(changed);
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("permission = \"ask\""));
@@ -1599,7 +1597,7 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "confirmed");
         let path = tmp.path().join("config.toml");
         std::fs::write(&path, "[tools.bash]\npermission = \"ask\"\n").unwrap();
-        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "ai:test@joy").unwrap();
+        let changed = ensure_vibe_bash_permission(tmp.path(), &path, "test").unwrap();
         assert!(!changed);
     }
 
@@ -1609,13 +1607,13 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "autonomous");
         let mut lines = Vec::new();
         let mut report = |l: String| lines.push(l);
-        update_claude_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        update_claude_permissions(tmp.path(), "test", &mut report).unwrap();
         let content = std::fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["permissions"]["defaultMode"], "bypassPermissions");
 
         write_level_defaults(tmp.path(), "proposing");
-        update_claude_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        update_claude_permissions(tmp.path(), "test", &mut report).unwrap();
         let content = std::fs::read_to_string(tmp.path().join(".claude/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["permissions"]["defaultMode"], "plan");
@@ -1629,7 +1627,7 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "confirmed");
         let mut lines = Vec::new();
         let mut report = |l: String| lines.push(l);
-        update_qwen_permissions(tmp.path(), "ai:test@joy", &mut report).unwrap();
+        update_qwen_permissions(tmp.path(), "test", &mut report).unwrap();
         let content = std::fs::read_to_string(tmp.path().join(".qwen/settings.json")).unwrap();
         let v: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(v["approvalMode"], "auto-edit");
@@ -1641,7 +1639,7 @@ mod setup_tests {
         write_level_defaults(tmp.path(), "proposing");
         let before = render_managed_block(true).unwrap();
         assert!(before.contains("joy project member show <data.member>"));
-        assert!(!before.contains("ai:test@joy"));
+        assert!(!before.contains("test"));
         write_level_defaults(tmp.path(), "autonomous");
         let after = render_managed_block(true).unwrap();
         assert_eq!(before, after);
@@ -1698,7 +1696,7 @@ mod setup_tests {
         let tmp = tempfile::tempdir().unwrap();
         seed_project_yaml(
             tmp.path(),
-            "members:\n  horst@joy:\n    capabilities: all\n  \"ai:claude@joy\":\n    capabilities: all\n",
+            "members:\n  horst@joy:\n    capabilities: all\n  \"claude\":\n    capabilities: all\n",
         );
         assert!(!is_tool_configured(tmp.path(), "claude"));
         // …and the registered member acts here: the marker is not the gate

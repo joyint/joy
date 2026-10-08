@@ -111,7 +111,7 @@ pub fn migrated_member_file_id(project_id: &str, member_key: &str) -> String {
 
 /// Whether `s` has the shape of an opaque member id: `m-` followed by exactly
 /// [`MEMBER_ID_SHORT_LEN`] base32 (lowercase, no padding) characters. Lets
-/// anonymous-mode ids be accepted wherever an e-mail or `ai:` id is otherwise
+/// anonymous-mode ids be accepted wherever an e-mail or an AI member's name is otherwise
 /// expected (e.g. self-assign resolves to the opaque id).
 pub fn is_opaque_member_id(s: &str) -> bool {
     match s.strip_prefix("m-") {

@@ -204,16 +204,12 @@ pub fn apply_personal(
     level: InteractionLevel,
     signature: &[u8],
 ) -> Result<(), JoyError> {
-    let name = ai_member_name(ai_key).to_string();
     let delegator = project
         .member_by_key_mut(delegator_key)
         .ok_or_else(|| JoyError::Other(format!("{delegator_key} is not a member")))?;
     let entry = delegator
-        .ai_delegations
-        .iter_mut()
-        .find(|(key, _)| ai_member_name(key) == name)
-        .map(|(_, entry)| entry)
-        .ok_or_else(|| not_delegated(&name))?;
+        .delegation_to_mut(ai_key)
+        .ok_or_else(|| not_delegated(ai_member_name(ai_key)))?;
     entry.grant = Some(DelegationGrant {
         capabilities,
         level,
@@ -243,13 +239,11 @@ pub fn set_personal(
 /// Drop a person's own grant for `ai`: the project maximum applies to
 /// them again.
 pub fn clear_personal(project: &mut Project, ai_key: &str, delegator_key: &str) {
-    let name = ai_member_name(ai_key).to_string();
-    if let Some(delegator) = project.member_by_key_mut(delegator_key) {
-        for (key, entry) in delegator.ai_delegations.iter_mut() {
-            if ai_member_name(key) == name {
-                entry.grant = None;
-            }
-        }
+    if let Some(entry) = project
+        .member_by_key_mut(delegator_key)
+        .and_then(|delegator| delegator.delegation_to_mut(ai_key))
+    {
+        entry.grant = None;
     }
 }
 
@@ -818,11 +812,7 @@ pub fn jobs_to_take<'a>(
     let mut mine: Vec<&crate::model::item::Item> = jobs
         .iter()
         .filter(|job| job.status == Status::Open)
-        .filter(|job| {
-            job.assignees
-                .first()
-                .is_some_and(|a| ai_member_name(a.member.id()) == name)
-        })
+        .filter(|job| job.assignees.first().is_some_and(|a| a.member.id() == name))
         .filter(|job| job.job.as_ref().is_none_or(|spec| spec.activity.is_empty()))
         .filter(|job| job_window(job, now) == JobWindowState::Open)
         .collect();
@@ -942,11 +932,6 @@ mod tests {
         assert_eq!(eff.level, Confirmed);
         // a token from before grants existed says nothing: the same
         assert_eq!(effective(&project, "claude", DEV, None).unwrap(), eff);
-        // the older spelling of the AI member finds the same member
-        assert_eq!(
-            effective(&project, "ai:claude@joy", DEV, None).unwrap(),
-            eff
-        );
     }
 
     #[test]
@@ -1234,7 +1219,7 @@ mod tests {
             Some("sonnet")
         );
         assert_eq!(
-            model_for(&project, "ai:claude@joy", DEV).as_deref(),
+            model_for(&project, "claude", DEV).as_deref(),
             Some("sonnet")
         );
         assert_eq!(model_for(&project, "claude", FOUNDER), None);
@@ -1341,7 +1326,7 @@ mod tests {
         assert_eq!(job_window(&jobs[1], now), JobWindowState::NotYet);
         assert_eq!(job_window(&jobs[3], now), JobWindowState::Over);
         assert_eq!(job_window(&jobs[0], now), JobWindowState::Open);
-        let order: Vec<&str> = jobs_to_take(&jobs, "ai:claude@joy", now)
+        let order: Vec<&str> = jobs_to_take(&jobs, "claude", now)
             .into_iter()
             .map(|job| job.id.as_str())
             .collect();

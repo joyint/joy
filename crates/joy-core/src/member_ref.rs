@@ -69,7 +69,7 @@ impl MemberResolver {
         if !self.anonymous {
             return Resolved::Value(id.to_string());
         }
-        // AI members keep a readable synthetic id and carry no PII; show as-is.
+        // An AI member is known by its name and carries no PII; show as-is.
         if crate::model::project::is_ai_member(id) {
             return Resolved::Value(id.to_string());
         }
@@ -230,7 +230,7 @@ mod tests {
     #[test]
     fn ai_member_shown_as_is_even_anonymous() {
         install(MemberResolver::anonymous(None));
-        assert_eq!(MemberRef::new("ai:claude@joy").to_string(), "ai:claude@joy");
+        assert_eq!(MemberRef::new("claude").to_string(), "claude");
         uninstall();
     }
 
@@ -248,8 +248,8 @@ mod tests {
             mf
         })));
         // ai actor stays readable, the delegating human resolves to e-mail.
-        let m = MemberRef::new("ai:claude@joy delegated-by:m-human");
-        assert_eq!(m.to_string(), "ai:claude@joy delegated-by:human@joydev.com");
+        let m = MemberRef::new("claude delegated-by:m-human");
+        assert_eq!(m.to_string(), "claude delegated-by:human@joydev.com");
         uninstall();
     }
 

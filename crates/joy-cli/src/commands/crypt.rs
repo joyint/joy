@@ -86,7 +86,7 @@ struct RmArgs {
 
 #[derive(Args)]
 struct MemberRefArgs {
-    /// Member ID (email or ai:tool@joy).
+    /// Member (email, or the name of an AI member).
     member: String,
 }
 
@@ -886,7 +886,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     enforce_zone_rights()?;
     let unlocked = unlock_zone(zone, false)?;
     // `target_member` is a user-supplied identifier that is polymorphic by
-    // kind: an `ai:` synthetic id for AI tools (always the at-rest map key),
+    // kind: the name of an AI member (always the at-rest map key),
     // or a git e-mail for humans (privacy-dependent map key). Resolve each via
     // the matching accessor so anonymous-mode lookups stay correct (ADR-042).
     let target = if is_ai_member(target_member) {

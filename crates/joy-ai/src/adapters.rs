@@ -43,7 +43,7 @@ pub struct Launch {
     /// no proof. Exit 0 means yes. `gh` is the case that demands it: it
     /// sits on virtually every CI runner and dev machine and says nothing
     /// about whether Copilot is installed behind it, so keying off the
-    /// binary alone produced spurious `ai:copilot@joy` registrations.
+    /// binary alone produced spurious `copilot` registrations.
     /// None where the probe IS the tool and finding it is the answer.
     pub verify: Option<&'static str>,
 }
@@ -51,8 +51,8 @@ pub struct Launch {
 /// Every fact the hosts need about one AI tool.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdapterSpec {
-    /// THE id, equal to the tool name; also the suffix of the canonical
-    /// member (`ai:<adapter>@joy`).
+    /// THE id, equal to the tool name and to the name of the member the
+    /// tool acts as.
     pub adapter: &'static str,
     /// Human-facing name for pickers and cards.
     pub label: &'static str,
@@ -161,7 +161,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     AdapterSpec {
         adapter: "vibe",
         label: "Mistral Vibe",
-        member: "ai:vibe@joy",
+        member: "vibe",
         // vibe speaks ACP natively through vibe-acp, which ships with the
         // Vibe CLI (zed.dev/acp/agent/mistral-vibe).
         launches: &[Launch {
@@ -182,7 +182,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
         // for third-party products forbid "Claude Code" as a label and
         // name "Claude Agent" as the preferred form in a picker.
         label: "Claude Agent",
-        member: "ai:claude@joy",
+        member: "claude",
         // The official ACP bridge (same org as codex-acp). One spelling
         // ended the era where the desktop npx-ran one bridge package and
         // the agent image shipped another (JI-017A-85).
@@ -210,7 +210,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     AdapterSpec {
         adapter: "qwen",
         label: "Qwen Code",
-        member: "ai:qwen@joy",
+        member: "qwen",
         launches: &[Launch {
             entrypoint: "qwen --acp",
             probe: "qwen",
@@ -226,7 +226,7 @@ pub const ADAPTERS: &[AdapterSpec] = &[
     AdapterSpec {
         adapter: "copilot",
         label: "GitHub Copilot",
-        member: "ai:copilot@joy",
+        member: "copilot",
         // GitHub ships ONE Copilot CLI under two commands, and a person
         // may have either or both. `copilot` is canonical: it is what the
         // agent image installs, and `gh copilot` itself prefers a
@@ -271,11 +271,10 @@ pub fn by_adapter(id: &str) -> Option<&'static AdapterSpec> {
     ADAPTERS.iter().find(|spec| spec.adapter == id)
 }
 
-/// The row of the tool a member is named after (`vibe` and the older
-/// `ai:vibe@joy` -> vibe). A member with a name of its own says which
-/// adapter runs it in its entry, not in its name.
+/// The row of the tool a member is named after. A member with a name
+/// of its own says which adapter runs it in its entry, not in its name.
 pub fn by_member(member: &str) -> Option<&'static AdapterSpec> {
-    by_adapter(joy_core::model::project::ai_member_name(member))
+    by_adapter(member)
 }
 
 /// The registered id for an adapter string: `Some` exactly for the
@@ -337,7 +336,7 @@ mod tests {
     #[test]
     fn every_row_is_named_after_its_tool() {
         for spec in ADAPTERS {
-            assert_eq!(spec.member, format!("ai:{}@joy", spec.adapter));
+            assert_eq!(spec.member, spec.adapter);
         }
     }
 
@@ -418,8 +417,8 @@ mod tests {
 
     #[test]
     fn the_member_lookup_matches_the_naming_rule() {
-        assert_eq!(by_member("ai:vibe@joy").unwrap().adapter, "vibe");
-        assert_eq!(by_member("ai:codex@joy"), None);
+        assert_eq!(by_member("vibe").unwrap().adapter, "vibe");
+        assert_eq!(by_member("codex"), None);
     }
 
     #[test]

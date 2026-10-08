@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! @mention parsing for chats: which members a message addresses, by full
-//! member ref or short alias. Chat-level (used by joy-chat storage and by
+//! @mention parsing for chats: which members a message addresses, by what
+//! each is known by. Chat-level (used by joy-chat storage and by
 //! joy-ai's turn rules), so it lives here per ADR-043.
 
-/// The short alias an AI is @mentioned by: `ai:claude@joy` -> `claude`.
-pub fn alias(member_id: &str) -> &str {
-    member_id
-        .strip_prefix("ai:")
-        .and_then(|rest| rest.split('@').next())
-        .unwrap_or(member_id)
+/// Whether the mention token `token` names the member `candidate`: by
+/// what the member is known by (an AI member's name, a person's
+/// address), or for an AI member by the older id a person may still
+/// type ([`joy_model::older_id`]).
+fn names(token: &str, candidate: &str) -> bool {
+    token == candidate || joy_model::older_id::name(token) == candidate
 }
 
 /// The words of `text` in order, split the way mentions are written.
@@ -49,11 +49,7 @@ pub fn leading_mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a Str
     }
     candidates
         .iter()
-        .filter(|candidate| {
-            tokens
-                .iter()
-                .any(|t| *t == candidate.as_str() || *t == alias(candidate))
-        })
+        .filter(|candidate| tokens.iter().any(|t| names(t, candidate)))
         .collect()
 }
 
@@ -64,31 +60,22 @@ pub fn leads_with_mention(text: &str) -> bool {
     words(text).next().and_then(as_token).is_some()
 }
 
-/// Member ids among `candidates` that `text` @mentions, by full ref or by
-/// short alias.
+/// Member ids among `candidates` that `text` @mentions.
 pub fn mentions<'a>(text: &str, candidates: &'a [String]) -> Vec<&'a String> {
     let tokens = mention_tokens(text);
     candidates
         .iter()
-        .filter(|candidate| {
-            tokens
-                .iter()
-                .any(|t| *t == candidate.as_str() || *t == alias(candidate))
-        })
+        .filter(|candidate| tokens.iter().any(|t| names(t, candidate)))
         .collect()
 }
 
 /// The @mention tokens of `text` that match NOBODY in `candidates`
 /// (JAPP-010D-B0: an unknown @name must answer with a visible error, not
-/// silently do nothing). Matching mirrors [`mentions`]: full ref or alias.
+/// silently do nothing). Matching mirrors [`mentions`].
 pub fn unknown_mentions(text: &str, candidates: &[String]) -> Vec<String> {
     mention_tokens(text)
         .into_iter()
-        .filter(|t| {
-            !candidates
-                .iter()
-                .any(|candidate| *t == candidate.as_str() || *t == alias(candidate))
-        })
+        .filter(|t| !candidates.iter().any(|candidate| names(t, candidate)))
         .map(str::to_string)
         .collect()
 }
@@ -98,7 +85,7 @@ mod tests {
     use super::*;
 
     fn members() -> Vec<String> {
-        vec!["ai:claude@joy".to_string(), "ai:vibe@joy".to_string()]
+        vec!["claude".to_string(), "vibe".to_string()]
     }
 
     #[test]
@@ -106,12 +93,12 @@ mod tests {
         let members = members();
         assert_eq!(
             leading_mentions("@claude @vibe what do you think?", &members),
-            vec!["ai:claude@joy", "ai:vibe@joy"],
+            vec!["claude", "vibe"],
         );
         // punctuation and the full ref spell the same address
         assert_eq!(
-            leading_mentions("@ai:vibe@joy, please look", &members),
-            vec!["ai:vibe@joy"],
+            leading_mentions("@vibe, please look", &members),
+            vec!["vibe"],
         );
     }
 
@@ -124,7 +111,7 @@ mod tests {
         // questions (who is referred to vs. who is addressed)
         assert_eq!(
             mentions("thanks, I asked @claude", &members),
-            vec!["ai:claude@joy"],
+            vec!["claude"],
         );
     }
 }

@@ -187,7 +187,7 @@ fn a_guarded_write_on_a_terminal_asks_once_and_signs_in() {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--capabilities",
             "implement",
             "--passphrase",

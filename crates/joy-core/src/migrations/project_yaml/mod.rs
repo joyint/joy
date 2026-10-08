@@ -52,7 +52,7 @@ members:
     kdf_nonce: bb
     enrollment_verifier: cc
     ai_delegations:
-      ai:claude@joy:
+      claude:
         delegation_verifier: dd
         created: 2026-04-15T10:00:00Z
 "#;

@@ -90,9 +90,9 @@ pub fn redeem_ai_session(
     // Dual signatures + project + expiry. Tokens are multi-use within TTL.
     let claims = token::validate_token(&delegation, &human_pk, &delegation_pk, project_id)?;
 
-    // The member the token is for, under the id this project knows it
-    // by: a token issued before the project was brought over to member
-    // files still says `ai:<name>@joy` (JI-019D-46).
+    // The member the token is for. Its signatures are checked over the
+    // claims as they stand; a token issued before AI members were known
+    // by their names says the older id, which ends here (JI-019D-46).
     let ai_member = project.member_key(&claims.ai_member).ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "AI member {} is not registered in this project",
@@ -170,7 +170,7 @@ mod tests {
     use crate::auth::token::{create_token, encode_token, TokenIssueParams, TokenSigningKeys};
     use crate::model::project::{AiDelegationEntry, Member, MemberCapabilities};
 
-    const AI: &str = "ai:claude@joy";
+    const AI: &str = "claude";
     const HUMAN: &str = "human@example.com";
     const PID: &str = "TST";
 

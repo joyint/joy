@@ -16,7 +16,7 @@ pub struct AssignArgs {
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
-    /// Member ID (email or ai:tool@joy). Omit to use git config user.email.
+    /// Member (email, or the name of an AI member). Omit to use git config user.email.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     member: Option<String>,
 
@@ -42,8 +42,7 @@ pub fn run(args: AssignArgs) -> Result<()> {
     crate::auth_gate::enforce(&mut ctx, &Action::AssignItem, &item.id)?;
 
     // A person by address, an AI member by its name, which has to be
-    // one of this project's; either spelling of the name is the member
-    // as the project keeps it. Taking an assignment away asks nothing.
+    // one of this project's. Taking an assignment away asks nothing.
     let project = joy_core::store::load_project(&ctx.root)?;
     let member = if args.unassign {
         project.former_assignee(&member)

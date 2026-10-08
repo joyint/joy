@@ -38,7 +38,7 @@ Joy is a small Rust CLI that keeps your backlog next to your code: epics, storie
 
 - **Your backlog is in the repo.** An item is a small YAML file. It branches, merges and reviews like code, and `git log` is its history. Clone the repo and you have the whole project, offline.
 - **It merges.** Two branches that touch the same item combine field by field instead of leaving conflict markers. `joy init` sets this up locally and writes a CI job so the merge button on GitHub, GitLab and Gitea works too.
-- **AI tools are members, not ghosts.** `joy ai init` sets up Claude Code, GitHub Copilot, Qwen Code, Mistral Vibe and Google Antigravity. Each one acts as `ai:<name>@joy` under a delegation token you issue, and every change records who delegated it.
+- **AI tools are members, not ghosts.** `joy ai init` sets up Claude Code, GitHub Copilot, Qwen Code, Mistral Vibe and Google Antigravity. Each one acts under its own name (`claude`) with a delegation token you issue, and every change records who delegated it.
 - **Fast and scriptable.** Ten core commands cover daily use, every command takes `--json`, and a commit-msg hook ties commits to items.
 - **Private where it has to be.** `joy crypt add` encrypts single items or paths end to end. They stay ciphertext in the working directory, in every commit and on the forge.
 
@@ -121,7 +121,7 @@ joy ai init
 This detects the AI coding tools you have installed, writes their instruction files and the `/joy` skill, and registers each tool as a project member. From then on an agent picks up items, moves them through the workflow and comments like anyone else on the team, and the event log shows it:
 
 ```
-[ai:claude@joy delegated-by:you@example.com]
+[claude delegated-by:you@example.com]
 ```
 
 AI members can do what you allow them to (plan, implement, review, ...), but never manage the project: adding members and changing settings stays with humans. `joy ai tutorial` is the guide the agents read themselves.

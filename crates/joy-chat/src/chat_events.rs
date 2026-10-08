@@ -107,11 +107,16 @@ pub enum ChatEvent {
     /// LWW register: the delete-for-all frozen flag.
     ReadOnly { stamp: Stamp, value: bool },
     /// LWW register: the creator (set once, but a register for merge).
-    CreatedBy { stamp: Stamp, value: Option<String> },
+    CreatedBy {
+        stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member_opt")]
+        value: Option<String>,
+    },
     /// LWW-element-set entry for a participant. `present=true` adds (its
     /// stamp doubles as that member's JOINED marker); `false` removes.
     Participant {
         stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         present: bool,
     },
@@ -121,6 +126,7 @@ pub enum ChatEvent {
     #[serde(alias = "Mode")]
     Level {
         stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         delegator: String,
         #[serde(deserialize_with = "crate::model::interaction::de_level_compat")]
@@ -129,6 +135,7 @@ pub enum ChatEvent {
     /// LWW register for an AI member's ACP session id.
     Session {
         stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         value: String,
     },
@@ -136,6 +143,7 @@ pub enum ChatEvent {
     /// delete-for-all copy). Only ever added.
     DeletedFor {
         stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         present: bool,
     },
@@ -159,6 +167,7 @@ pub enum ChatEvent {
     /// key-change re-wraps ([`crate::chat_store`]); [`fold`] ignores it.
     Cover {
         epoch_id: String,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         vk_hex: String,
     },
@@ -168,6 +177,7 @@ pub enum ChatEvent {
     /// moves forward). Advanced by `joy chat read` and the clients.
     Read {
         stamp: Stamp,
+        #[serde(deserialize_with = "joy_model::older_id::de_member")]
         member: String,
         upto: Hlc,
     },
@@ -531,6 +541,75 @@ mod tests {
         format!("2026-07-19T00:00:{sec:02}Z").parse().unwrap()
     }
 
+    /// A chat written when an AI member still went by its older id, and
+    /// addressed again today under its name, holds that member ONCE: one
+    /// participant, with the session it had. Two entries meant two
+    /// answers to one line (integration, 2026-10-08): the client asks a
+    /// turn of every AI participant.
+    #[test]
+    fn a_chat_from_before_holds_an_ai_member_once_under_its_name() {
+        let written_then = vec![
+            ChatEvent::Participant {
+                stamp: Stamp::new("w"),
+                member: "horst@example.com".into(),
+                present: true,
+            },
+            ChatEvent::Participant {
+                stamp: Stamp::new("w"),
+                member: "vibe".into(),
+                present: true,
+            },
+            ChatEvent::Session {
+                stamp: Stamp::new("w"),
+                member: "vibe".into(),
+                value: "acp-42".into(),
+            },
+            ChatEvent::Level {
+                stamp: Stamp::new("w"),
+                member: "vibe".into(),
+                delegator: "horst@example.com".into(),
+                value: InteractionLevel::Confirmed,
+            },
+            ChatEvent::Message {
+                msg: Box::new(msg("m1", 1, "vibe", "hello")),
+            },
+        ];
+        // what stands in the sealed events of that time
+        let older = joy_model::older_id::spelled("vibe");
+        let stored = serde_json::to_string(&written_then)
+            .unwrap()
+            .replace("\"vibe\"", &format!("\"{older}\""));
+        assert!(stored.contains(&older));
+        let mut events: Vec<ChatEvent> = serde_json::from_str(&stored).unwrap();
+        // and what a mention of the member adds today
+        events.push(ChatEvent::Participant {
+            stamp: Stamp::new("w"),
+            member: "vibe".into(),
+            present: true,
+        });
+
+        let chat = fold("c1", ts(0), &events);
+        let ais: Vec<&str> = chat
+            .participants
+            .iter()
+            .map(MemberRef::id)
+            .filter(|id| joy_model::is_ai_member(id))
+            .collect();
+        assert_eq!(ais, ["vibe"]);
+        assert_eq!(
+            chat.ai_sessions.get("vibe").map(String::as_str),
+            Some("acp-42")
+        );
+        assert_eq!(chat.ai_sessions.len(), 1);
+        assert_eq!(
+            chat.interaction_level_override("vibe", "horst@example.com"),
+            Some(InteractionLevel::Confirmed)
+        );
+        assert_eq!(chat.messages[0].author.id(), "vibe");
+        // nothing that is written from here says the older id again
+        assert!(!serde_json::to_string(&chat).unwrap().contains(&older));
+    }
+
     /// `sec` seconds after the epoch of `ts`, for spans past the minute.
     fn after(sec: i64) -> DateTime<Utc> {
         ts(0) + chrono::Duration::seconds(sec)
@@ -561,18 +640,14 @@ mod tests {
         let mut next = base.clone();
         next.title = Some("Standup".into());
         next.kind = ChatKind::Team;
-        next.participants = vec![
-            MemberRef::new("horst@example.com"),
-            MemberRef::new("ai:vibe@joy"),
-        ];
-        next.ai_sessions
-            .insert("ai:vibe@joy".into(), "acp-42".into());
+        next.participants = vec![MemberRef::new("horst@example.com"), MemberRef::new("vibe")];
+        next.ai_sessions.insert("vibe".into(), "acp-42".into());
         next.interaction_levels
-            .entry("ai:vibe@joy".into())
+            .entry("vibe".into())
             .or_default()
             .insert("horst@example.com".into(), InteractionLevel::Confirmed);
         next.messages.push(msg("m1", 1, "horst@example.com", "hi"));
-        next.messages.push(msg("m2", 2, "ai:vibe@joy", "hello"));
+        next.messages.push(msg("m2", 2, "vibe", "hello"));
 
         let events = diff(&base, &next, "w1");
         let folded = fold("c1", ts(0), &events);
@@ -580,13 +655,13 @@ mod tests {
         assert_eq!(folded.title.as_deref(), Some("Standup"));
         assert_eq!(folded.kind, ChatKind::Team);
         assert_eq!(folded.participants.len(), 2);
-        assert!(folded.participants.iter().any(|p| p.id() == "ai:vibe@joy"));
+        assert!(folded.participants.iter().any(|p| p.id() == "vibe"));
         assert_eq!(
-            folded.ai_sessions.get("ai:vibe@joy").map(String::as_str),
+            folded.ai_sessions.get("vibe").map(String::as_str),
             Some("acp-42")
         );
         assert_eq!(
-            folded.interaction_level_override("ai:vibe@joy", "horst@example.com"),
+            folded.interaction_level_override("vibe", "horst@example.com"),
             Some(InteractionLevel::Confirmed)
         );
         assert_eq!(folded.messages.len(), 2);
@@ -742,7 +817,7 @@ mod tests {
         let marker = ChatMessage {
             id: "t1".into(),
             at: ts(5),
-            author: MemberRef::new("ai:vibe@joy"),
+            author: MemberRef::new("vibe"),
             text: String::new(),
             kind: MessageKind::Turn,
             delegated_by: Some("x@e".into()),
@@ -812,7 +887,7 @@ mod tests {
         let first = ChatMessage {
             id: "t2".into(),
             at: ts(5),
-            author: MemberRef::new("ai:vibe@joy"),
+            author: MemberRef::new("vibe"),
             text: "@vibe could not finish this turn: the provider timed out after a long wait"
                 .into(),
             kind: MessageKind::Notice,
@@ -862,7 +937,7 @@ mod tests {
         let marker = ChatMessage {
             id: "t3".into(),
             at: ts(5),
-            author: MemberRef::new("ai:vibe@joy"),
+            author: MemberRef::new("vibe"),
             text: String::new(),
             kind: MessageKind::Turn,
             delegated_by: Some("x@e".into()),

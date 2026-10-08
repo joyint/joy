@@ -118,14 +118,14 @@ enum DelegationCommand {
 
 #[derive(Args)]
 struct DelegationRotateArgs {
-    /// AI member ID (e.g. ai:claude@joy)
+    /// AI member (e.g. claude)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 }
 
 #[derive(Args)]
 struct DelegationLsArgs {
-    /// Optional AI member ID (e.g. ai:claude@joy). Without it, every AI
+    /// Optional AI member (e.g. claude). Without it, every AI
     /// member with at least one operator delegation is listed.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: Option<String>,
@@ -133,7 +133,7 @@ struct DelegationLsArgs {
 
 #[derive(Args)]
 struct TokenAddArgs {
-    /// AI member ID (e.g. ai:claude@joy)
+    /// AI member (e.g. claude)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 

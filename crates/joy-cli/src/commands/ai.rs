@@ -50,7 +50,7 @@ const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 #[derive(clap::Args)]
 #[command(
-    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as ai:copilot@joy. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nGoogle Antigravity is found under `agy`; when using only its editor, name it: joy ai init --tool agy.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
+    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as the member copilot. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nGoogle Antigravity is found under `agy`; when using only its editor, name it: joy ai init --tool agy.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add <name>\nthen issue a delegation token with `joy auth token add <name>`."
 )]
 pub struct AiArgs {
     #[command(subcommand)]
@@ -125,7 +125,7 @@ struct ResetArgs {
 
 #[derive(clap::Args)]
 struct RotateArgs {
-    /// AI member ID whose delegation to rotate (e.g. ai:claude@joy).
+    /// AI member whose delegation to rotate (e.g. claude).
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 }
@@ -180,7 +180,7 @@ fn in_crate_ai_tutorial_matches_canonical() {
 /// set up in this checkout, and its token is printed, all with one
 /// passphrase.
 fn add(args: AddArgs) -> anyhow::Result<()> {
-    let name = joy_core::model::project::ai_member_name(&args.name).to_string();
+    let name = args.name.clone();
     let adapter = match args.adapter.as_deref() {
         Some(adapter) => joy_ai::naming::tool_adapter(adapter)
             .ok_or_else(|| anyhow::anyhow!("unknown adapter: {adapter}"))?,
@@ -757,10 +757,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     });
     let mut plans: Vec<MemberResetPlan> = Vec::new();
     if let Some(ref p) = project {
-        // Canonical tool members (ai:<tool>@joy).
+        // The members named after the tools.
         let member_ids: Vec<String> = tools
             .iter()
-            .map(|(_, id, _)| joy_ai::naming::member_id(p, id))
+            .map(|(_, id, _)| joy_ai::naming::member_id(id))
             .collect();
         for member_id in &member_ids {
             if let Some(plan) = plan_member_reset(p, &root, member_id, caller_key.as_deref()) {
@@ -998,7 +998,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
         }
         let already = is_tool_configured(root, id);
-        let member_id = joy_ai::naming::member_id(&project, id);
+        let member_id = joy_ai::naming::member_id(id);
         let should_register;
 
         if already {
