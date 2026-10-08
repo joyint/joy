@@ -130,6 +130,31 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     [[ "$output" == *"delegate to claude first"* ]]
 }
 
+@test "an AI member never holds manage: not when it is added, not as all" {
+    setup_human_auth
+    run joy project member add claude --capabilities implement manage --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"an AI member never holds the manage capability"* ]]
+    run joy project member add claude --capabilities all --passphrase "$TEST_PASSPHRASE"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"an AI member never holds the manage capability"* ]]
+    run joy project member
+    [[ "$output" != *"claude"* ]]
+}
+
+@test "the member table lists jobs, manage and delete last, and a new AI member holds none of them" {
+    setup_human_auth
+    joy project member add claude --passphrase "$TEST_PASSPHRASE"
+    run joy project member
+    [[ "$output" == *"doc crt asg job mng del"* ]]
+    local file
+    file="$(member_file claude)"
+    grep -q "^- assign" "$file"
+    ! grep -q "^- jobs" "$file"
+    ! grep -q "^- manage" "$file"
+    ! grep -q "^- delete" "$file"
+}
+
 @test "member add still reads capabilities with commas" {
     setup_human_auth
     joy project member add claude --capabilities "implement,create" --passphrase "$TEST_PASSPHRASE"

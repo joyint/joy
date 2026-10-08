@@ -1473,8 +1473,15 @@ mod setup_tests {
     fn project_with(ai: &str, delegators: &[&str]) -> joy_core::model::Project {
         use joy_core::model::{Member, MemberCapabilities, Project};
         let mut p = Project::new("Test".to_string(), Some("TS".to_string()));
-        p.register_member(ai, Member::new(MemberCapabilities::All))
-            .unwrap();
+        // an AI member never holds manage, so never `all`
+        let work = MemberCapabilities::Specific(
+            [(
+                joy_core::model::item::Capability::Implement,
+                Default::default(),
+            )]
+            .into(),
+        );
+        p.register_member(ai, Member::new(work)).unwrap();
         for d in delegators {
             let mut m = Member::new(MemberCapabilities::All);
             m.put_delegation(ai.to_string(), deleg());

@@ -232,15 +232,24 @@ impl Guard {
         };
 
         // A job is under its assignee's control (JOY-027A-AB): starting it
-        // and handing it to review are the assignee's alone, whoever else
-        // holds the jobs capability. Changing the assignee stays a plain
+        // and handing it to review are the assignee's, whoever else holds
+        // the jobs capability. Changing the assignee stays a plain
         // assignment, which is how control is handed over.
+        //
+        // One more may start it: a person, when the assignee is an AI
+        // member. An approved job is the AI member's to take from the open
+        // ones; a person who sets it to in-progress themselves orders
+        // exactly this job to be worked now (operator 2026-10-08). Handing
+        // it to review stays the assignee's alone.
         if let Action::ChangeJobStatus { from, to, assignee } = action {
             let assignee_only = matches!(
                 (from, to),
                 (Status::Open, Status::InProgress) | (Status::InProgress, Status::Review)
             );
-            if assignee_only {
+            let ordered_by_a_person = matches!((from, to), (Status::Open, Status::InProgress))
+                && !is_ai_member(identity.member.id())
+                && assignee.as_ref().is_some_and(|a| is_ai_member(a.id()));
+            if assignee_only && !ordered_by_a_person {
                 match assignee {
                     Some(a) if a.id() == identity.member.id() => {}
                     Some(a) => {
@@ -520,7 +529,9 @@ mod tests {
     fn project_with_members(members: Vec<(&str, MemberCapabilities)>) -> Project {
         let mut project = Project::new("Test".into(), Some("TST".into()));
         for (name, caps) in members {
-            project.register_member(name, Member::new(caps)).unwrap();
+            // as a project file holds them: an older one may name an AI
+            // member with every capability, which nobody can add today
+            project.insert_as_read(name, Member::new(caps));
         }
         project
     }
@@ -552,11 +563,12 @@ mod tests {
             guard.check(&start, &ai_identity("ai:vibe@joy", "dev@example.com")),
             Verdict::Allow
         );
-        // a human who is not the assignee: denied, by name
-        match guard.check(&start, &identity("dev@example.com")) {
-            Verdict::Deny(reason) => assert!(reason.contains("only the assignee"), "{reason}"),
-            other => panic!("{other:?}"),
-        }
+        // a person starts an AI member's job: the explicit order to work
+        // exactly this one now
+        assert_eq!(
+            guard.check(&start, &identity("dev@example.com")),
+            Verdict::Allow
+        );
         let review = Action::ChangeJobStatus {
             from: Status::InProgress,
             to: Status::Review,

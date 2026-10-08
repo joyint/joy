@@ -587,7 +587,7 @@ Two people have a say, and both sign what they say with their own key:
 
    ```sh
    joy project member edit claude --project --capabilities implement review --level confirmed
-   joy project member edit claude --project --model opus --description "writes the code"
+   joy project member edit claude --project --model opus
    ```
 
 2. **You** say what it may do when it works for you, within what the project allows. Nobody needs `manage` for that:

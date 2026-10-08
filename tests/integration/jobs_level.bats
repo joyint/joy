@@ -116,6 +116,28 @@ make_job_for_claude() {
     [[ "$output" == *"jobs"* ]]
 }
 
+@test "a person who starts an AI member's job orders exactly this job" {
+    setup_human_auth
+    make_job_for_claude ""
+    joy approve "$JOB_ID"
+    # not the assignee, a person: the job goes to in-progress for claude
+    run joy start "$JOB_ID"
+    [ "$status" -eq 0 ]
+    run joy show "$JOB_ID" --json
+    echo "$output" | jq -e '.data.status == "in-progress"' >/dev/null
+    echo "$output" | jq -e '.data.assignees[0].member == "claude"' >/dev/null
+}
+
+@test "joy approve is new -> open, and an AI member does not approve a job" {
+    setup_human_auth
+    make_job_for_claude ""
+    setup_ai_session claude
+    run joy approve "$JOB_ID"
+    [ "$status" -ne 0 ]
+    run joy show "$JOB_ID" --json
+    echo "$output" | jq -e '.data.status == "new"' >/dev/null
+}
+
 @test "--level is for a job" {
     setup_human_auth
     run joy add task "Not a job" --level confirmed

@@ -118,16 +118,21 @@ pub fn run(args: StatusArgs) -> Result<()> {
     };
     crate::auth_gate::enforce(&mut ctx, &action, &item.id)?;
 
-    // A job set to open is taken by its assignee, at the level it asks
-    // for and at most the one the assignee may have for this person
-    // (JI-019D-46). The level is the job's own from here on.
-    if matches!(item.item_type, ItemType::Job)
-        && matches!((&old_status, &new_status), (Status::New, Status::Open))
-    {
+    // A job is approved (new -> open) and started (open -> in-progress)
+    // only as its assignee can take it for this person: with the jobs
+    // capability, at the level the job asks for and at most the one the
+    // assignee may run at for them (JI-019D-46, joy-core's rule). The
+    // level is the job's own from the approval on.
+    if matches!(item.item_type, ItemType::Job) {
         let project = store::load_project(&ctx.root)?;
-        item.interaction_level =
-            joy_core::auth::grants::job_terms(&project, &item, ctx.identity.person().id())
-                .map_err(|why| anyhow::anyhow!(why))?;
+        item.interaction_level = joy_core::auth::grants::job_step(
+            &project,
+            &item,
+            &old_status,
+            &new_status,
+            ctx.identity.person().id(),
+        )
+        .map_err(|why| anyhow::anyhow!(why))?;
     }
 
     // Warn when reopening a released item

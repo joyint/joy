@@ -62,8 +62,6 @@ struct MemberFile {
     adapter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
     capabilities: Capabilities,
     /// An AI member's interaction level: the most it may do on its own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -112,7 +110,6 @@ fn to_file(key: &str, member: &Member, updated: DateTime<Utc>) -> MemberFile {
         name: ai.then(|| key.to_string()),
         adapter: member.adapter.clone(),
         model: member.model.clone(),
-        description: member.description.clone(),
         capabilities: match &member.capabilities {
             MemberCapabilities::All => Capabilities::All(AllMarker::All),
             MemberCapabilities::Specific(map) => Capabilities::List(map.keys().copied().collect()),
@@ -151,7 +148,6 @@ fn from_file(id: &str, file: MemberFile) -> (String, Member) {
     member.interaction_level = file.level;
     member.adapter = file.adapter;
     member.model = file.model;
-    member.description = file.description;
     member.granted = file.granted;
     member.origin = file.origin;
     member.verify_key = file.verify_key;
@@ -264,7 +260,6 @@ mod tests {
         let mut claude = Member::new(caps(&[Capability::Plan, Capability::Implement]));
         claude.adapter = Some("claude".into());
         claude.model = Some("opus".into());
-        claude.description = Some("Plans and builds.".into());
         claude.interaction_level = Some(InteractionLevel::Confirmed);
         project.register_member("claude", claude).unwrap();
         project
@@ -294,7 +289,6 @@ mod tests {
         let claude = after.member_by_key("claude").unwrap();
         assert_eq!(claude.adapter.as_deref(), Some("claude"));
         assert_eq!(claude.model.as_deref(), Some("opus"));
-        assert_eq!(claude.description.as_deref(), Some("Plans and builds."));
         assert_eq!(claude.interaction_level, Some(InteractionLevel::Confirmed));
         assert!(claude.has_capability(&Capability::Plan));
         assert!(claude.has_capability(&Capability::Implement));
@@ -355,7 +349,6 @@ mod tests {
             "name: claude\n\
              adapter: claude\n\
              model: opus\n\
-             description: Plans and builds.\n\
              capabilities:\n\
              - plan\n\
              - implement\n\

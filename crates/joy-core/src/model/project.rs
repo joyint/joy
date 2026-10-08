@@ -265,10 +265,6 @@ pub struct Member {
     /// (JI-019D-46).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
-    /// What an AI member is for, in the project's words. Member files
-    /// only.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
     /// The signature a manager put under an AI member's capabilities and
     /// level: the project maximum. Member files only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -445,6 +441,20 @@ pub enum MemberCapabilities {
     Specific(BTreeMap<Capability, CapabilityConfig>),
 }
 
+impl MemberCapabilities {
+    /// Every capability an AI member can hold: all of them but manage,
+    /// which an AI member never holds.
+    pub fn all_for_ai() -> Self {
+        MemberCapabilities::Specific(
+            Capability::ALL
+                .iter()
+                .filter(|cap| **cap != Capability::Manage)
+                .map(|cap| (*cap, CapabilityConfig::default()))
+                .collect(),
+        )
+    }
+}
+
 /// What hung on a single capability of a member in a project from before
 /// the member files. Nothing hangs on a capability any more (JI-019D-46):
 /// a member holds it or not. The two fields are read from such a project
@@ -608,7 +618,6 @@ impl Member {
             members_wrap: None,
             attestation: None,
             model: None,
-            description: None,
             granted: None,
             origin: None,
             file_id: None,
@@ -909,6 +918,15 @@ impl Project {
                  anonymous human onboarding is not yet supported (JOY-01C3-A7)"
             )));
         }
+        // An AI member never holds manage, whichever host adds it and
+        // however its capabilities were named (`all` included): the guard
+        // refuses it every manage action anyway, and a capability that
+        // can never be used must not stand in the project.
+        if is_ai_member(id) && member.has_capability(&Capability::Manage) {
+            return Err(JoyError::Other(
+                "an AI member never holds the manage capability: name what it may do".into(),
+            ));
+        }
         let mut member = member;
         if self.layout == MemberLayout::Files && member.file_id.is_none() {
             member.file_id = Some(crate::member_id::new_member_file_id());
@@ -922,6 +940,15 @@ impl Project {
         };
         self.members.insert(key, member);
         Ok(())
+    }
+
+    /// Put a member into the project as a file read from disk would:
+    /// no rule of [`Project::register_member`] is asked. For tests of
+    /// what joy does with a project written before a rule existed (an AI
+    /// member that holds manage, say).
+    #[cfg(test)]
+    pub(crate) fn insert_as_read(&mut self, id: &str, member: Member) {
+        self.members.insert(id.to_string(), member);
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.

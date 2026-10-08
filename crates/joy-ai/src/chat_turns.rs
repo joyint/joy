@@ -86,9 +86,19 @@ mod tests {
         // chats are always sealed now, so the members carry identities and
         // the writer's seed is installed for this thread
         for (member, seed_byte) in [("ai:claude@joy", 7u8), ("horst@example.com", 5u8)] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
-            );
+            // an AI member never holds manage, so never `all`
+            let capabilities = if joy_core::model::project::is_ai_member(member) {
+                joy_core::model::project::MemberCapabilities::Specific(
+                    [(
+                        joy_core::model::item::Capability::Implement,
+                        Default::default(),
+                    )]
+                    .into(),
+                )
+            } else {
+                joy_core::model::project::MemberCapabilities::All
+            };
+            let mut m = joy_core::model::project::Member::new(capabilities);
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
                     .public_key()

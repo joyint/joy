@@ -763,7 +763,7 @@ mod tests {
         let ai_seed = [9u8; 32];
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
         let mut vibe = joy_core::model::project::Member::new(
-            joy_core::model::project::MemberCapabilities::All,
+            joy_core::model::project::MemberCapabilities::all_for_ai(),
         );
         vibe.verify_key = Some(IdentityKeypair::from_seed(&ai_seed).public_key().to_hex());
         project.register_member("ai:vibe@joy", vibe).unwrap();

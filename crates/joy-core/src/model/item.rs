@@ -129,9 +129,11 @@ impl Capability {
         Capability::Test,
         Capability::Review,
         Capability::Document,
-        Capability::Jobs,
         Capability::Create,
         Capability::Assign,
+        // The three a new AI member does not get by itself, last
+        // (operator 2026-10-08): jobs, manage, delete.
+        Capability::Jobs,
         Capability::Manage,
         Capability::Delete,
     ];

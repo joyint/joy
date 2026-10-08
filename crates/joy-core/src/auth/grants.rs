@@ -684,6 +684,90 @@ pub fn job_terms(
     }
 }
 
+/// The level a job has after a status step by `person_key`, or why the
+/// step is refused: THE rule every host asks when a job changes status.
+///
+/// Two steps put a job to work, and both ask [`job_terms`]: approving it
+/// (`new -> open`), after which its AI assignee may take it, and
+/// starting it (`open -> in-progress`), by the assignee or by a person
+/// who orders exactly this job. Every other step leaves the level alone.
+pub fn job_step(
+    project: &Project,
+    job: &crate::model::item::Item,
+    from: &crate::model::item::Status,
+    to: &crate::model::item::Status,
+    person_key: &str,
+) -> Result<Option<InteractionLevel>, String> {
+    use crate::model::item::Status;
+    match (from, to) {
+        (Status::New, Status::Open) | (Status::Open, Status::InProgress) => {
+            job_terms(project, job, person_key)
+        }
+        _ => Ok(job.interaction_level),
+    }
+}
+
+/// Where a job stands against the times it was given: before its start,
+/// inside them, or past its end. An AI member takes an open job only
+/// inside them; a job without times is always inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobWindowState {
+    NotYet,
+    Open,
+    Over,
+}
+
+pub fn job_window(job: &crate::model::item::Item, now: chrono::DateTime<Utc>) -> JobWindowState {
+    let Some(window) = job.job.as_ref().and_then(|spec| spec.window.as_ref()) else {
+        return JobWindowState::Open;
+    };
+    if window.deadline.is_some_and(|end| now > end) {
+        JobWindowState::Over
+    } else if window.not_before.is_some_and(|start| now < start) {
+        JobWindowState::NotYet
+    } else {
+        JobWindowState::Open
+    }
+}
+
+/// The open jobs an AI member may take now, in the order it takes them:
+/// by priority, then the oldest first. Only jobs inside their times
+/// ([`job_window`]) and never run before; `jobs` is every job of the
+/// project. One at a time is the caller's to keep.
+pub fn jobs_to_take<'a>(
+    jobs: &'a [crate::model::item::Item],
+    assignee: &str,
+    now: chrono::DateTime<Utc>,
+) -> Vec<&'a crate::model::item::Item> {
+    use crate::model::item::{Priority, Status};
+    let rank = |p: &Priority| match p {
+        Priority::Extreme => 0,
+        Priority::Critical => 1,
+        Priority::High => 2,
+        Priority::Medium => 3,
+        Priority::Low => 4,
+    };
+    let name = ai_member_name(assignee);
+    let mut mine: Vec<&crate::model::item::Item> = jobs
+        .iter()
+        .filter(|job| job.status == Status::Open)
+        .filter(|job| {
+            job.assignees
+                .first()
+                .is_some_and(|a| ai_member_name(a.member.id()) == name)
+        })
+        .filter(|job| job.job.as_ref().is_none_or(|spec| spec.activity.is_empty()))
+        .filter(|job| job_window(job, now) == JobWindowState::Open)
+        .collect();
+    mine.sort_by(|a, b| {
+        rank(&a.priority)
+            .cmp(&rank(&b.priority))
+            .then(a.created.cmp(&b.created))
+            .then(a.id.cmp(&b.id))
+    });
+    mine
+}
+
 /// [`turn_level`] for a host that holds the project's root: THE level a
 /// chat turn of `ai` for `delegator_key` runs at, on the desktop, on
 /// the platform and in the CLI alike.
@@ -1128,5 +1212,91 @@ mod tests {
         project.member_by_key_mut("claude").unwrap().model = None;
         set_personal_model(&mut project, "claude", DEV, None).unwrap();
         assert_eq!(model_for(&project, "claude", DEV), None);
+    }
+
+    /// The open jobs an AI member takes, in its order: the most urgent
+    /// first, then the oldest, only inside the times a job was given,
+    /// and never one that already ran.
+    #[test]
+    fn an_ai_member_takes_open_jobs_by_priority_and_inside_their_times() {
+        use crate::model::item::{JobWindow, Priority, Status};
+        let now = Utc::now();
+        let job = |id: &str, priority: Priority, age_minutes: i64| {
+            let mut job = job_for("claude", None);
+            job.id = id.into();
+            job.status = Status::Open;
+            job.priority = priority;
+            job.created = now - chrono::Duration::minutes(age_minutes);
+            job
+        };
+        let window = |job: &mut crate::model::item::Item, start: i64, end: i64| {
+            job.job = Some(crate::model::item::JobSpec {
+                scope: vec!["SH-0001-AA".into()],
+                budget: None,
+                window: Some(JobWindow {
+                    not_before: Some(now + chrono::Duration::minutes(start)),
+                    deadline: Some(now + chrono::Duration::minutes(end)),
+                }),
+                feedback: None,
+                activity: Vec::new(),
+                base_branch: None,
+                result_branch: None,
+            });
+        };
+        let mut later = job("later", Priority::Extreme, 50);
+        window(&mut later, 30, 90);
+        let mut over = job("over", Priority::Extreme, 50);
+        window(&mut over, -90, -30);
+        let mut inside = job("inside", Priority::Low, 5);
+        window(&mut inside, -10, 10);
+        let mut not_open = job("new", Priority::Extreme, 50);
+        not_open.status = Status::New;
+        let mut others = job("vibes", Priority::Extreme, 50);
+        others.assignees[0].member = "vibe".into();
+        let jobs = vec![
+            job("medium-old", Priority::Medium, 40),
+            later,
+            job("high", Priority::High, 1),
+            over,
+            job("medium-new", Priority::Medium, 10),
+            inside,
+            not_open,
+            others,
+        ];
+        assert_eq!(job_window(&jobs[1], now), JobWindowState::NotYet);
+        assert_eq!(job_window(&jobs[3], now), JobWindowState::Over);
+        assert_eq!(job_window(&jobs[0], now), JobWindowState::Open);
+        let order: Vec<&str> = jobs_to_take(&jobs, "ai:claude@joy", now)
+            .into_iter()
+            .map(|job| job.id.as_str())
+            .collect();
+        assert_eq!(order, ["high", "medium-old", "medium-new", "inside"]);
+    }
+
+    /// Approving a job and starting it ask the same rule; other steps
+    /// leave the level alone.
+    #[test]
+    fn approving_and_starting_a_job_ask_the_same_rule() {
+        use crate::model::item::Status;
+        use Capability::Jobs;
+        let (project, _, _) = project_where_claude_may(&[Implement, Jobs], Confirmed);
+        let job = job_for("claude", None);
+        for (from, to) in [
+            (Status::New, Status::Open),
+            (Status::Open, Status::InProgress),
+        ] {
+            assert_eq!(
+                job_step(&project, &job, &from, &to, DEV).unwrap(),
+                Some(Confirmed)
+            );
+            let above = job_for("claude", Some(Autonomous));
+            assert!(job_step(&project, &above, &from, &to, DEV).is_err());
+        }
+        // stopping or handing to review judges nothing
+        let above = job_for("claude", Some(Autonomous));
+        assert_eq!(
+            job_step(&project, &above, &Status::InProgress, &Status::Open, DEV).unwrap(),
+            Some(Autonomous)
+        );
     }
 }
