@@ -841,14 +841,17 @@ fn show_project(project: &Project, root: &std::path::Path) {
 
     println!("{}", color::label(&"-".repeat(color::terminal_width())));
 
-    // Hint about member modes if AI members exist
+    // An AI member has more to it than the table says: its one level,
+    // and what the reader allows it for themselves
     if project
         .member_keys()
         .any(|id| joy_core::model::project::is_ai_member(id))
     {
         println!(
             "{}",
-            color::label("Use `joy project member show <ID>` to see interaction levels")
+            color::label(
+                "Use `joy project member show <NAME>` to see what an AI member may do, and at which level"
+            )
         );
     }
 }
@@ -1576,6 +1579,7 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
         ("tst", Capability::Test),
         ("rev", Capability::Review),
         ("doc", Capability::Document),
+        ("job", Capability::Jobs),
         ("crt", Capability::Create),
         ("asg", Capability::Assign),
         ("mng", Capability::Manage),
