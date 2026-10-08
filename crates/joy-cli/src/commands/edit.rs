@@ -96,6 +96,10 @@ pub struct EditArgs {
     /// Job dialog state: awaited|received (use "none" to remove)
     #[arg(long)]
     feedback: Option<String>,
+
+    /// Job level: proposing or autonomous.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -248,11 +252,33 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.max_tokens.is_some()
         || args.not_before.is_some()
         || args.deadline.is_some()
-        || args.feedback.is_some();
+        || args.feedback.is_some()
+        || args.level.is_some();
     if job_flags && !matches!(item.item_type, ItemType::Job) {
         anyhow::bail!(
-            "--scope, --max-cost, --max-tokens, --not-before, --deadline and --feedback are only valid for job items"
+            "--scope, --max-cost, --max-tokens, --not-before, --deadline, --feedback and --level are only valid for job items"
         );
+    }
+
+    // The level of a job, changed by a person: also after its approval,
+    // which is how a job that proposed goes on to do the work.
+    if let Some(ref level) = args.level {
+        let level = level
+            .trim()
+            .parse()
+            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        let project = joy_core::store::load_project(&ctx.root)?;
+        let granted = joy_core::auth::grants::job_level_change(
+            &project,
+            &item,
+            level,
+            ctx.identity.person().id(),
+        )
+        .map_err(|why| anyhow::anyhow!(why))?;
+        if item.interaction_level != Some(granted) {
+            item.interaction_level = Some(granted);
+            changed = true;
+        }
     }
 
     if let Some(ref spec) = args.scope {

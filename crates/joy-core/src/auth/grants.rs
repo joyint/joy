@@ -702,6 +702,31 @@ pub fn job_terms(
     Ok(Some(wanted))
 }
 
+/// A job's level, changed by `person_key`: allowed as long as the job is
+/// not finished, also after its approval and between two rounds. That is
+/// how a person lets a job that proposed go on to do the work: they
+/// switch it to autonomous once the proposal is settled (operator
+/// 2026-10-08). The same rule as when the job was written decides
+/// ([`job_terms`]); what does not reach into an open job is a change of
+/// the MEMBER, not a change the person makes to the job.
+pub fn job_level_change(
+    project: &Project,
+    job: &crate::model::item::Item,
+    level: InteractionLevel,
+    person_key: &str,
+) -> Result<InteractionLevel, String> {
+    use crate::model::item::Status;
+    if matches!(job.status, Status::Closed | Status::Deferred) {
+        return Err(format!(
+            "job {} is {}; its level is no longer changed",
+            job.id, job.status
+        ));
+    }
+    let mut wanted = job.clone();
+    wanted.interaction_level = Some(level);
+    job_terms(project, &wanted, person_key).map(|granted| granted.unwrap_or(level))
+}
+
 /// A job that is already open, when it is started: its level is its own
 /// since the approval and stays, also one from before jobs had two
 /// levels. What is asked again is whether the assignee can still take

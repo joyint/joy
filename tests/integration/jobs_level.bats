@@ -152,6 +152,27 @@ make_job_for_claude() {
     echo "$output" | jq -e '.data.status == "new"' >/dev/null
 }
 
+@test "a person switches an approved job to autonomous, by the same rule" {
+    setup_human_auth
+    make_job_for_claude ""
+    joy approve "$JOB_ID"
+    # claude may run at confirmed: no autonomous for this job
+    run joy edit "$JOB_ID" --level autonomous
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"claude may run at most at confirmed for you"* ]]
+    # the project allows it: the open job is switched, and stays open
+    joy project member edit claude --project --level autonomous --passphrase "$TEST_PASSPHRASE"
+    run joy edit "$JOB_ID" --level autonomous
+    [ "$status" -eq 0 ]
+    run joy show "$JOB_ID" --json
+    echo "$output" | jq -e '.data["interaction-level"] == "autonomous"' >/dev/null
+    echo "$output" | jq -e '.data.status == "open"' >/dev/null
+    # nothing in between
+    run joy edit "$JOB_ID" --level confirmed
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"a job runs at proposing or at autonomous"* ]]
+}
+
 @test "--level is for a job" {
     setup_human_auth
     run joy add task "Not a job" --level confirmed

@@ -619,7 +619,7 @@ joy project member show claude
 
 `project` is what the project allows, `mine` what you allow for yourself (empty while you follow the project), `effective` what the AI member may do when it works for you. Tools and AI agents follow the effective column; they do not re-derive it.
 
-A job runs at one of two levels: `proposing`, which is what every job has until you say otherwise, or `autonomous` (`joy add job ... --level autonomous`), and autonomous only where its assignee may run at autonomous for you. The level in between asks a person before a command runs, and a job has nobody there to ask. From the approval on the level is the job's own.
+A job runs at one of two levels: `proposing`, which is what every job has until you say otherwise, or `autonomous` (`joy add job ... --level autonomous`), and autonomous only where its assignee may run at autonomous for you. The level in between asks a person before a command runs, and a job has nobody there to ask. From the approval on the level is the job's own: a member changed later does not reach into the job. You can still switch it yourself as long as the job is not finished (`joy edit <ID> --level autonomous`). That is how a job that proposed goes on to do the work: at proposing the assignee first settles with you in the job's comments how the items are to be done, then writes its proposal into each scope item as a comment, and reports back in the job. Switch the job to autonomous once you agree.
 
 A project from before this layout keeps working as it is. The first person who signs in with their passphrase brings it over to member files, once and without a question.
 
