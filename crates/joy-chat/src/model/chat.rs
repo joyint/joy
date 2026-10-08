@@ -234,7 +234,7 @@ pub struct Chat {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     pub ai_sessions: BTreeMap<String, String>,
     /// Per-delegator interaction-level overrides (ADR JAPP-00F3-E8 as
@@ -266,7 +266,7 @@ pub struct Chat {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     pub read_markers: BTreeMap<String, DateTime<Utc>>,
     #[serde(default)]

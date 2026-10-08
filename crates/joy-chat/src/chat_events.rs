@@ -109,14 +109,14 @@ pub enum ChatEvent {
     /// LWW register: the creator (set once, but a register for merge).
     CreatedBy {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member_opt")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de_opt")]
         value: Option<String>,
     },
     /// LWW-element-set entry for a participant. `present=true` adds (its
     /// stamp doubles as that member's JOINED marker); `false` removes.
     Participant {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         present: bool,
     },
@@ -126,7 +126,7 @@ pub enum ChatEvent {
     #[serde(alias = "Mode")]
     Level {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         delegator: String,
         #[serde(deserialize_with = "crate::model::interaction::de_level_compat")]
@@ -135,7 +135,7 @@ pub enum ChatEvent {
     /// LWW register for an AI member's ACP session id.
     Session {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         value: String,
     },
@@ -143,7 +143,7 @@ pub enum ChatEvent {
     /// delete-for-all copy). Only ever added.
     DeletedFor {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         present: bool,
     },
@@ -167,7 +167,7 @@ pub enum ChatEvent {
     /// key-change re-wraps ([`crate::chat_store`]); [`fold`] ignores it.
     Cover {
         epoch_id: String,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         vk_hex: String,
     },
@@ -177,7 +177,7 @@ pub enum ChatEvent {
     /// moves forward). Advanced by `joy chat read` and the clients.
     Read {
         stamp: Stamp,
-        #[serde(deserialize_with = "joy_model::older_id::de_member")]
+        #[serde(deserialize_with = "joy_model::migrations::ai_member_name::de")]
         member: String,
         upto: Hlc,
     },
@@ -541,7 +541,7 @@ mod tests {
         format!("2026-07-19T00:00:{sec:02}Z").parse().unwrap()
     }
 
-    /// A chat written when an AI member still went by its older id, and
+    /// A chat written when an AI member still went by its legacy form, and
     /// addressed again today under its name, holds that member ONCE: one
     /// participant, with the session it had. Two entries meant two
     /// answers to one line (integration, 2026-10-08): the client asks a
@@ -575,7 +575,7 @@ mod tests {
             },
         ];
         // what stands in the sealed events of that time
-        let older = joy_model::older_id::spelled("vibe");
+        let older = joy_model::migrations::ai_member_name::legacy_form("vibe");
         let stored = serde_json::to_string(&written_then)
             .unwrap()
             .replace("\"vibe\"", &format!("\"{older}\""));
@@ -606,7 +606,7 @@ mod tests {
             Some(InteractionLevel::Confirmed)
         );
         assert_eq!(chat.messages[0].author.id(), "vibe");
-        // nothing that is written from here says the older id again
+        // nothing that is written from here says the legacy form again
         assert!(!serde_json::to_string(&chat).unwrap().contains(&older));
     }
 

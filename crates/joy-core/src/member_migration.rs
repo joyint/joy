@@ -4,7 +4,7 @@
 //! Bringing a project from before the member files over (JI-019D-46).
 //!
 //! Such a project keeps its whole member map in project.yaml, writes an
-//! AI member by its older id ([`joy_model::older_id`]), and has a
+//! AI member by its legacy form ([`joy_model::migrations::ai_member_name`]), and has a
 //! manager's attestation over every entry. Brought over, it has one file per member, AI members known by
 //! their name, an origin for every person and a signed maximum for every
 //! AI member.
@@ -33,7 +33,7 @@ use crate::model::project::{
     is_ai_member, Member, MemberCapabilities, MemberLayout, Origin, Project,
 };
 use crate::store;
-use joy_model::{older_id, InteractionLevel};
+use joy_model::{migrations::ai_member_name, InteractionLevel};
 
 /// Whether the project at `root` still keeps its members in project.yaml.
 pub fn pending(root: &Path) -> bool {
@@ -71,12 +71,12 @@ fn convert(
     // A person of an anonymous project is already known everywhere by an
     // id; it stays, and becomes the file's name. Everybody else gets one
     // that two people bringing the same project over arrive at alike:
-    // for an AI member over its older id, which is what such a project
+    // for an AI member over its legacy form, which is what such a project
     // has on disk.
     member.file_id = Some(if anonymous && !ai {
         key.to_string()
     } else if ai {
-        member_id::migrated_member_file_id(project_id, &older_id::spelled(key))
+        member_id::migrated_member_file_id(project_id, &ai_member_name::legacy_form(key))
     } else {
         member_id::migrated_member_file_id(project_id, key)
     });
@@ -155,9 +155,9 @@ pub fn prepare(root: &Path, signer_key: &str) -> Result<Option<Prepared>, JoyErr
         let member = convert(&project_id, anonymous, head.as_deref(), &key, member);
         // What is read is the name already; the files that are not
         // read through the model (items, logs, releases) still carry
-        // the older id and are rewritten below.
+        // the legacy form and are rewritten below.
         if is_ai_member(&key) {
-            renamed.push((older_id::spelled(&key), key.clone()));
+            renamed.push((ai_member_name::legacy_form(&key), key.clone()));
         }
         members.insert(key, member);
     }
@@ -222,7 +222,7 @@ pub fn finish(
 
     store::save_project(root, &project)?;
 
-    // Everything else that names an AI member by its older id: the
+    // Everything else that names an AI member by its legacy form: the
     // crypt zones in project.yaml, items, jobs, milestones, releases,
     // logs.
     let joy = store::joy_dir(root);

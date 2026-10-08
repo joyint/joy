@@ -28,9 +28,6 @@ pub mod member_files;
 pub mod member_id;
 pub mod member_migration;
 pub mod member_ref;
-/// The id an AI member had before it was known by its name, and the one
-/// place that knows it: what a host cuts down where it reads.
-pub use joy_model::older_id;
 pub mod members_file;
 pub mod merge;
 pub mod migrations;

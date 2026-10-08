@@ -123,11 +123,11 @@ pub struct MemberRef(String);
 
 impl MemberRef {
     /// Wrap a raw at-rest member key (e-mail in open mode, opaque id in
-    /// anonymous mode, an AI member's name). An AI member's older id is
+    /// anonymous mode, an AI member's name). An AI member's legacy form is
     /// cut down to its name here, so no `MemberRef` ever holds one
-    /// ([`crate::older_id`]).
+    /// ([`crate::ai_member_name`]).
     pub fn new(raw: impl Into<String>) -> Self {
-        Self(crate::older_id::member_owned(raw.into()))
+        Self(crate::migrations::ai_member_name::read_owned(raw.into()))
     }
 
     /// The raw at-rest id. Use only on internal paths (map lookup, verifier

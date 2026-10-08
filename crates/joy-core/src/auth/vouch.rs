@@ -87,7 +87,7 @@ pub fn maximum_level(member: &Member) -> InteractionLevel {
 
 fn maximum_text(project: &Project, name: &str, member: &Member) -> String {
     grant_text(
-        crate::model::project::ai_member_name(name),
+        &crate::migrations::ai_member_name::read(name),
         &capability_list(&member.capabilities),
         maximum_level(member),
         PROJECT_SCOPE,

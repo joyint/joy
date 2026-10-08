@@ -92,7 +92,7 @@ pub fn redeem_ai_session(
 
     // The member the token is for. Its signatures are checked over the
     // claims as they stand; a token issued before AI members were known
-    // by their names says the older id, which ends here (JI-019D-46).
+    // by their names says the legacy form, which ends here (JI-019D-46).
     let ai_member = project.member_key(&claims.ai_member).ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "AI member {} is not registered in this project",

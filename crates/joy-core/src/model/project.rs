@@ -59,7 +59,7 @@ pub struct Project {
         default,
         skip_serializing_if = "BTreeMap::is_empty",
         serialize_with = "serialize_members",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
@@ -154,7 +154,7 @@ pub struct CryptZone {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     pub delegations: BTreeMap<String, BTreeMap<String, String>>,
 }
@@ -244,7 +244,7 @@ pub struct Member {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
     /// Per-member Crypt zone-key wraps. Map from zone name to the
@@ -554,12 +554,13 @@ impl Member {
 
     /// This member's delegation to the AI member `ai`.
     pub fn delegation_to(&self, ai: &str) -> Option<&AiDelegationEntry> {
-        self.ai_delegations.get(ai_member_name(ai))
+        self.ai_delegations.get(ai_member_name::read(ai).as_ref())
     }
 
     /// [`Member::delegation_to`], to change the entry.
     pub fn delegation_to_mut(&mut self, ai: &str) -> Option<&mut AiDelegationEntry> {
-        self.ai_delegations.get_mut(ai_member_name(ai))
+        self.ai_delegations
+            .get_mut(ai_member_name::read(ai).as_ref())
     }
 
     /// Record this member's delegation to `ai`, in place of the one they
@@ -573,7 +574,7 @@ impl Member {
         ai: impl Into<String>,
         mut entry: AiDelegationEntry,
     ) -> Option<AiDelegationEntry> {
-        let key = joy_model::older_id::member_owned(ai.into());
+        let key = ai_member_name::read_owned(ai.into());
         if entry.model.is_none() {
             entry.model = self.ai_delegations.get(&key).and_then(|d| d.model.clone());
         }
@@ -582,7 +583,8 @@ impl Member {
 
     /// Take this member's delegation to `ai` away.
     pub fn drop_delegation(&mut self, ai: &str) -> Option<AiDelegationEntry> {
-        self.ai_delegations.remove(ai_member_name(ai))
+        self.ai_delegations
+            .remove(ai_member_name::read(ai).as_ref())
     }
 
     /// Create a member with the given capabilities and no auth fields.
@@ -640,7 +642,8 @@ impl Member {
     }
 }
 
-pub use joy_model::{ai_member_name, is_ai_member};
+use crate::migrations::ai_member_name;
+pub use joy_model::is_ai_member;
 
 /// One-line description for a `joy project get` key. Returned by
 /// `--describe` so the CLI is the single source of truth for what
@@ -797,7 +800,7 @@ impl Project {
         self.member_key(member).ok_or_else(|| {
             format!(
                 "this project has no AI member named {}",
-                ai_member_name(member)
+                ai_member_name::read(member)
             )
         })
     }
@@ -813,8 +816,10 @@ impl Project {
     /// The key a member is stored under, for a key as anybody may write
     /// it: a person's as it is, an AI member's name.
     pub fn member_key(&self, key: &str) -> Option<String> {
-        let key = ai_member_name(key);
-        self.members.contains_key(key).then(|| key.to_string())
+        let key = ai_member_name::read(key);
+        self.members
+            .contains_key(key.as_ref())
+            .then(|| key.into_owned())
     }
 
     /// Look up a member by their at-rest map key (an AI member's name, or
@@ -892,7 +897,8 @@ impl Project {
         if self.layout == MemberLayout::Files && member.file_id.is_none() {
             member.file_id = Some(crate::member_id::new_member_file_id());
         }
-        self.members.insert(ai_member_name(id).to_string(), member);
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
         Ok(())
     }
 
@@ -902,7 +908,8 @@ impl Project {
     /// member that holds manage, say).
     #[cfg(test)]
     pub(crate) fn insert_as_read(&mut self, id: &str, member: Member) {
-        self.members.insert(ai_member_name(id).to_string(), member);
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.

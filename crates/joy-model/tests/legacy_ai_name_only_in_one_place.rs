@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! An AI member's older id is spelled out in ONE place (JI-019D-46).
+//! An AI member's legacy form is spelled out in ONE place (JI-019D-46).
 //!
-//! `joy_model::older_id` knows how an AI member was written before it
+//! `joy_model::migrations::ai_member_name` knows how an AI member was written before it
 //! was known by its name, and cuts that down wherever something is read.
 //! Nothing else in this repository spells that id out: no code, no test,
 //! no help text, no document. This test reads the sources and says where
@@ -16,22 +16,22 @@
 use std::path::{Path, PathBuf};
 
 const MAY: &[&str] = &[
-    "crates/joy-model/src/older_id.rs",
+    "crates/joy-model/src/migrations/ai_member_name.rs",
     "tests/integration/ai_member_names.bats",
-    "tests/fixtures/members/",
+    "tests/fixtures/",
 ];
 
 const READ: &[&str] = &[
     "rs", "md", "bats", "bash", "sh", "toml", "yaml", "yml", "json",
 ];
 
-/// The prefix of the older id, put together here so that this file does
+/// The prefix of the legacy form, put together here so that this file does
 /// not spell it either.
 fn prefix() -> String {
     ["a", "i", ":"].concat()
 }
 
-/// Whether `line` writes an older id: the prefix as a word of its own,
+/// Whether `line` writes a legacy form: the prefix as a word of its own,
 /// with a name, a placeholder or a closing quote right behind it.
 fn spells_one(line: &str, prefix: &str) -> bool {
     line.match_indices(prefix).any(|(at, _)| {
@@ -64,7 +64,7 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 #[test]
-fn nothing_but_the_one_module_spells_the_older_id() {
+fn nothing_but_the_one_module_spells_the_legacy_form() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let root = root.canonicalize().unwrap();
     let prefix = prefix();
@@ -93,7 +93,7 @@ fn nothing_but_the_one_module_spells_the_older_id() {
     }
     assert!(
         found.is_empty(),
-        "an AI member is its name; only joy_model::older_id spells the older id:\n{}",
+        "an AI member is its name; only joy_model::migrations::ai_member_name spells the legacy form:\n{}",
         found.join("\n")
     );
 }

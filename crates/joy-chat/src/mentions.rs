@@ -7,10 +7,10 @@
 
 /// Whether the mention token `token` names the member `candidate`: by
 /// what the member is known by (an AI member's name, a person's
-/// address), or for an AI member by the older id a person may still
-/// type ([`joy_model::older_id`]).
+/// address), or for an AI member by the legacy form a person may still
+/// type ([`joy_model::migrations::ai_member_name`]).
 fn names(token: &str, candidate: &str) -> bool {
-    token == candidate || joy_model::older_id::name(token) == candidate
+    token == candidate || joy_model::migrations::ai_member_name::read(token) == candidate
 }
 
 /// The words of `text` in order, split the way mentions are written.

@@ -290,14 +290,14 @@ pub fn verify_member_attestation(
     })?;
     let attester_pubkey = PublicKey::from_hex(attester_pubkey_hex)?;
     // An AI member's attestation from before it was known by its name
-    // was signed over its older id, and stands until a person brings
+    // was signed over its legacy form, and stands until a person brings
     // the project over to member files.
     let signed_before = || {
         crate::model::project::is_ai_member(email)
             && attestation::verify_attestation(
                 att,
                 &attester_pubkey,
-                &joy_model::older_id::spelled(email),
+                &joy_model::migrations::ai_member_name::legacy_form(email),
                 member,
             )
             .is_ok()

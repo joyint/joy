@@ -673,12 +673,12 @@ pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
     Ok((!from_before(&token)).then_some(token))
 }
 
-/// Whether a session was made for an AI member under its older id
-/// ([`joy_model::older_id`]). Its claims are signed as they stand, so
+/// Whether a session was made for an AI member under its legacy form
+/// ([`joy_model::migrations::ai_member_name`]). Its claims are signed as they stand, so
 /// they cannot be rewritten; a session is ephemeral, and such a one
 /// counts as none: the next `joy auth` makes one under the name.
 fn from_before(token: &SessionToken) -> bool {
-    joy_model::older_id::is_older(&token.claims.member)
+    joy_model::migrations::ai_member_name::is_legacy(&token.claims.member)
 }
 
 /// Whether a non-expired session for `member` exists on disk for this project.

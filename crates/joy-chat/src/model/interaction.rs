@@ -67,7 +67,7 @@ where
 {
     use serde::Deserialize;
     let raw: BTreeMap<String, BTreeMap<String, String>> = Deserialize::deserialize(deserializer)?;
-    joy_model::older_id::by_member(raw)
+    joy_model::migrations::ai_member_name::read_map(raw)
         .into_iter()
         .map(|(agent, per_delegator)| {
             let per_delegator = per_delegator

@@ -89,7 +89,7 @@ struct MemberFile {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        deserialize_with = "joy_model::older_id::de_by_member"
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
     )]
     ai_delegations: BTreeMap<String, AiDelegationEntry>,
     /// When this file last changed: what the merge driver decides by

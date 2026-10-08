@@ -27,9 +27,8 @@ use chrono::Utc;
 use super::{session, vouch, IdentityKeypair, PublicKey};
 use crate::error::JoyError;
 use crate::model::item::Capability;
-use crate::model::project::{
-    ai_member_name, grant_text, DelegationGrant, Member, MemberLayout, Project,
-};
+use crate::model::project::{grant_text, DelegationGrant, Member, MemberLayout, Project};
+use joy_model::migrations::ai_member_name;
 use joy_model::InteractionLevel;
 
 /// What a token says when the person who issued it had no grant of
@@ -65,7 +64,7 @@ fn personal_text(
     delegator_key_hex: &str,
 ) -> String {
     grant_text(
-        ai_member_name(ai),
+        &ai_member_name::read(ai),
         capabilities,
         level,
         delegator_key_hex,
@@ -104,7 +103,7 @@ pub fn token_grant(delegator: &Member, ai: &str) -> String {
 
 /// The project maximum of an AI member, once its signature is checked.
 fn maximum(project: &Project, ai_key: &str) -> Result<Effective, String> {
-    let name = ai_member_name(ai_key);
+    let name = ai_member_name::read(ai_key);
     let member = project
         .member_by_key(ai_key)
         .ok_or_else(|| format!("{name} is not a member of this project"))?;
@@ -125,7 +124,7 @@ fn personal_target(
     capabilities: Option<&[Capability]>,
     level: Option<InteractionLevel>,
 ) -> Result<(Vec<Capability>, InteractionLevel), JoyError> {
-    let name = ai_member_name(ai_key);
+    let name = ai_member_name::read(ai_key);
     let max = maximum(project, ai_key).map_err(JoyError::Other)?;
     let current = delegator
         .delegation_to(ai_key)
@@ -187,7 +186,7 @@ pub fn personal_payload(
         .member_by_key(delegator_key)
         .ok_or_else(|| JoyError::Other(format!("{delegator_key} is not a member")))?;
     if delegator.delegation_to(ai_key).is_none() {
-        return Err(not_delegated(ai_member_name(ai_key)));
+        return Err(not_delegated(&ai_member_name::read(ai_key)));
     }
     let (caps, level) = personal_target(project, ai_key, delegator, capabilities, level)?;
     let text = personal_text(project, ai_key, &caps, level, delegator_key_hex(delegator)?);
@@ -209,7 +208,7 @@ pub fn apply_personal(
         .ok_or_else(|| JoyError::Other(format!("{delegator_key} is not a member")))?;
     let entry = delegator
         .delegation_to_mut(ai_key)
-        .ok_or_else(|| not_delegated(ai_member_name(ai_key)))?;
+        .ok_or_else(|| not_delegated(&ai_member_name::read(ai_key)))?;
     entry.grant = Some(DelegationGrant {
         capabilities,
         level,
@@ -257,7 +256,7 @@ pub fn set_personal_model(
     person_key: &str,
     model: Option<&str>,
 ) -> Result<(), JoyError> {
-    let name = ai_member_name(ai_key).to_string();
+    let name = ai_member_name::read(ai_key).to_string();
     if !applies(project) {
         return Err(JoyError::Other(format!(
             "a model of your own for {name} needs the project's member files: \
@@ -502,7 +501,7 @@ pub fn effective(
     delegator_key: &str,
     token_grant: Option<&str>,
 ) -> Result<Effective, String> {
-    let name = ai_member_name(ai_key);
+    let name = ai_member_name::read(ai_key);
     let max = maximum(project, ai_key)?;
     // The person is named by their key, or by an address the project
     // knows them under (an anonymous project keys them by an id).
@@ -620,7 +619,7 @@ pub fn job_assignee(
     if !may.allows(&Capability::Jobs) {
         return Err(format!(
             "{} does not hold the jobs capability for you",
-            ai_member_name(member)
+            ai_member_name::read(member)
         ));
     }
     Ok(Some(may.level))
@@ -690,7 +689,7 @@ pub fn job_terms(
     if wanted == InteractionLevel::Autonomous && most != InteractionLevel::Autonomous {
         return Err(format!(
             "this job asks for autonomous, and {} may run at most at {most} for you",
-            ai_member_name(assignee)
+            ai_member_name::read(assignee)
         ));
     }
     Ok(Some(wanted))
@@ -740,7 +739,7 @@ fn job_start_terms(
     if more_oversight(level, most) != level {
         return Err(format!(
             "this job runs at {level}, and {} may run at most at {most} for you",
-            ai_member_name(assignee)
+            ai_member_name::read(assignee)
         ));
     }
     Ok(Some(level))
@@ -808,7 +807,7 @@ pub fn jobs_to_take<'a>(
         Priority::Medium => 3,
         Priority::Low => 4,
     };
-    let name = ai_member_name(assignee);
+    let name = ai_member_name::read(assignee);
     let mut mine: Vec<&crate::model::item::Item> = jobs
         .iter()
         .filter(|job| job.status == Status::Open)

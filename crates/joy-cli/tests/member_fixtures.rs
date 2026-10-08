@@ -237,9 +237,9 @@ fn still_works(fixture: &str, host: Host) {
         .unwrap_or(0);
     assert_eq!(files, 3, "{ctx}: three member files");
     assert!(members.contains("name: claude"), "{ctx}: {members}");
-    // Nothing the project keeps says the AI member's older id any more:
+    // Nothing the project keeps says the AI member's legacy form any more:
     // not its members, not an item, not a line of the log.
-    let older = joy_core::older_id::spelled("claude");
+    let older = joy_core::migrations::ai_member_name::legacy_form("claude");
     assert!(!members.contains(&older), "{ctx}: {members}");
     for kept in files_under(&project.root.join(".joy")) {
         let body = std::fs::read_to_string(&kept).unwrap_or_default();
@@ -265,7 +265,7 @@ fn still_works(fixture: &str, host: Host) {
     // The delegation from before is still the founder's to use: a new
     // token for the AI member is issued without a new delegation, under
     // its name, and redeems. The key behind it was derived when the
-    // member was written by its older id, and it is the same key now.
+    // member was written by its legacy form, and it is the same key now.
     let issued = project.joy(&[
         "auth",
         "token",

@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
-# An AI member is known by its name (JI-019D-46). Its older id may still
+# An AI member is known by its name (JI-019D-46). Its legacy form may still
 # be typed: it is cut down to the name at once, one line says so, and
 # nothing joy writes or prints carries it. These are the only CLI tests
-# that spell the older id out.
+# that spell the legacy form out.
 
 load setup
 

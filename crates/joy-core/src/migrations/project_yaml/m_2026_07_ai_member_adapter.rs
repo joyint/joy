@@ -32,11 +32,10 @@ fn adapter_for_tool(tool: &str) -> Option<&'static str> {
     }
 }
 
-/// The tool an AI member is named after. This runs on the file as it
-/// stands, before the model reads it, so the key may still be an older
-/// id ([`joy_model::older_id`]).
+/// The tool an AI member is named after. The keys are names here: the
+/// migration before this one read them.
 fn tool_of(member_key: &str) -> Option<&str> {
-    joy_model::is_ai_member(member_key).then(|| joy_model::older_id::name(member_key))
+    joy_model::is_ai_member(member_key).then_some(member_key)
 }
 
 pub fn migrate(mut value: Value) -> (Value, bool) {

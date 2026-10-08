@@ -489,14 +489,14 @@ mod tests {
 
     /// The double answer on integration (2026-10-08), from what is
     /// stored to what is written next. A chat sealed when an AI member
-    /// still went by its older id, opened today: the member is in it
+    /// still went by its legacy form, opened today: the member is in it
     /// ONCE, under its name, with the session it had. A line that
     /// addresses it adds nobody (two entries were two turns, and two
     /// answers), and the write keeps the chat's key: an AI member whose
-    /// coverage stood under the older id counted as someone who had left,
+    /// coverage stood under the legacy form counted as someone who had left,
     /// so every write rotated the key.
     #[test]
-    fn a_chat_sealed_under_an_ai_members_older_id_holds_it_once_and_keeps_its_key() {
+    fn a_chat_sealed_under_an_ai_members_legacy_form_holds_it_once_and_keeps_its_key() {
         let horst = [1u8; 32];
         let vibe = [2u8; 32];
         let members = vec![member("horst@example.com", 1), member("vibe", 2)];
@@ -529,10 +529,10 @@ mod tests {
         store(&mut today, write);
 
         // the same events as a release from before sealed them: the AI
-        // member by its older id, wherever an event names it
+        // member by its legacy form, wherever an event names it
         let written = open(CID, &today, &horst);
         let (epoch, ck) = written.epoch_keys.iter().next().expect("one epoch");
-        let older = joy_model::older_id::spelled("vibe");
+        let older = joy_model::migrations::ai_member_name::legacy_form("vibe");
         let mut renamed = 0;
         let mut stored = Sealed {
             slots: today.slots.clone(),

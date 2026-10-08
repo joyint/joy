@@ -17,6 +17,12 @@
 //! - [`project_yaml`]: pure on-read transforms of the parsed YAML value.
 //! - [`item_yaml`]: the same discipline for item files.
 //! - [`repo`]: filesystem-aware, one-shot reconciles run at sync time.
+//! - [`ai_member_name`]: how the name of an AI member is read, in every
+//!   file, chat, token and typed word alike.
+
+/// Reading the name of an AI member, whichever form it was written or
+/// typed in: THE one way, for every crate and every host.
+pub use joy_model::migrations::ai_member_name;
 
 pub mod item_yaml;
 pub mod project_yaml;
