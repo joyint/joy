@@ -1,7 +1,7 @@
 id: JOY-0279-BD
 title: The engine's branch verbs for a host that lets a member choose a branch
 type: story
-status: in-progress
+status: review
 priority: medium
 assignees:
 - member: ai:claude@joy
@@ -12,6 +12,10 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-09-08T15:40:04.602873134Z
-updated: 2026-09-08T15:40:19.148364197Z
+updated: 2026-10-09T06:36:28.118196034Z
 updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 description: 'A host that lets a member read and write on a branch of their choice (platform JP-0126-72, JP-0127-69) needs verbs the engine lacked: every branch the forge has into the tracking refs, the forge''s branch names, the forge''s default branch, a local branch from the forge''s tip without moving HEAD, which worktree holds which branch, and a read-only view worktree of a branch another worktree holds (detached head at the tip, following the branch). Where the platform-only ones belong is JP-012B-6C.'
+comments:
+- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-09T06:36:28.094871956Z
+  text: 'Checked against main on 2026-10-09 (requirement by requirement, with a second reviewer trying to refute it): implemented. All six verbs the description names are on joy origin/main in crates/joy-core/src/vcs/forge.rs (fetch_heads, remote_branch_names, remote_head_branch, ensure_local_branch, worktree_branches, ensure_view_worktree), each with a unit test in the same file, and the platform and desktop app on main already call them. The item has no acceptance criteria, no comments, no parent, no children and no dependencies, so the description is the whole requirement. Nothing the item asks for is missing; I read the code and tests but did not run them (read-only check).'
