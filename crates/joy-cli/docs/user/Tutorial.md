@@ -915,8 +915,8 @@ auto-sync (or another `joy update`) does the rest.
 
 `.joy/project.yaml` starts with `format: <n>`, the format of everything
 under `.joy`. A joy that reads a project with a higher number than it
-knows stops before it reads anything, with one sentence: the project was
-written by a newer joy, update joy. A project without the line is format
+knows stops before it reads anything, with one sentence: the project
+needs a newer joy, install the update. A project without the line is format
 1, the one before member files.
 
 ### Two real flows
