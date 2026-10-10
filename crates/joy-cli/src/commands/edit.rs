@@ -90,8 +90,8 @@ pub struct EditArgs {
     not_before: Option<String>,
 
     /// Job window: latest acceptable end (YYYY-MM-DD or RFC3339)
-    #[arg(long)]
-    deadline: Option<String>,
+    #[arg(long, alias = "deadline")]
+    until: Option<String>,
 
     /// Job dialog state: awaited|received (use "none" to remove)
     #[arg(long)]
@@ -251,12 +251,12 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.max_cost.is_some()
         || args.max_tokens.is_some()
         || args.not_before.is_some()
-        || args.deadline.is_some()
+        || args.until.is_some()
         || args.feedback.is_some()
         || args.level.is_some();
     if job_flags && !matches!(item.item_type, ItemType::Job) {
         anyhow::bail!(
-            "--scope, --max-cost, --max-tokens, --not-before, --deadline, --feedback and --level are only valid for job items"
+            "--scope, --max-cost, --max-tokens, --not-before, --until, --feedback and --level are only valid for job items"
         );
     }
 
@@ -309,8 +309,8 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
-    if let Some(ref when) = args.deadline {
-        job_window(&mut item).deadline = Some(parse_when(when, "--deadline")?);
+    if let Some(ref when) = args.until {
+        job_window(&mut item).until = Some(parse_when(when, "--until")?);
         changed = true;
     }
 
@@ -422,7 +422,7 @@ fn job_window(item: &mut Item) -> &mut JobWindow {
         .window
         .get_or_insert(JobWindow {
             not_before: None,
-            deadline: None,
+            until: None,
         })
 }
 

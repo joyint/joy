@@ -176,8 +176,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     not_before.format("%Y-%m-%d %H:%M")
                 ));
             }
-            if let Some(deadline) = window.deadline {
-                parts.push(format!("deadline {}", deadline.format("%Y-%m-%d %H:%M")));
+            if let Some(until) = window.until {
+                parts.push(format!("until {}", until.format("%Y-%m-%d %H:%M")));
             }
             if !parts.is_empty() {
                 println!("{} {}", color::label("Window:  "), parts.join(", "));
