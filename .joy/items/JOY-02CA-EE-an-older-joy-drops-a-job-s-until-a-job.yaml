@@ -10,7 +10,7 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-10T19:08:41.288986225Z
-updated: 2026-10-10T19:13:28.578262754Z
+updated: 2026-10-10T19:39:36.250463434Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: 'Found 2026-10-10 by running the joy production runs (a696595, reads format 2) against a job written by main: joy show names no window, and its next write of the job leaves ''window: {}'', the end is gone. until replaced deadline in the job file (JOY-02C9-70) without the format number that makes an older joy stop. Fix: PROJECT_FORMAT 3. The number a project.yaml says is what its data needs: 2 for member files, 3 as soon as a job says until. Writing such a job raises the number in the same write, so the marker and the field reach the forge together; a project without until stays at 2 and readable for a joy that reads 2.'
 comments:
@@ -20,3 +20,9 @@ comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-10-10T19:13:28.555313919Z
   text: '[x] Reproduced with the joy production runs (a696595): it showed a job with until without its window and its next write left ''window: {}''. [x] PROJECT_FORMAT 3; the number a project.yaml says is what its data needs (2 member files, 3 from the first job that says until). [x] items::save_item lifts the number before it writes such a job (store::raise_format), project.yaml is staged with the job file: one commit. [x] save_project keeps the number the file says. [x] A merge never lowers the number. [x] Tests: store (a_job_that_says_until_lifts_the_projects_format, a_project_kept_the_old_way_is_lifted_too), merge (the_format_of_a_project_never_sinks), jobs_window.bats (lifted in the same commit, a job file from before lifts it when written again, without an end the project stays at 2). [x] Proof against the old binary: without an end the project stays at 2 and the old joy reads it; after --until it says ''this project needs a newer joy: install the update'' on show, edit and ls, and the end stays in the file. [x] just check green. Limit: joy 0.22.0 and older know no format number at all; they cannot read a project in member files anyway.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-10T19:36:47.578641049Z
+  text: 'Plan (operator 2026-10-10, no legacy left lying in the model): reading deadline moves out of the model into the item migrations as m_2026_10_job_until, the model knows only until; the --deadline alias of joy edit goes, nothing but habit hung on it.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-10T19:39:36.223136502Z
+  text: '[x] Reading deadline is the item migrations'' now: migrations/item_yaml/m_2026_10_job_until (a job window from before ends at until, a file that says both keeps until); the model knows only until. [x] The --deadline alias of joy edit is gone. [x] The migration names when it can go and cites JOY-02CB-ED (migrations get an end). [x] just check green.'

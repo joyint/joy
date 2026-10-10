@@ -33,13 +33,6 @@ make_job() {
     [[ "$output" == *"until 2026-12-24"* ]]
 }
 
-@test "--deadline, as typed before, is the same flag" {
-    setup_human_auth
-    make_job
-    joy edit "$JOB_ID" --deadline 2026-12-24
-    grep -q "until: 2026-12-24" "$JOB_FILE"
-}
-
 @test "a job file from before says deadline and reads as until" {
     setup_human_auth
     make_job
