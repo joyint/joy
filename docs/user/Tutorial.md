@@ -911,6 +911,14 @@ catch up) but skips the in-repo refresh from this still-running OLD
 process. Open a new shell once the new binary is in `$PATH` and the
 auto-sync (or another `joy update`) does the rest.
 
+### A project from a newer joy
+
+`.joy/project.yaml` starts with `format: <n>`, the format of everything
+under `.joy`. A joy that reads a project with a higher number than it
+knows stops before it reads anything, with one sentence: the project
+needs a newer joy, install the update. A project without the line is format
+1, the one before member files.
+
 ### Two real flows
 
 - **You have an older binary in a freshly synced repo.** `joy update`
