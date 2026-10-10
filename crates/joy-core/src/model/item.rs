@@ -263,8 +263,11 @@ fn default_currency() -> String {
 pub struct JobWindow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_before: Option<DateTime<Utc>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deadline: Option<DateTime<Utc>>,
+    /// The latest acceptable end. Written as `until` (operator
+    /// 2026-10-10, one word on every surface); a job file from before
+    /// says `deadline` and reads the same.
+    #[serde(default, alias = "deadline", skip_serializing_if = "Option::is_none")]
+    pub until: Option<DateTime<Utc>>,
 }
 
 /// One terminal execution loop of a job. Written once, at the loop's
@@ -622,6 +625,21 @@ pub fn item_filename(id: &str, title: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A job's window ends at `until`. A job file from before says
+    /// `deadline`, and reads the same; written again, it says `until`.
+    #[test]
+    fn a_job_window_from_before_ends_at_until() {
+        let window: JobWindow =
+            serde_yaml_ng::from_str("deadline: 2026-09-01T18:00:00Z\n").unwrap();
+        assert_eq!(
+            window.until.map(|t| t.to_rfc3339()).as_deref(),
+            Some("2026-09-01T18:00:00+00:00")
+        );
+        let written = serde_yaml_ng::to_string(&window).unwrap();
+        assert!(written.contains("until:"), "{written}");
+        assert!(!written.contains("deadline"), "{written}");
+    }
+
     use super::*;
 
     #[test]

@@ -1,0 +1,23 @@
+id: JOY-02C9-70
+title: 'A job''s window ends at until: the one word in the job file, on the command line and in joy show'
+type: story
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-10T18:18:51.072370082Z
+updated: 2026-10-10T18:23:35.499673892Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-10-10: the end of a job''s window is called until on every surface. The job file writes until and reads deadline from before as the same; joy edit takes --until (--deadline stays as an alias for what people type); joy show prints until. Priority and effort are item fields and are set on a job like on any item, at joy add and joy edit; nothing changes there.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-10T18:18:58.893059521Z
+  text: 'Plan: JobWindow.until with a serde alias for deadline; --until on joy edit with --deadline as alias; until in joy show and in the AI tutorial; a unit test that a job file from before reads the same and is written with until. No format number change: a joy before reads such a job without its end, the project stays readable.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-10T18:23:35.467086005Z
+  text: '[x] JobWindow.until, a job file from before (deadline) reads the same and is written with until. [x] joy edit --until, --deadline is the same flag. [x] joy show and the AI tutorial say until. [x] tests/integration/jobs_window.bats: the three cases above and a job''s priority and effort set at joy add and changed with joy edit. [x] just check green. The format number stays 2: a joy before reads a job with until without its end.'

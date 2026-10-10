@@ -781,7 +781,7 @@ pub fn job_window(job: &crate::model::item::Item, now: chrono::DateTime<Utc>) ->
     let Some(window) = job.job.as_ref().and_then(|spec| spec.window.as_ref()) else {
         return JobWindowState::Open;
     };
-    if window.deadline.is_some_and(|end| now > end) {
+    if window.until.is_some_and(|end| now > end) {
         JobWindowState::Over
     } else if window.not_before.is_some_and(|start| now < start) {
         JobWindowState::NotYet
@@ -1294,7 +1294,7 @@ mod tests {
                 budget: None,
                 window: Some(JobWindow {
                     not_before: Some(now + chrono::Duration::minutes(start)),
-                    deadline: Some(now + chrono::Duration::minutes(end)),
+                    until: Some(now + chrono::Duration::minutes(end)),
                 }),
                 feedback: None,
                 activity: Vec::new(),
