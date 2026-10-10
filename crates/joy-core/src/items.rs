@@ -404,6 +404,18 @@ pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     let dir = dir_for_type(root, &item.item_type);
     let filename = item_filename(&item.id, &item.title);
     let path = dir.join(&filename);
+    // A job that says `until` is something a joy before reads wrong: it
+    // shows the job without its end and drops the end at its next write
+    // (JOY-02CA-EE). The project says so first, in the same write, so an
+    // older joy meets the number before it meets the field.
+    let says_until = item
+        .job
+        .as_ref()
+        .and_then(|job| job.window.as_ref())
+        .is_some_and(|window| window.until.is_some());
+    if says_until {
+        store::raise_format(root, store::FORMAT_JOB_UNTIL)?;
+    }
     write_item_file(&path, item)?;
     let sub = if item.item_type == ItemType::Job {
         store::JOBS_DIR

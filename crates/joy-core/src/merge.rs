@@ -86,6 +86,14 @@ fn merge_value(base: &Value, ours: &Value, theirs: &Value, tb: Side, path: &str)
     if ours == theirs {
         return ours.clone();
     }
+    // A project's `format` names what its data needs (store::PROJECT_FORMAT).
+    // Two sides that say different numbers hold, together, what the higher
+    // one stands for: the number never sinks in a merge, whoever wrote last.
+    if path == "format" {
+        if let (Some(o), Some(t)) = (ours.as_u64(), theirs.as_u64()) {
+            return Value::from(o.max(t));
+        }
+    }
     if ours == base {
         return theirs.clone();
     }
@@ -269,6 +277,21 @@ fn sub_path(parent: &str, key: &Value) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// A project's format never sinks in a merge: the side that wrote
+    /// last may say the lower number, the merged project still holds what
+    /// the higher one stands for (JOY-02CA-EE).
+    #[test]
+    fn the_format_of_a_project_never_sinks() {
+        let base = "name: P\nupdated: 2026-10-01T00:00:00Z\n";
+        let lifted = "format: 3\nname: P\nupdated: 2026-10-02T00:00:00Z\n";
+        let later = "format: 2\nname: Q\nupdated: 2026-10-03T00:00:00Z\n";
+        for (ours, theirs) in [(lifted, later), (later, lifted)] {
+            let merged = super::merge_yaml_doc(base, ours, theirs).unwrap();
+            assert!(merged.contains("format: 3"), "{merged}");
+            assert!(merged.contains("name: Q"), "{merged}");
+        }
+    }
+
     use super::*;
 
     fn merge(base: &str, ours: &str, theirs: &str) -> Value {

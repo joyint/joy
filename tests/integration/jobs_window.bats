@@ -4,6 +4,11 @@
 # and a job file from before, which says `deadline`, reads the same. Its
 # priority and effort are the item's: set at `joy add`, changed with
 # `joy edit`, like on any item.
+#
+# `until` is a change of the job file an older joy reads wrong (it shows
+# the job without its end and drops the end at its next write), so the
+# first job that says it lifts the project's format to 3 in the same
+# write (JOY-02CA-EE); a project without one stays at 2.
 
 load setup
 
@@ -26,13 +31,6 @@ make_job() {
     run joy show "$JOB_ID"
     [ "$status" -eq 0 ]
     [[ "$output" == *"until 2026-12-24"* ]]
-}
-
-@test "--deadline, as typed before, is the same flag" {
-    setup_human_auth
-    make_job
-    joy edit "$JOB_ID" --deadline 2026-12-24
-    grep -q "until: 2026-12-24" "$JOB_FILE"
 }
 
 @test "a job file from before says deadline and reads as until" {
@@ -59,4 +57,40 @@ make_job() {
     joy edit "$JOB_ID" --priority low --effort 1
     run joy show "$JOB_ID" --json
     echo "$output" | jq -e '.data.priority == "low" and .data.effort == 1' >/dev/null
+}
+
+@test "the first job that says until lifts the project's format to 3, in the same commit" {
+    setup_human_auth
+    make_job
+    # a job without an end changes nothing: a joy that reads 2 stays in
+    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
+    joy edit "$JOB_ID" --not-before 2026-12-01
+    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
+    git add -A && git commit -qm "before [no-item]"
+
+    joy edit "$JOB_ID" --until 2026-12-24
+    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
+    # the number and the field travel together: one staged change set
+    git diff --cached --name-only | grep -q "^.joy/project.yaml$"
+    git diff --cached --name-only | grep -q "^.joy/jobs/"
+    # and the project reads as before
+    run joy show "$JOB_ID"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"until 2026-12-24"* ]]
+    # saving the project keeps the number
+    joy project set name "Renamed"
+    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
+}
+
+@test "a job file from before lifts the format when it is written again" {
+    setup_human_auth
+    make_job
+    # as a joy before wrote it: `deadline`, under format 2
+    joy edit "$JOB_ID" --not-before 2026-12-01
+    sed -i 's/^\( *\)not_before: \(.*\)$/\1not_before: \2\n\1deadline: 2026-12-24T00:00:00Z/' "$JOB_FILE"
+    grep -q "deadline: 2026-12-24" "$JOB_FILE"
+    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
+    joy edit "$JOB_ID" --max-tokens 5
+    grep -q "until: 2026-12-24" "$JOB_FILE"
+    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
 }

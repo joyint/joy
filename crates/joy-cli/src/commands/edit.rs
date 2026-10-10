@@ -90,7 +90,7 @@ pub struct EditArgs {
     not_before: Option<String>,
 
     /// Job window: latest acceptable end (YYYY-MM-DD or RFC3339)
-    #[arg(long, alias = "deadline")]
+    #[arg(long)]
     until: Option<String>,
 
     /// Job dialog state: awaited|received (use "none" to remove)

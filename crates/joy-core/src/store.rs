@@ -509,14 +509,32 @@ pub fn parse_project(
 /// 1: the member map inside project.yaml (joy up to 0.22).
 /// 2: one file per member under `.joy/members/`, project.yaml lists them
 ///    (JI-019D-46).
+/// 3: a job's window ends at `until`, no longer at `deadline`
+///    (JOY-02C9-70).
 ///
 /// Raise it whenever a change makes a project unreadable for the joy
-/// before, in any file under `.joy`. An older joy then meets the number
-/// before it meets the change, and says one sentence instead of a parse
-/// error: 0.22 died on "invalid type: sequence, expected a map" when a
-/// project shared on a forge was brought over to member files by a newer
-/// joy (2026-10-09). Nothing is read before this number is checked.
-pub const PROJECT_FORMAT: u32 = 2;
+/// before, in any file under `.joy`, OR lets that joy read it wrong. An
+/// older joy then meets the number before it meets the change, and says
+/// one sentence instead of a parse error or a silent loss: 0.22 died on
+/// "invalid type: sequence, expected a map" when a project shared on a
+/// forge was brought over to member files by a newer joy (2026-10-09);
+/// and the joy that read 2 showed a job without its `until` and dropped
+/// the end at its next write of the job (JOY-02CA-EE). Nothing is read
+/// before this number is checked.
+///
+/// This constant is the highest format this joy reads. What a
+/// project.yaml SAYS is what the project's data needs, and no more: 2
+/// once its members are in files, 3 from the first job that says
+/// `until`. So a project is closed to an older joy exactly when it holds
+/// something that joy would get wrong, and not because a newer joy
+/// touched it.
+pub const PROJECT_FORMAT: u32 = 3;
+
+/// The format a project needs once its members are in files.
+const FORMAT_MEMBER_FILES: u32 = 2;
+
+/// The format a project needs from the first job that says `until`.
+pub const FORMAT_JOB_UNTIL: u32 = 3;
 
 /// The `format` a project.yaml says, 1 when it says none.
 fn format_of(value: &serde_yaml_ng::Value) -> u32 {
@@ -525,6 +543,50 @@ fn format_of(value: &serde_yaml_ng::Value) -> u32 {
         .and_then(serde_yaml_ng::Value::as_u64)
         .and_then(|n| u32::try_from(n).ok())
         .unwrap_or(1)
+}
+
+/// Say `format` in a project.yaml, as its first key, so that whoever
+/// opens the file reads it first too.
+fn put_format_first(value: &mut serde_yaml_ng::Value, format: u32) {
+    if let Some(map) = value.as_mapping_mut() {
+        let rest = std::mem::take(map);
+        map.insert("format".into(), serde_yaml_ng::Value::from(format));
+        for (key, val) in rest {
+            if key.as_str() != Some("format") {
+                map.insert(key, val);
+            }
+        }
+    }
+}
+
+/// Lift the format project.yaml says to `needed`, when it says less, and
+/// stage the file. Called BEFORE the write that needs it (a job that
+/// says `until`, [`FORMAT_JOB_UNTIL`]), so the number and what it stands
+/// for land in the same commit and reach the forge together: there is no
+/// moment at which an older joy finds the new field under the old number.
+/// A project.yaml that already says enough is left alone.
+pub fn raise_format(root: &Path, needed: u32) -> Result<(), crate::error::JoyError> {
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    // No project file: nothing to mark (a bare store in a test).
+    let Ok(text) = std::fs::read_to_string(&project_path) else {
+        return Ok(());
+    };
+    let mut value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).map_err(|e| JoyError::YamlParse {
+            path: project_path.clone(),
+            source: e,
+        })?;
+    if format_of(&value) >= needed {
+        return Ok(());
+    }
+    put_format_first(&mut value, needed);
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(&project_path, yaml).map_err(|e| JoyError::WriteFile {
+        path: project_path.clone(),
+        source: e,
+    })?;
+    crate::git_ops::auto_git_add(root, &[&format!("{JOY_DIR}/{PROJECT_FILE}")]);
+    Ok(())
 }
 
 fn parse_project_and_member_ids(
@@ -617,6 +679,18 @@ pub fn save_project(
     let project_path = joy_dir(root).join(PROJECT_FILE);
     let mut value = serde_yaml_ng::to_value(project)?;
     let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
+    let existing: Option<Value> = std::fs::read_to_string(&project_path)
+        .ok()
+        .and_then(|text| serde_yaml_ng::from_str(&text).ok());
+    // What the file says already stays said (a job with `until` lifted it
+    // to 3, and saving the project must not take that back); member files
+    // need 2. A project in format 1 says nothing, as it always did.
+    let said = existing.as_ref().map(format_of).unwrap_or(1);
+    let needed = if in_files {
+        said.max(FORMAT_MEMBER_FILES)
+    } else {
+        said
+    };
     if in_files {
         let ids = crate::member_files::write(root, project.member_map())?;
         if let Some(map) = value.as_mapping_mut() {
@@ -625,23 +699,12 @@ pub fn save_project(
                 map.insert("members".into(), serde_yaml_ng::to_value(ids)?);
             }
         }
-        // The format first, so that whoever opens the file reads it first
-        // too. A project in format 1 says nothing, as it always did.
-        if let Some(map) = value.as_mapping_mut() {
-            let rest = std::mem::take(map);
-            map.insert("format".into(), Value::from(PROJECT_FORMAT));
-            for (key, val) in rest {
-                if key.as_str() != Some("format") {
-                    map.insert(key, val);
-                }
-            }
-        }
     }
-    if let (Some(map), Ok(existing)) = (
-        value.as_mapping_mut(),
-        std::fs::read_to_string(&project_path),
-    ) {
-        if let Ok(Value::Mapping(existing)) = serde_yaml_ng::from_str::<Value>(&existing) {
+    if needed > 1 {
+        put_format_first(&mut value, needed);
+    }
+    if let Some(map) = value.as_mapping_mut() {
+        if let Some(Value::Mapping(existing)) = existing {
             for (key, val) in existing {
                 let modeled = key
                     .as_str()
@@ -741,13 +804,15 @@ mod tests {
             err.to_string(),
             "this project needs a newer joy: install the update"
         );
-        // the format of today and the one before read as ever
+        // the formats this joy knows read as ever
         let created = "created: 2026-10-10T00:00:00Z\n";
-        parse_project(
-            &format!("format: 2\nname: Now\nmembers: []\n{created}"),
-            std::path::Path::new("p"),
-        )
-        .unwrap();
+        for format in [FORMAT_MEMBER_FILES, FORMAT_JOB_UNTIL] {
+            parse_project(
+                &format!("format: {format}\nname: Now\nmembers: []\n{created}"),
+                std::path::Path::new("p"),
+            )
+            .unwrap();
+        }
         parse_project(
             &format!("name: Before\n{created}"),
             std::path::Path::new("p"),
@@ -771,8 +836,9 @@ mod tests {
         })
         .unwrap();
         let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
+        // what member files need, and no more: a joy that reads 2 stays in
         assert!(
-            text.starts_with(&format!("format: {PROJECT_FORMAT}\n")),
+            text.starts_with(&format!("format: {FORMAT_MEMBER_FILES}\n")),
             "{text}"
         );
         assert_eq!(text.matches("format:").count(), 1);
@@ -780,6 +846,104 @@ mod tests {
         save_project(dir.path(), &again).unwrap();
         let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
         assert_eq!(text.matches("format:").count(), 1, "{text}");
+    }
+
+    /// The number a project says is what its data needs (JOY-02CA-EE). A
+    /// job that says `until` is read wrong by a joy before (no end, and
+    /// the end gone at its next write), so writing one lifts the number
+    /// to 3 in the same write. Nothing else does: a job without an end
+    /// leaves the project at 2, open to the joy that reads 2. And once
+    /// lifted the number stays, also when the project itself is saved.
+    #[test]
+    fn a_job_that_says_until_lifts_the_projects_format() {
+        use crate::model::item::{ItemType, JobSpec, JobWindow};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        crate::init::init(crate::init::InitOptions {
+            root: root.to_path_buf(),
+            name: Some("Now".into()),
+            acronym: Some("NW".into()),
+            user: Some("founder@example.com".into()),
+            language: None,
+            host: crate::host::HostKind::Background,
+            ask: None,
+        })
+        .unwrap();
+        let said = || {
+            let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+            assert_eq!(text.matches("format:").count(), 1, "{text}");
+            format_of(&serde_yaml_ng::from_str(&text).unwrap())
+        };
+        let job = |id: &str, window: Option<JobWindow>| {
+            let mut job = crate::templates::render_item(&ItemType::Job, id, "A job").unwrap();
+            job.job = Some(JobSpec {
+                scope: vec!["NW-0001-AA".into()],
+                budget: None,
+                window,
+                feedback: None,
+                activity: Vec::new(),
+                base_branch: None,
+                result_branch: None,
+            });
+            job
+        };
+        assert_eq!(said(), FORMAT_MEMBER_FILES);
+
+        // a job without an end, and one with a start only: nothing new
+        crate::items::save_item(root, &job("NW-JOB-0001-AA", None)).unwrap();
+        let start_only = JobWindow {
+            not_before: Some(chrono::Utc::now()),
+            until: None,
+        };
+        crate::items::save_item(root, &job("NW-JOB-0002-AA", Some(start_only))).unwrap();
+        assert_eq!(said(), FORMAT_MEMBER_FILES);
+
+        // the first job that says `until`
+        let ends = JobWindow {
+            not_before: None,
+            until: Some(chrono::Utc::now()),
+        };
+        crate::items::save_item(root, &job("NW-JOB-0003-AA", Some(ends))).unwrap();
+        assert_eq!(said(), FORMAT_JOB_UNTIL);
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
+
+        // saving the project does not take the number back, and the
+        // project reads as before
+        let project = load_project(root).unwrap();
+        save_project(root, &project).unwrap();
+        assert_eq!(said(), FORMAT_JOB_UNTIL);
+        assert_eq!(load_project(root).unwrap().name, "Now");
+    }
+
+    /// A project still kept the old way (members inside project.yaml)
+    /// says the number too once a job says `until`, and keeps it when it
+    /// is saved in that layout.
+    #[test]
+    fn a_project_kept_the_old_way_is_lifted_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(joy_dir(root)).unwrap();
+        std::fs::write(
+            joy_dir(root).join(PROJECT_FILE),
+            "name: Before\nacronym: BF\ncreated: 2026-10-10T00:00:00Z\n",
+        )
+        .unwrap();
+        raise_format(root, FORMAT_JOB_UNTIL).unwrap();
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
+        assert!(text.contains("name: Before"), "{text}");
+        // a second lift changes nothing
+        raise_format(root, FORMAT_JOB_UNTIL).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap(),
+            text
+        );
+        let project = load_project(root).unwrap();
+        save_project(root, &project).unwrap();
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
     }
 
     use super::*;
