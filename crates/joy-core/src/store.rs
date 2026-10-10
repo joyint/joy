@@ -503,6 +503,30 @@ pub fn parse_project(
 /// members are kept in files of their own (JI-019D-46). The project then
 /// comes back without members: reading the files is the caller's part,
 /// because only a caller with a checkout has them.
+/// The format of `.joy` this joy reads and writes, said in project.yaml
+/// as `format`. A project without the field is format 1.
+///
+/// 1: the member map inside project.yaml (joy up to 0.22).
+/// 2: one file per member under `.joy/members/`, project.yaml lists them
+///    (JI-019D-46).
+///
+/// Raise it whenever a change makes a project unreadable for the joy
+/// before, in any file under `.joy`. An older joy then meets the number
+/// before it meets the change, and says one sentence instead of a parse
+/// error: 0.22 died on "invalid type: sequence, expected a map" when a
+/// project shared on a forge was brought over to member files by a newer
+/// joy (2026-10-09). Nothing is read before this number is checked.
+pub const PROJECT_FORMAT: u32 = 2;
+
+/// The `format` a project.yaml says, 1 when it says none.
+fn format_of(value: &serde_yaml_ng::Value) -> u32 {
+    value
+        .get("format")
+        .and_then(serde_yaml_ng::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(1)
+}
+
 fn parse_project_and_member_ids(
     content: &str,
     origin: &Path,
@@ -514,6 +538,15 @@ fn parse_project_and_member_ids(
         source: e,
     };
     let mut value: Value = serde_yaml_ng::from_str(content).map_err(yaml_err)?;
+    // Before anything is read: a project from a newer joy is not read
+    // at all, it is named.
+    let format = format_of(&value);
+    if format > PROJECT_FORMAT {
+        return Err(JoyError::NewerFormat {
+            format,
+            reads: PROJECT_FORMAT,
+        });
+    }
     // A list under `members` is the ids of the member files; a map is
     // the members themselves, as every older project has them.
     let listed: Option<Vec<String>> = match value.get("members") {
@@ -555,6 +588,7 @@ pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate
 ///
 /// [`Project`]: crate::model::project::Project
 const MODELED_PROJECT_KEYS: &[&str] = &[
+    "format",
     "name",
     "acronym",
     "description",
@@ -589,6 +623,17 @@ pub fn save_project(
             map.remove("members");
             if !ids.is_empty() {
                 map.insert("members".into(), serde_yaml_ng::to_value(ids)?);
+            }
+        }
+        // The format first, so that whoever opens the file reads it first
+        // too. A project in format 1 says nothing, as it always did.
+        if let Some(map) = value.as_mapping_mut() {
+            let rest = std::mem::take(map);
+            map.insert("format".into(), Value::from(PROJECT_FORMAT));
+            for (key, val) in rest {
+                if key.as_str() != Some("format") {
+                    map.insert(key, val);
+                }
             }
         }
     }
@@ -679,6 +724,64 @@ pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
 
 #[cfg(test)]
 mod tests {
+    /// A project from a joy newer than this one is named before it is
+    /// read, in one sentence that says what to do.
+    #[test]
+    fn a_project_from_a_newer_joy_says_so_before_anything_is_read() {
+        let newer = format!(
+            "format: {}\nname: Later\nmembers:\n- m-aaaaaaaaaa\nsomething_new: [1, 2]\n",
+            PROJECT_FORMAT + 1
+        );
+        let err = parse_project(&newer, std::path::Path::new("project.yaml")).unwrap_err();
+        assert!(matches!(
+            err,
+            JoyError::NewerFormat { format, reads } if format == PROJECT_FORMAT + 1 && reads == PROJECT_FORMAT
+        ));
+        assert_eq!(
+            err.to_string(),
+            "this project needs a newer joy: install the update"
+        );
+        // the format of today and the one before read as ever
+        let created = "created: 2026-10-10T00:00:00Z\n";
+        parse_project(
+            &format!("format: 2\nname: Now\nmembers: []\n{created}"),
+            std::path::Path::new("p"),
+        )
+        .unwrap();
+        parse_project(
+            &format!("name: Before\n{created}"),
+            std::path::Path::new("p"),
+        )
+        .unwrap();
+    }
+
+    /// A project kept in member files says its format, first thing in
+    /// the file; one kept the old way says nothing, as it always did.
+    #[test]
+    fn a_project_in_member_files_says_its_format_first() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::init::init(crate::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Now".into()),
+            acronym: Some("NW".into()),
+            user: Some("founder@example.com".into()),
+            language: None,
+            host: crate::host::HostKind::Background,
+            ask: None,
+        })
+        .unwrap();
+        let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
+        assert!(
+            text.starts_with(&format!("format: {PROJECT_FORMAT}\n")),
+            "{text}"
+        );
+        assert_eq!(text.matches("format:").count(), 1);
+        let again = load_project(dir.path()).unwrap();
+        save_project(dir.path(), &again).unwrap();
+        let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
+        assert_eq!(text.matches("format:").count(), 1, "{text}");
+    }
+
     use super::*;
 
     /// What the project says about its own keys is the whole truth, and

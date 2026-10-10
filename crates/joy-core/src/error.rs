@@ -63,6 +63,12 @@ pub enum JoyError {
         source: std::io::Error,
     },
 
+    /// The project on disk was written by a joy that is newer than this
+    /// one, and says so in `format` (see `store::PROJECT_FORMAT`). The one
+    /// sentence every host shows for it: what happened and what to do.
+    #[error("this project needs a newer joy: install the update")]
+    NewerFormat { format: u32, reads: u32 },
+
     #[error("{path}: {source}")]
     YamlParse {
         path: PathBuf,
