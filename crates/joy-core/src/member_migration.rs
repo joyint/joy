@@ -11,12 +11,20 @@
 //!
 //! The one thing that cannot be done without a person is the signature
 //! under what an AI member may do. So this does not run with the other
-//! reconciles when a project is opened: it runs the first time a person
-//! is there with their key (a login, an unlock, a command of somebody
-//! signed in), in one step and without a word. Until then the project is
+//! reconciles when a project is opened, and it needs a person's key.
+//!
+//! It runs when a person asks for an update, and at no other moment
+//! (JOY-02CC-C1): on the command line that is `joy update` of somebody
+//! signed in. A project brought over cannot be read by a joy from before
+//! the member files, so it must never happen as a side effect of a
+//! sign-in or of a command that only reads. Until then the project is
 //! read and written as it was, by the same code as before, and nothing
 //! about it is weaker or stronger. A server holds nobody's key and never
 //! runs it.
+//!
+//! It writes project.yaml and the member files, and nothing else. What
+//! names an AI member by its legacy form in an item, a job, a milestone,
+//! a release or a log stays as it is and is read with the name.
 //!
 //! Whoever is first signs the maxima with their own key, whatever they
 //! may do in the project: what they sign is what a manager had attested,
@@ -109,7 +117,6 @@ fn convert(
 /// members may do.
 pub struct Prepared {
     project: Project,
-    renamed: Vec<(String, String)>,
     /// One per AI member, in the order of [`Prepared::payloads`].
     ai_members: Vec<String>,
 }
@@ -149,16 +156,10 @@ pub fn prepare(root: &Path, signer_key: &str) -> Result<Option<Prepared>, JoyErr
     let anonymous = project.privacy_mode() == crate::model::project::PrivacyMode::Anonymous;
     let head = crate::vcs::forge::head_oid(root);
 
-    let mut renamed: Vec<(String, String)> = Vec::new();
     let mut members: BTreeMap<String, Member> = BTreeMap::new();
     for (key, member) in project.take_members() {
+        // What is read is the name already.
         let member = convert(&project_id, anonymous, head.as_deref(), &key, member);
-        // What is read is the name already; the files that are not
-        // read through the model (items, logs, releases) still carry
-        // the legacy form and are rewritten below.
-        if is_ai_member(&key) {
-            renamed.push((ai_member_name::legacy_form(&key), key.clone()));
-        }
         members.insert(key, member);
     }
     project.replace_members(members);
@@ -170,7 +171,6 @@ pub fn prepare(root: &Path, signer_key: &str) -> Result<Option<Prepared>, JoyErr
         .collect();
     Ok(Some(Prepared {
         project,
-        renamed,
         ai_members,
     }))
 }
@@ -186,7 +186,6 @@ pub fn finish(
 ) -> Result<(), JoyError> {
     let Prepared {
         mut project,
-        renamed,
         ai_members,
     } = prepared;
     if signatures.len() != ai_members.len() {
@@ -220,32 +219,11 @@ pub fn finish(
         *project.member_by_key_mut(key).expect("converted") = member;
     }
 
-    store::save_project(root, &project)?;
-
-    // Everything else that names an AI member by its legacy form: the
-    // crypt zones in project.yaml, items, jobs, milestones, releases,
-    // logs.
-    let joy = store::joy_dir(root);
-    crate::privacy::rewrite_project_keeping_the_member_list(
-        &joy.join(store::PROJECT_FILE),
-        &renamed,
-    )?;
-    let mut staged = vec![format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE)];
-    for (dir, ext) in [
-        (store::ITEMS_DIR, "yaml"),
-        (store::JOBS_DIR, "yaml"),
-        (store::MILESTONES_DIR, "yaml"),
-        (store::RELEASES_DIR, "yaml"),
-        (store::LOG_DIR, "log"),
-    ] {
-        crate::privacy::rewrite_dir(&joy.join(dir), ext, &renamed)?;
-        if joy.join(dir).is_dir() {
-            staged.push(format!("{}/{dir}", store::JOY_DIR));
-        }
-    }
-    let staged: Vec<&str> = staged.iter().map(String::as_str).collect();
-    crate::git_ops::auto_git_add(root, &staged);
-    Ok(())
+    // project.yaml and the member files, and nothing else (JOY-02CC-C1).
+    // Items, jobs, milestones, releases and logs that name an AI member
+    // by its legacy form stay byte for byte as they are: the name is cut
+    // where they are read ([`ai_member_name`]), and a log is a record.
+    store::save_project(root, &project)
 }
 
 /// Bring the project at `root` over, signed by the person `signer_key`
@@ -271,13 +249,4 @@ pub fn migrate(root: &Path, signer_key: &str, keypair: &IdentityKeypair) -> Resu
         .collect();
     finish(root, prepared, signer_key, &signatures)?;
     Ok(true)
-}
-
-/// [`migrate`] for a caller that must not fail because of it: a login
-/// that worked stays a login that worked. What went wrong is said on
-/// stderr, and the project stays as it was.
-pub fn migrate_quietly(root: &Path, signer_key: &str, keypair: &IdentityKeypair) {
-    if let Err(e) = migrate(root, signer_key, keypair) {
-        eprintln!("Warning: this project's members could not be moved to their own files: {e}");
-    }
 }

@@ -183,24 +183,14 @@ fn a_chat_written_by_an_earlier_release_holds_its_ai_member_once_under_its_name(
     assert!(!info.contains(&legacy), "{info}");
     assert_eq!(project.key_slots(), recorded_slots, "and still no new key");
 
-    // The person was here with their key, so the project is brought over,
-    // and nothing it keeps says the legacy form any more.
-    for kept in files_under(&project.root.join(".joy")) {
-        let body = std::fs::read_to_string(&kept).unwrap_or_default();
-        assert!(!body.contains(&legacy), "{} still says it", kept.display());
-    }
-}
-
-/// Every file under `dir`.
-fn files_under(dir: &Path) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            out.extend(files_under(&path));
-        } else {
-            out.push(path);
-        }
-    }
-    out
+    // All of that with the person's key at hand, and the project is as
+    // it was recorded (JOY-02CC-C1): reading, writing and addressing
+    // bring nothing over, only `joy update` does.
+    assert!(!project.root.join(".joy/members").exists());
+    assert!(
+        std::fs::read_to_string(project.root.join(".joy/project.yaml"))
+            .unwrap()
+            .contains(&legacy),
+        "project.yaml is what was recorded"
+    );
 }
