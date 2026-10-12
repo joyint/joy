@@ -1,0 +1,30 @@
+id: JOY-02CC-46
+title: The three-word rule goes; a new passphrase shows its strength above the prompt while typing
+type: task
+status: new
+priority: high
+capabilities:
+- implement
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-12T05:50:57.805597694Z
+updated: 2026-10-12T06:22:27.817197459Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Implements JI-01A5-93 in joy. Depends on CRYPT-0016-B0, the crate joy-passphrase: strength(&str) -> Strength { bits: f64, level: Level } with the five levels Insufficient, Sufficient, Good, VeryGood, Excellent at 28, 45, 60, 80 bit, and accept(&str) that refuses only an empty passphrase.
+
+  joy-core
+  - validate_passphrase, MIN_PASSPHRASE_WORDS and JoyError::PassphraseTooShort go (auth/mod.rs, error.rs, the call in auth/enroll.rs redeem_with_passphrase). The only refusal left is an empty passphrase, on the same paths, with one error text. No alias, no migration: the rule was checked at set time only, nothing stored changes, every existing passphrase passes.
+
+  joy-cli
+  - Every prompt that chooses a NEW passphrase shows the meter: auth init (auth.rs around line 328), joy auth passphrase (1422), joy auth recover (1500), the OTP redeem (1578, which today has no confirm prompt either), init --anonymous (init.rs acquire_founder_passphrase). The lines 'Choose a passphrase (minimum 3 words, e.g. Diceware):' go.
+  - The meter: one line above the prompt, five squares as a bar and next to it the level with the entropy in brackets, e.g. '■■■□□ good (entropy 47 bit)'. Redrawn on every keystroke. Colours red, orange, yellow, light green, dark green by 256-colour codes; on a 16-colour terminal the fifth level shows the same green as the fourth.
+  - Mechanics: crossterm raw mode (already a dependency under the default tui feature), key events into a Zeroizing buffer, backspace and ctrl-u edit, enter ends, ctrl-c cancels, nothing is echoed on the prompt line. The reader takes its key source and its writer as parameters, so the tests drive it with recorded keys and read the drawn line; the terminal glue around it stays thin. rpassword stays for the current-passphrase and confirm prompts.
+  - Unchanged and without meter: --passphrase, JOY_PASSPHRASE, --passphrase-stdin, --new-passphrase, the confirm prompt, every unlock prompt, and the non-terminal error paths of read_passphrase.
+  - Help texts: one short sentence like the neighbours, no item ids.
+
+  Docs
+  - docs/user/Tutorial.md, section 'Authentication and Onboarding' (and its byte-identical copy under crates/joy-cli/docs, compiled into joy tutorial): a short part 'Passphrase strength' with the five levels and their bit thresholds, the reference to zxcvbn (Wheeler, USENIX Security 2016) and the Rust crate, and one sentence on what green means and does not mean (offline guessing of the wrapped seed). The '--passphrase' examples keep their four-word passphrase.
+  - SECURITY.md: one sentence after the Argon2id paragraph that the strength shown at set time is the zxcvbn estimate and that no minimum is enforced.
+
+  Done when: cargo test of joy-core and joy-cli green including the recorded-key tests of the meter; a manual run of joy auth init in a terminal shows the line change colour while typing; the tutorial part is in both copies.
