@@ -8,7 +8,7 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 
 use joy_core::auth::{
-    delegation, derive_key, generate_salt, seed as seed_mod, session, token, validate_passphrase,
+    accept_passphrase, delegation, derive_key, generate_salt, seed as seed_mod, session, token,
     IdentityKeypair, PublicKey, Salt,
 };
 use joy_core::store;
@@ -223,6 +223,35 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 /// pipelines that keep the secret out of the process listing,
 /// JOY-018E-21), else the terminal.
 pub(crate) fn read_passphrase(prompt: &str) -> Result<String> {
+    read_passphrase_with(prompt, hidden_line)
+}
+
+/// A passphrase the person CHOOSES (auth init, the OTP redeem, init
+/// --anonymous): the same sources as [`read_passphrase`], and at the
+/// terminal the prompt with the strength line above it (JOY-02CC-46).
+pub(crate) fn read_chosen_passphrase(prompt: &str) -> Result<String> {
+    read_passphrase_with(prompt, crate::passphrase_meter::prompt)
+}
+
+/// The hidden line rpassword reads, with the prompt erased afterwards so
+/// the lingering "Passphrase:" does not read as if Joy had echoed the
+/// secret. rpassword emits a trailing CR+LF after the hidden input, so
+/// the cursor is on the line *below* the prompt: move up one line, to
+/// column 0, and clear it.
+fn hidden_line(prompt: &str) -> Result<String> {
+    use std::io::IsTerminal;
+    let passphrase = rpassword::prompt_password(prompt)?;
+    if std::io::stderr().is_terminal() {
+        eprint!("\x1b[1A\r\x1b[2K");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+    }
+    Ok(passphrase)
+}
+
+fn read_passphrase_with(
+    prompt: &str,
+    at_the_terminal: impl FnOnce(&str) -> Result<String>,
+) -> Result<String> {
     use std::io::{BufRead, IsTerminal};
     let flag = crate::auth_gate::passphrase_flag();
     let from_stdin = crate::auth_gate::passphrase_from_stdin();
@@ -253,23 +282,15 @@ pub(crate) fn read_passphrase(prompt: &str) -> Result<String> {
              or pass --passphrase <value> or --passphrase-stdin"
         );
     }
-    let passphrase = rpassword::prompt_password(prompt)?;
-    // Erase the prompt line so the lingering "Passphrase:" does not read as if
-    // Joy had echoed the secret. rpassword emits a trailing CR+LF after the
-    // hidden input, so the cursor is on the line *below* the prompt: move up
-    // one line, to column 0, and clear it. Only in the interactive terminal
-    // case; piped and --passphrase-stdin paths returned earlier and never
-    // printed a prompt.
-    if std::io::stderr().is_terminal() {
-        eprint!("\x1b[1A\r\x1b[2K");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
-    }
-    Ok(passphrase)
+    // Only here is a prompt printed; piped and --passphrase-stdin paths
+    // returned earlier.
+    at_the_terminal(prompt)
 }
 
 /// A NEW passphrase (`joy auth passphrase`, `joy auth recover`): the
-/// `--new-passphrase` flag, else asked at the terminal. Never the global
-/// `--passphrase`, which is the current one.
+/// `--new-passphrase` flag, else asked at the terminal with the strength
+/// line above the prompt. Never the global `--passphrase`, which is the
+/// current one.
 fn read_new_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
     use std::io::IsTerminal;
     if let Some(p) = flag {
@@ -278,7 +299,7 @@ fn read_new_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("new passphrase required: pass --new-passphrase <value> or use a terminal");
     }
-    Ok(rpassword::prompt_password(prompt)?)
+    crate::passphrase_meter::prompt(prompt)
 }
 
 /// `joy auth init` — first-time setup for the current member.
@@ -325,14 +346,14 @@ pub(crate) fn run_init(
     let interactive = !crate::auth_gate::passphrase_given();
     if interactive {
         eprintln!("Setting up authentication for {}.", color::id(&email));
-        eprintln!("Choose a passphrase (minimum 3 words, e.g. Diceware):");
+        eprintln!("Choose a passphrase:");
     }
-    let passphrase = read_passphrase("  Passphrase: ")?;
-    validate_passphrase(&passphrase)?;
+    let passphrase = read_chosen_passphrase("  Passphrase: ")?;
+    accept_passphrase(&passphrase)?;
 
     // Confirm (only in interactive mode)
     if interactive {
-        let confirm = rpassword::prompt_password("  Confirm:    ")?;
+        let confirm = crate::passphrase_meter::confirm("  Confirm:    ")?;
         if passphrase != confirm {
             anyhow::bail!("passphrases do not match");
         }
@@ -1416,12 +1437,9 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     // line carries one secret, not two. Use --new-passphrase or the
     // interactive prompt for the new one.
     let new_pass = read_new_passphrase(new_flag, "New passphrase:     ")?;
-    if new_pass == current_pass {
-        anyhow::bail!("new passphrase must differ from the current one");
-    }
-    validate_passphrase(&new_pass)?;
+    joy_core::auth::check_new_passphrase(&current_pass, &new_pass)?;
     if new_flag.is_none() {
-        let confirm = rpassword::prompt_password("Confirm:            ")?;
+        let confirm = crate::passphrase_meter::confirm("Confirm:            ")?;
         if confirm != new_pass {
             anyhow::bail!("passphrases do not match");
         }
@@ -1497,9 +1515,9 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         let seed = seed_mod::unwrap_seed_with_recovery(wrap_recovery_hex, &recovery, &salt)?;
 
         let new_pass = read_new_passphrase(args.new_passphrase.as_deref(), "New passphrase: ")?;
-        validate_passphrase(&new_pass)?;
+        accept_passphrase(&new_pass)?;
         if args.new_passphrase.is_none() {
-            let confirm = rpassword::prompt_password("Confirm:        ")?;
+            let confirm = crate::passphrase_meter::confirm("Confirm:        ")?;
             if confirm != new_pass {
                 anyhow::bail!("passphrases do not match");
             }
@@ -1575,7 +1593,7 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
-    let passphrase = read_passphrase("Choose passphrase: ")?;
+    let passphrase = read_chosen_passphrase("Choose passphrase: ")?;
     let outcome =
         joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 

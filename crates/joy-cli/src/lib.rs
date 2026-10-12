@@ -18,6 +18,7 @@ mod forge;
 mod member_names;
 mod member_resolver;
 mod output;
+mod passphrase_meter;
 mod prompt;
 mod ps_alias;
 mod update_registry;

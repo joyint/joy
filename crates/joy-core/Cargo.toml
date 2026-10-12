@@ -20,6 +20,7 @@ joy-process = { workspace = true }
 joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 joy-token = { workspace = true }
+joy-passphrase = { workspace = true }
 # The helpers moved in from joy-cli (version_bump, version_files,
 # project_meta) keep their anyhow-based error contract so the CLI's
 # error output stays byte-identical; new joy-core modules should still

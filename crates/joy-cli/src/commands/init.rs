@@ -231,12 +231,12 @@ fn acquire_founder_passphrase() -> Result<String> {
         eprintln!(
             "Starting an anonymous project. Member e-mails are kept out of the committed files."
         );
-        eprintln!("Choose a founder passphrase (minimum 3 words, e.g. Diceware):");
+        eprintln!("Choose a founder passphrase:");
     }
-    let passphrase = crate::commands::auth::read_passphrase("  Passphrase: ")?;
-    joy_core::auth::validate_passphrase(&passphrase)?;
+    let passphrase = crate::commands::auth::read_chosen_passphrase("  Passphrase: ")?;
+    joy_core::auth::accept_passphrase(&passphrase)?;
     if interactive {
-        let confirm = rpassword::prompt_password("  Confirm:    ")?;
+        let confirm = crate::passphrase_meter::confirm("  Confirm:    ")?;
         if passphrase != confirm {
             anyhow::bail!("passphrases do not match");
         }

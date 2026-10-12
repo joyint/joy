@@ -19,11 +19,13 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     members_grep -q "kdf_nonce:"
 }
 
-@test "joy auth init rejects short passphrase" {
+@test "joy auth init takes a short passphrase, one character is enough (JI-01A5-93)" {
     joy init --name "Auth Test"
-    run joy auth init --passphrase "too short"
-    [ "$status" -ne 0 ]
-    [[ "$output" == *"passphrase too short"* ]]
+    # The strength is shown while a passphrase is typed and never
+    # enforced; on the flag nothing is shown and nothing is asked.
+    run joy auth init --passphrase "q"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"RECOVERY KEY"* ]]
 }
 
 @test "joy auth init rejects unregistered member" {

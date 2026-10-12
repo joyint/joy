@@ -125,8 +125,11 @@ pub enum JoyError {
     #[error("no access to zone '{zone}': ask a member with access to run `joy crypt grant`")]
     ZoneAccessDenied { zone: String },
 
-    #[error("passphrase too short (minimum 3 words)")]
-    PassphraseTooShort,
+    #[error("the passphrase is empty")]
+    PassphraseEmpty,
+
+    #[error("the new passphrase must differ from the current one")]
+    PassphraseUnchanged,
 
     #[error("guard denied: {0}")]
     GuardDenied(String),

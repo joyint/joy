@@ -46,6 +46,7 @@ joy-gitlab = { version = "0.22.0", path = "crates/joy-gitlab" }
 joy-gitea = { version = "0.22.0", path = "crates/joy-gitea" }
 joy-crypt = { version = "0", path = "../crypt/crates/joy-crypt" }
 joy-token = { version = "0", path = "../crypt/crates/joy-token" }
+joy-passphrase = { version = "0", path = "../crypt/crates/joy-passphrase" }
 
 # The profile that 'dist' will build with
 [profile.dist]

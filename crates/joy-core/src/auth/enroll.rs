@@ -204,7 +204,7 @@ pub fn redeem_with_passphrase(
     passphrase: &str,
     member: Option<&str>,
 ) -> Result<EnrollmentOutcome, JoyError> {
-    crate::auth::validate_passphrase(passphrase)?;
+    crate::auth::accept_passphrase(passphrase)?;
 
     let mut project = store::load_project(root)?;
     // The OTP finds its member (JOY-0257-FC); a NAMED member only
