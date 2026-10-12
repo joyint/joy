@@ -1,19 +1,19 @@
 id: JOY-02C4-53
 title: Member files under .joy/members, project.yaml as head with the member list, migration by the first unlocked human
 type: story
-status: review
+status: closed
 priority: high
 assignees:
-- member: ai:claude@joy
+- member: claude
 capabilities:
 - plan
 - implement
 - review
 effort: 6
-created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-07T20:18:44.898508829Z
-updated: 2026-10-08T00:18:51.394105263Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-12T05:58:27.304524429Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Delivery 1 of JI-019E-40, decided in JI-019D-46 sections 4, 5 and 8.
 
@@ -27,6 +27,6 @@ description: |-
 
   Tests: the fixtures and the migration test of the safety net task pass unchanged after the migration; a test that a member file edited by hand to add a capability to an AI member changes nothing for the AI (delivery 2 proves the refusal, this item proves the file is not the source).
 comments:
-- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-10-08T00:18:51.394103370Z
   text: 'Result: every member lives in .joy/members/<id>.yaml, project.yaml keeps the head and the list of ids (store.rs load_project/save_project, member_files.rs). The id is only the file name: random for new members, deterministic for brought-over ones, the existing id for people of an already anonymous project. A project from before is brought over once by the first person whose key is at hand (login, unlock, any passphrase command), never by an AI session and never by the platform server; member_migration::prepare/finish split the same step for a key held in a browser. Origin replaces the attestation for people; an AI member carries what the project allows it, signed by that person. Fixture projects (open and anonymous, tests/fixtures/members) stay in the old format and are asked the same questions after each host opened them, including a NEW token for the AI member after the move. Found on the way: the delegation key was derived over the old id, so a renamed member could not get a new token; the derivation now uses one form for both spellings (crypt 7ffd62e).'
