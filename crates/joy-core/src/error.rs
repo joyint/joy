@@ -128,6 +128,9 @@ pub enum JoyError {
     #[error("the passphrase is empty")]
     PassphraseEmpty,
 
+    #[error("the new passphrase must differ from the current one")]
+    PassphraseUnchanged,
+
     #[error("guard denied: {0}")]
     GuardDenied(String),
 

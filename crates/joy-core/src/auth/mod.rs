@@ -45,6 +45,49 @@ pub fn accept_passphrase(passphrase: &str) -> Result<(), JoyError> {
     joy_passphrase::accept(passphrase).map_err(|_| JoyError::PassphraseEmpty)
 }
 
+/// What a NEW passphrase must be (JOY-02CD-14): accepted at all, and not
+/// the current one. The CLI asks this before its confirmation prompt,
+/// [`change_passphrase`] asks it for the desktop.
+pub fn check_new_passphrase(current: &str, new: &str) -> Result<(), JoyError> {
+    accept_passphrase(new)?;
+    if new == current {
+        return Err(JoyError::PassphraseUnchanged);
+    }
+    Ok(())
+}
+
+/// Change a member's passphrase (JOY-02CD-14): the current one opens the
+/// seed, the same seed is wrapped under the new one with the same
+/// `kdf_nonce`; the recovery wrap and the verify key stay. The caller
+/// saves the project. A member without a seed wrap (the legacy schema)
+/// is refused here; `joy auth passphrase` migrates such an entry first.
+pub fn change_passphrase(
+    project: &mut crate::model::Project,
+    member_key: &str,
+    current: &str,
+    new: &str,
+) -> Result<(), JoyError> {
+    check_new_passphrase(current, new)?;
+    let member = project
+        .member_by_key(member_key)
+        .ok_or_else(|| JoyError::AuthFailed(format!("{member_key} is not a project member")))?;
+    let salt_hex = member
+        .kdf_nonce
+        .as_deref()
+        .ok_or_else(|| JoyError::AuthFailed(format!("{member_key} has no identity key yet")))?;
+    let wrap_hex = member
+        .seed_wrap_passphrase
+        .as_deref()
+        .ok_or_else(|| JoyError::AuthFailed(format!("{member_key} has no passphrase wrap")))?;
+    let salt = Salt::from_hex(salt_hex)?;
+    let new_wrap = joy_crypt::seed::rewrap_seed_with_passphrase(wrap_hex, current, new, &salt)?;
+    project
+        .member_by_key_mut(member_key)
+        .expect("found above")
+        .seed_wrap_passphrase = Some(new_wrap);
+    Ok(())
+}
+
 /// Result of unlocking a member's identity from a passphrase.
 pub struct UnlockedIdentity {
     pub keypair: IdentityKeypair,
@@ -100,6 +143,58 @@ pub fn unlock_identity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_new_passphrase_is_any_text_but_the_current_one() {
+        assert!(matches!(
+            check_new_passphrase("q w e", ""),
+            Err(JoyError::PassphraseEmpty)
+        ));
+        assert!(matches!(
+            check_new_passphrase("q w e", "q w e"),
+            Err(JoyError::PassphraseUnchanged)
+        ));
+        assert!(check_new_passphrase("q w e", "x").is_ok());
+    }
+
+    #[test]
+    fn change_passphrase_moves_the_seed_and_keeps_the_identity() {
+        use crate::model::project::{Member, MemberCapabilities, Project};
+        use joy_crypt::seed::{unwrap_seed_with_passphrase, wrap_seed_with_passphrase, Seed};
+        let mut project = Project::new("Change".into(), Some("CHG".into()));
+        let salt = generate_salt();
+        let seed = Seed::generate();
+        let keypair = IdentityKeypair::from_seed(seed.as_bytes());
+        let mut member = Member::new(MemberCapabilities::All);
+        member.kdf_nonce = Some(salt.to_hex());
+        member.verify_key = Some(keypair.public_key().to_hex());
+        member.seed_wrap_passphrase =
+            Some(wrap_seed_with_passphrase(&seed, "old one", &salt).unwrap());
+        project.register_member("a@b.c", member).unwrap();
+
+        change_passphrase(&mut project, "a@b.c", "old one", "new one").unwrap();
+
+        let wrap = project
+            .member_by_key("a@b.c")
+            .unwrap()
+            .seed_wrap_passphrase
+            .clone()
+            .unwrap();
+        let opened = unwrap_seed_with_passphrase(&wrap, "new one", &salt).unwrap();
+        assert_eq!(opened.as_bytes(), seed.as_bytes());
+        assert!(unwrap_seed_with_passphrase(&wrap, "old one", &salt).is_err());
+        assert_eq!(
+            project
+                .member_by_key("a@b.c")
+                .unwrap()
+                .verify_key
+                .as_deref(),
+            Some(keypair.public_key().to_hex().as_str())
+        );
+        // a wrong current passphrase changes nothing
+        assert!(change_passphrase(&mut project, "a@b.c", "old one", "third").is_err());
+        assert!(unwrap_seed_with_passphrase(&wrap, "new one", &salt).is_ok());
+    }
 
     #[test]
     fn only_the_empty_passphrase_is_refused() {

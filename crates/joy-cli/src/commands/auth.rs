@@ -1437,10 +1437,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     // line carries one secret, not two. Use --new-passphrase or the
     // interactive prompt for the new one.
     let new_pass = read_new_passphrase(new_flag, "New passphrase:     ")?;
-    if new_pass == current_pass {
-        anyhow::bail!("new passphrase must differ from the current one");
-    }
-    accept_passphrase(&new_pass)?;
+    joy_core::auth::check_new_passphrase(&current_pass, &new_pass)?;
     if new_flag.is_none() {
         let confirm = crate::passphrase_meter::confirm("Confirm:            ")?;
         if confirm != new_pass {
