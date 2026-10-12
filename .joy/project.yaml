@@ -113,6 +113,10 @@ members:
         delegation_verifier: 48fc28af23c5ff2683ba80609ca31f7369c29b83a5ade3c4ec62441af770f9a0
         delegation_salt: 1a5025ad892b39051cbf224c863d93196b571bff399862033c717523db41dd1d
         created: 2026-09-20T10:20:11.208051Z
+      vibe:
+        delegation_verifier: a58c225b1ef548c07c41e0ad4aec7d3e8b2ab0f70bcc91836f8bfb17e84c3f54
+        delegation_salt: ca4140af6b05998106d67fc1eb54baaf3ade93b84aa5fdd3963a89b3399b7a54
+        created: 2026-10-12T12:51:07.139680483Z
   philipp@joyint.com:
     capabilities: all
     enrollment_verifier: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
@@ -175,6 +179,7 @@ members:
       create: {}
       assign: {}
     adapter: vibe
+    verify_key: a58c225b1ef548c07c41e0ad4aec7d3e8b2ab0f70bcc91836f8bfb17e84c3f54
     attestation:
       attester: horst.schwarz@joydev.com
       signed_fields:
