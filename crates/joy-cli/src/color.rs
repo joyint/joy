@@ -80,6 +80,11 @@ pub fn status_indicator(s: &Status) -> &'static str {
     }
 }
 
+/// Whether colour is on, for output drawn outside this module.
+pub fn enabled() -> bool {
+    is_enabled()
+}
+
 fn is_enabled() -> bool {
     *ENABLED.get_or_init(|| {
         // Fallback if init() was never called: use auto behavior.

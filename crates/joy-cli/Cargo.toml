@@ -51,6 +51,7 @@ joy-chat-store = { version = "0.22.0", path = "../joy-chat-store" }
 joy-ai = { version = "0.22.0", path = "../joy-ai" }
 joy-telemetry = { version = "0.22.0", path = "../joy-telemetry" }
 joy-crypt = { workspace = true }
+joy-passphrase = { workspace = true }
 minijinja = { workspace = true }
 clap = { workspace = true }
 clap_complete = { version = "4.5", features = ["unstable-dynamic"] }
@@ -63,7 +64,10 @@ tokio = { workspace = true }
 
 # TUI (optional)
 ratatui = { version = "0.29", optional = true }
-crossterm = { version = "0.28", optional = true }
+# The passphrase meter reads keys in raw mode (JOY-02CC-46); the tui
+# feature is ratatui alone.
+crossterm = "0.28"
+zeroize = "1"
 
 # Server (optional)
 axum = { version = "0.8", optional = true }
@@ -104,7 +108,7 @@ trycmd = "0.15"
 
 [features]
 default = ["tui"]
-tui = ["dep:ratatui", "dep:crossterm"]
+tui = ["dep:ratatui"]
 server = ["dep:axum", "dep:tower-http"]
 full = ["tui", "server"]
 fast-kdf = ["joy-core/fast-kdf"]

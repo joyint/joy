@@ -38,20 +38,11 @@ pub use joy_crypt::kdf::{derive_argon2id as derive_key, generate_salt, DerivedKe
 
 use crate::error::JoyError;
 
-/// Minimum word count for a Joy passphrase. Diceware-style with
-/// Argon2id parameters Joy ships, three well-chosen words still give
-/// substantial brute-force resistance for the local-key-derivation
-/// threat model. See JOY-0171-50.
-pub const MIN_PASSPHRASE_WORDS: usize = 3;
-
-/// Validate that a passphrase has at least [`MIN_PASSPHRASE_WORDS`]
-/// whitespace-separated words.
-pub fn validate_passphrase(passphrase: &str) -> Result<(), JoyError> {
-    let word_count = passphrase.split_whitespace().count();
-    if word_count < MIN_PASSPHRASE_WORDS {
-        return Err(JoyError::PassphraseTooShort);
-    }
-    Ok(())
+/// Whether a passphrase may be set at all (JI-01A5-93): only an empty
+/// one is refused. Its strength is shown while it is typed, by
+/// `joy_passphrase::strength`, and never enforced.
+pub fn accept_passphrase(passphrase: &str) -> Result<(), JoyError> {
+    joy_passphrase::accept(passphrase).map_err(|_| JoyError::PassphraseEmpty)
 }
 
 /// Result of unlocking a member's identity from a passphrase.
@@ -111,16 +102,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn passphrase_too_short() {
-        assert!(validate_passphrase("").is_err());
-        assert!(validate_passphrase("one").is_err());
-        assert!(validate_passphrase("one two").is_err());
-    }
-
-    #[test]
-    fn passphrase_valid() {
-        assert!(validate_passphrase("one two three").is_ok());
-        assert!(validate_passphrase("one two three four five six").is_ok());
-        assert!(validate_passphrase("a b c d e f g h").is_ok());
+    fn only_the_empty_passphrase_is_refused() {
+        assert!(matches!(
+            accept_passphrase(""),
+            Err(JoyError::PassphraseEmpty)
+        ));
+        assert!(accept_passphrase("q").is_ok());
+        assert!(accept_passphrase("q w e").is_ok());
+        assert!(accept_passphrase("one two three four five six").is_ok());
     }
 }
