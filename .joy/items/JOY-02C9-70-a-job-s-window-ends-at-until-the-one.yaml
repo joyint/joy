@@ -1,7 +1,7 @@
 id: JOY-02C9-70
 title: 'A job''s window ends at until: the one word in the job file, on the command line and in joy show'
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -11,8 +11,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-10T18:18:51.072370082Z
-updated: 2026-10-10T18:23:35.499673892Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-12T05:58:39.676173997Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator 2026-10-10: the end of a job''s window is called until on every surface. The job file writes until and reads deadline from before as the same; joy edit takes --until (--deadline stays as an alias for what people type); joy show prints until. Priority and effort are item fields and are set on a job like on any item, at joy add and joy edit; nothing changes there.'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
