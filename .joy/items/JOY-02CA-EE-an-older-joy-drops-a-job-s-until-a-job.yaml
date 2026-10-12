@@ -1,7 +1,7 @@
 id: JOY-02CA-EE
 title: 'An older joy drops a job''s until: a job written with until raises the project''s format to 3'
 type: bug
-status: review
+status: closed
 priority: critical
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-10T19:08:41.288986225Z
-updated: 2026-10-10T19:39:36.250463434Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-12T05:58:41.214770553Z
+updated_by: horst.schwarz@joydev.com
 description: 'Found 2026-10-10 by running the joy production runs (a696595, reads format 2) against a job written by main: joy show names no window, and its next write of the job leaves ''window: {}'', the end is gone. until replaced deadline in the job file (JOY-02C9-70) without the format number that makes an older joy stop. Fix: PROJECT_FORMAT 3. The number a project.yaml says is what its data needs: 2 for member files, 3 as soon as a job says until. Writing such a job raises the number in the same write, so the marker and the field reach the forge together; a project without until stays at 2 and readable for a joy that reads 2.'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
