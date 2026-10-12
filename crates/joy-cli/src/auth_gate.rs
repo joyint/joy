@@ -101,7 +101,6 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     });
     if !passphrase_given() {
         if let Some((keypair, seed)) = session {
-            joy_core::member_migration::migrate_quietly(root, member_key, &keypair);
             return Ok(Unlocked {
                 member_key: member_key.to_string(),
                 keypair,
@@ -117,7 +116,6 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
         // 2026-09-27), or a session that already stands and a given
         // passphrase that only had to be right: unwrap and go.
         let unlocked = joy_core::auth::unlock_identity(member, &passphrase)?;
-        joy_core::member_migration::migrate_quietly(root, member_key, &unlocked.keypair);
         return Ok(Unlocked {
             member_key: member_key.to_string(),
             keypair: unlocked.keypair,
@@ -142,24 +140,44 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     })
 }
 
-/// Bring a project from before the member files over when the person
-/// at this terminal is signed in: their session carries the key that
-/// signs what the AI members may do (JI-019D-46). Runs before the
-/// command, asks nothing, and does nothing where nobody is signed in or
-/// the project already keeps its members in files.
-pub fn bring_members_over(root: &Path) {
+/// What [`bring_members_over`] did.
+pub enum MembersBroughtOver {
+    /// The project keeps its members in files already, or has none.
+    NothingToDo,
+    /// Done now: one file per member, signed by the person here.
+    Moved,
+    /// Still to do, and nobody is signed in here whose key could sign.
+    WaitsForSignIn,
+}
+
+/// Bring a project from before the member files over (JI-019D-46). ONLY
+/// `joy update` calls this (JOY-02CC-C1): it changes what an older joy
+/// can read, so it happens when a person asks for an update, never as a
+/// side effect of a sign-in or of any other command. The key that signs
+/// what the AI members may do is the one in the session of the person
+/// signed in at this terminal; where there is none, the project stays as
+/// it is and keeps working as it is.
+pub fn bring_members_over(root: &Path) -> MembersBroughtOver {
     if !joy_core::member_migration::pending(root) {
-        return;
+        return MembersBroughtOver::NothingToDo;
     }
-    let Ok(project) = joy_core::store::load_project(root) else {
-        return;
+    let seed = joy_core::store::load_project(root)
+        .ok()
+        .and_then(|project| {
+            let member_key = joy_core::identity::acting_human_key(root).ok()?;
+            Some((session_seed(root, &project, &member_key)?, member_key))
+        });
+    let Some((seed, member_key)) = seed else {
+        return MembersBroughtOver::WaitsForSignIn;
     };
-    let Ok(member_key) = joy_core::identity::acting_human_key(root) else {
-        return;
-    };
-    if let Some(seed) = session_seed(root, &project, &member_key) {
-        let keypair = IdentityKeypair::from_seed(&seed);
-        joy_core::member_migration::migrate_quietly(root, &member_key, &keypair);
+    let keypair = IdentityKeypair::from_seed(&seed);
+    match joy_core::member_migration::migrate(root, &member_key, &keypair) {
+        Ok(true) => MembersBroughtOver::Moved,
+        Ok(false) => MembersBroughtOver::WaitsForSignIn,
+        Err(e) => {
+            eprintln!("Warning: this project's members could not be moved to their own files: {e}");
+            MembersBroughtOver::WaitsForSignIn
+        }
     }
 }
 

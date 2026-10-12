@@ -22,8 +22,14 @@ use clap::Args;
 
 use joy_core::store;
 
+use crate::auth_gate::MembersBroughtOver;
 use crate::color;
 use crate::update_registry::{self, RowMark, UpdateItem};
+
+/// The members of a project from before the member files (JI-019D-46).
+const SECTION_MEMBERS: &str = "Members";
+const MEMBERS_MOVED: &str = "moved to their own files";
+const MEMBERS_WAIT: &str = "still in project.yaml: sign in with joy auth, then run joy update";
 
 /// Cargo-dist installer writes the receipt under this name (matches
 /// the joy-cli Cargo package name, not the binary name `joy`).
@@ -123,7 +129,33 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             );
             return Ok(());
         }
-        let changed = run_full_sync(&root, true);
+        let mut changed = run_full_sync(&root, true);
+        // The one moment a project from before the member files is
+        // brought over (JOY-02CC-C1): a person asked for the update.
+        match crate::auth_gate::bring_members_over(&root) {
+            MembersBroughtOver::NothingToDo => {}
+            MembersBroughtOver::Moved => {
+                changed += 1;
+                println!("{}", color::section(SECTION_MEMBERS));
+                println!(
+                    "  {}{:<24} {}",
+                    color::check_mark(),
+                    "members",
+                    color::success(MEMBERS_MOVED)
+                );
+                println!();
+            }
+            MembersBroughtOver::WaitsForSignIn => {
+                println!("{}", color::section(SECTION_MEMBERS));
+                println!(
+                    "  {}{:<24} {}",
+                    color::warn_mark(),
+                    "members",
+                    color::warning(MEMBERS_WAIT)
+                );
+                println!();
+            }
+        }
         println!();
         let summary = match changed {
             0 => "Joy update complete -- nothing to refresh.".to_string(),
@@ -517,6 +549,16 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
             downgrade_blocked = Some(marker);
         } else {
             let items = update_registry::all();
+            if let MembersBroughtOver::Moved = crate::auth_gate::bring_members_over(&root) {
+                refreshed_count += 1;
+                sections.push(UpdateSection {
+                    name: SECTION_MEMBERS,
+                    rows: vec![UpdateRowJson {
+                        name: "members".to_string(),
+                        action: Some(MEMBERS_MOVED),
+                    }],
+                });
+            }
             for section in SECTION_ORDER {
                 let mut rows: Vec<UpdateRowJson> = Vec::new();
                 for item in items.iter().filter(|i| &i.section() == section) {

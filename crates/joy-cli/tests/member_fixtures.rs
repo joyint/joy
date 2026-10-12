@@ -167,9 +167,66 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The item from before, as text.
+fn item_from_before(root: &Path) -> PathBuf {
+    files_under(&root.join(".joy/items"))
+        .into_iter()
+        .find(|path| {
+            std::fs::read_to_string(path)
+                .unwrap_or_default()
+                .contains("A task from before the member files")
+        })
+        .expect("the item from before")
+}
+
+/// What an AI member left in a project of that time: its legacy form in
+/// the item it last touched and in a line of the log. Returns the two
+/// files with what they hold now.
+fn written_by_the_ai_back_then(root: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let older = joy_core::migrations::ai_member_name::legacy_form("claude");
+    let item = item_from_before(root);
+    let body = std::fs::read_to_string(&item).unwrap();
+    let person = body
+        .lines()
+        .find_map(|line| line.strip_prefix("updated_by: "))
+        .expect("who updated it")
+        .to_string();
+    let by_the_ai = format!("{older} delegated-by:{person}");
+    std::fs::write(
+        &item,
+        body.replace(
+            &format!("updated_by: {person}"),
+            &format!("updated_by: {by_the_ai}"),
+        ),
+    )
+    .unwrap();
+    let log = files_under(&root.join(".joy/logs"))
+        .into_iter()
+        .next()
+        .expect("the log from before");
+    let mut lines = std::fs::read_to_string(&log).unwrap();
+    lines.push_str(&format!(
+        "2026-10-07T20:26:00.000Z FX-0001-30 item.updated [{by_the_ai}]\n"
+    ));
+    std::fs::write(&log, lines).unwrap();
+    [item, log]
+        .into_iter()
+        .map(|path| {
+            let bytes = std::fs::read(&path).unwrap();
+            assert!(
+                String::from_utf8_lossy(&bytes).contains(&older),
+                "{} says the legacy form",
+                path.display()
+            );
+            (path, bytes)
+        })
+        .collect()
+}
+
 /// The questions, the same for every fixture and every host.
 fn still_works(fixture: &str, host: Host) {
     let project = Project::clone_of(fixture);
+    let records = written_by_the_ai_back_then(&project.root);
     project.open_as(host);
     // Opening it changes nothing about where its members are kept: no
     // host that merely opens a project holds anybody's key.
@@ -178,6 +235,17 @@ fn still_works(fixture: &str, host: Host) {
         "{fixture} opened as {host:?}: still as it was"
     );
     let ctx = format!("{fixture} opened as {host:?}");
+
+    // `joy update` with nobody signed in whose key could sign says what
+    // it waits for, and leaves the project as it is.
+    let waits = project.joy(&["update", "--no-binary"]);
+    assert!(waits.status.success(), "{ctx}: {}", text(&waits));
+    assert!(
+        text(&waits).contains("sign in with joy auth, then run joy update"),
+        "{ctx}: {}",
+        text(&waits)
+    );
+    assert!(!project.root.join(".joy/members").exists(), "{ctx}");
 
     // The second person signs in with their passphrase, may write an
     // item, and may not manage the project.
@@ -228,29 +296,66 @@ fn still_works(fixture: &str, host: Host) {
         text(&manage)
     );
 
-    // A person was here with their key, so the project is brought over
-    // (JI-019D-46): one file per member, project.yaml lists them, and
-    // the AI member is known by its name everywhere.
+    // Two people signed in, wrote and managed, an AI redeemed its token
+    // and wrote: the project still keeps its members where it kept them
+    // (JOY-02CC-C1). Bringing it over changes what an older joy can
+    // read, so no sign-in and no other command does it on the side.
+    assert!(
+        !project.root.join(".joy/members").exists(),
+        "{ctx}: nobody asked for an update, so nothing was brought over"
+    );
+    // The AI member reads as its name all the same, from the files as
+    // they stand.
+    let shown = project.joy(&["show", "FX-0001-30", "--json"]);
+    let older = joy_core::migrations::ai_member_name::legacy_form("claude");
+    assert!(shown.status.success(), "{ctx}: {}", text(&shown));
+    assert!(text(&shown).contains("claude"), "{ctx}: {}", text(&shown));
+    assert!(!text(&shown).contains(&older), "{ctx}: {}", text(&shown));
+
+    // The founder signs in and asks for the update: now the project is
+    // brought over (JI-019D-46): one file per member, project.yaml lists
+    // them, and the AI member is known by its name.
+    let auth = project.joy(&["auth", "--user", FOUNDER, "--passphrase", FOUNDER_PASS]);
+    assert!(auth.status.success(), "{ctx}: {}", text(&auth));
+    let update = project.joy(&["update", "--no-binary"]);
+    assert!(update.status.success(), "{ctx}: {}", text(&update));
+    assert!(
+        text(&update).contains("moved to their own files"),
+        "{ctx}: {}",
+        text(&update)
+    );
     let members = joy_test_env::project_text(&project.root);
     let files = std::fs::read_dir(project.root.join(".joy/members"))
         .map(|dir| dir.count())
         .unwrap_or(0);
     assert_eq!(files, 3, "{ctx}: three member files");
     assert!(members.contains("name: claude"), "{ctx}: {members}");
-    // Nothing the project keeps says the AI member's legacy form any more:
-    // not its members, not an item, not a line of the log.
-    let older = joy_core::migrations::ai_member_name::legacy_form("claude");
+    // project.yaml and the member files do not say the legacy form any
+    // more...
     assert!(!members.contains(&older), "{ctx}: {members}");
-    for kept in files_under(&project.root.join(".joy")) {
-        let body = std::fs::read_to_string(&kept).unwrap_or_default();
-        assert!(
-            !body.contains(&older),
-            "{ctx}: {} still says it",
-            kept.display()
+    // ...and nothing else was touched (JOY-02CC-C1): the item and the
+    // log an AI member wrote back then are byte for byte what they
+    // were. In a real project that is every item, job, milestone,
+    // release and log it ever touched (117 files in one of ours).
+    for (path, before) in &records {
+        assert_eq!(
+            &std::fs::read(path).unwrap(),
+            before,
+            "{ctx}: {} was rewritten",
+            path.display()
         );
     }
+    // They read with the name, as before.
+    let shown = project.joy(&["show", "FX-0001-30", "--json"]);
+    assert!(text(&shown).contains("claude"), "{ctx}: {}", text(&shown));
+    assert!(!text(&shown).contains(&older), "{ctx}: {}", text(&shown));
+    let log = project.joy(&["log"]);
+    assert!(log.status.success(), "{ctx}: {}", text(&log));
+    assert!(!text(&log).contains(&older), "{ctx}: {}", text(&log));
     assert!(!members.contains("attestation:"), "{ctx}: {members}");
     assert!(members.contains("granted:"), "{ctx}: {members}");
+    // What the AI wrote before the project was brought over was written
+    // under its name already: nothing joy writes carries the legacy form.
     let item = std::fs::read_dir(project.root.join(".joy/items"))
         .unwrap()
         .flatten()

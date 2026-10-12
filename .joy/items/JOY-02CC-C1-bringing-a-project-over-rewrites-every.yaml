@@ -1,0 +1,29 @@
+id: JOY-02CC-C1
+title: Bringing a project over rewrites every item, job, milestone, release and log
+type: bug
+status: review
+priority: critical
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-12T06:38:38.489630860Z
+updated: 2026-10-12T06:48:38.912618184Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  When a person is first there with their key, a project from before the member files is brought over (JI-019D-46): the members move from project.yaml into files of their own, and the person signs what the AI members may do. That part is the change itself.
+
+  In the same step joy also replaces the legacy form of an AI member's name with the name in every item, job, milestone, release and log file. In jyn that is 117 files (operator, 2026-10-12). It is not needed: since the name is cut where it is READ (joy_model::migrations::ai_member_name, the one place), every such file reads right as it stands, and the module says so itself: "Old data is not rewritten for it". The rewrite is a leftover of the first round, from before the read-time rule existed. It makes huge diffs and merge conflicts, and it touches log files, which are a record.
+
+  Wanted: bringing a project over writes project.yaml and the member files, and nothing else. Items, jobs, milestones, releases and logs stay byte for byte as they are and read with the name.
+
+  Where: crates/joy-core/src/member_migration.rs (finish). The same code runs on the platform (prepare/finish) and the desktop (migrate), so they follow with the joy bump.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-12T06:38:47.113499526Z
+  text: 'Plan: remove the rewrite of project.yaml by text and of the five directories from member_migration::finish, and with it the list of renamed members that only fed it. project.yaml is written through the model, which already holds the names. Turn the fixture test around: member_fixtures.rs today demands that no file under .joy says the legacy form; it will put an item and a log line from before into the fixture that say it, and demand that both are byte for byte the same after the project was brought over, that project.yaml and the member files do not say it, and that joy show and joy log give the name.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-12T06:48:38.886240186Z
+  text: 'Result: two things, both on the operator''s order of 2026-10-12. (1) member_migration::finish writes project.yaml and the member files and nothing else; the text replacement over items, jobs, milestones, releases and logs is gone, with the list that fed it. (2) A project is brought over ONLY by joy update of a person signed in (the operator: ''silently'' was meant for joy update). The calls at joy auth, at every command of somebody signed in, at a passphrase prompt and inside the core login are removed; joy update shows a row ''members: moved to their own files'', or says that it waits for a sign-in, and reports it in --json. Tests: member_fixtures.rs now puts an item and a log line from an AI member of that time into the fixture and holds that sign-ins, writes and an AI session bring nothing over, that joy update without a key waits, that joy update of the founder brings it over, that the two records are byte for byte the same afterwards and read with the name; chat_from_before.rs holds that reading, writing and addressing leave the recording as it was. just check green. Not in this change: the platform (web unlock) and the desktop (unlock) still call the bring-over themselves; they get the first half with the joy bump and need their own change for the second.'
