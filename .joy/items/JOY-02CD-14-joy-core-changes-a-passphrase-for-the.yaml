@@ -8,6 +8,10 @@ capabilities:
 effort: 2
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-12T10:35:25.977672900Z
-updated: 2026-10-12T10:35:25.977672900Z
+updated: 2026-10-12T10:48:18.768262277Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: 'Part of the passphrase change across the surfaces (operator 2026-10-12). auth::change_passphrase(project: &mut Project, member_key, current, new) -> Result<(), JoyError>: accept_passphrase(new), refuses a new passphrase equal to the current one, rewraps through joy-crypt (CRYPT-0017-E7) and sets the member''s seed_wrap_passphrase; kdf_nonce, recovery wrap and verify_key stay. joy auth passphrase calls it and keeps its prompts, its session removal and its messages; the desktop calls it from its command (JAPP item). Test in joy-core: the project''s member opens with the new passphrase afterwards and not with the old, same identity, the same-passphrase refusal, the empty refusal.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-12T10:48:18.768261255Z
+  text: 'Done on feat/passphrase-meter (87c725a): auth::check_new_passphrase (any text, not the current one; JoyError::PassphraseUnchanged) and auth::change_passphrase (unwrap with the current, rewrap through joy-crypt, set seed_wrap_passphrase; a member without a wrap is refused, the CLI migrates such an entry itself). joy auth passphrase keeps its prompts, its legacy migration and its session removal and asks the shared check. Tests: the check''s three cases, the change''s wrap moves with the identity kept and a wrong current passphrase leaves the wrap alone. The desktop command joy_auth_change_passphrase calls it (JAPP-0318-E8).'
