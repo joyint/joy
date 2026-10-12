@@ -198,15 +198,20 @@ fn project() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// Three words of one letter are accepted, and the person saw the line
-/// say so in red while typing: no minimum, a warning instead.
+/// Three words of one letter are accepted once the person has taken the
+/// risk in so many words: the line said insufficient while typing, Enter
+/// asked the question, y took it.
 #[test]
-fn a_weak_passphrase_is_accepted_and_the_line_said_insufficient() {
+fn a_weak_passphrase_is_accepted_after_the_risk_is_taken() {
     let (_dir, root, home) = project();
 
-    let (ok, seen) = joy_on_a_terminal(&root, &home, &["auth", "init"], "q w e\rq w e\r");
+    let (ok, seen) = joy_on_a_terminal(&root, &home, &["auth", "init"], "q w e\ryq w e\r");
 
     assert!(ok, "{seen}");
+    assert!(
+        seen.contains("I know and accept the risk. (y/N) "),
+        "the question was asked: {seen}"
+    );
     assert!(seen.contains("Choose a passphrase:"), "{seen}");
     assert!(
         seen.contains("□□□□□ insufficient (entropy 0 bit)"),
@@ -218,6 +223,26 @@ fn a_weak_passphrase_is_accepted_and_the_line_said_insufficient() {
     );
     assert!(seen.contains("RECOVERY KEY"), "{seen}");
     assert!(!seen.contains("q w e"), "nothing typed is echoed: {seen}");
+}
+
+/// Enter at the question (the default, N) starts the entry over; the
+/// stronger second entry is taken without a question.
+#[test]
+fn the_default_answer_starts_the_entry_over() {
+    let (_dir, root, home) = project();
+    let strong = "ladle quartz nimbus fjord";
+
+    let (ok, seen) = joy_on_a_terminal(
+        &root,
+        &home,
+        &["auth", "init"],
+        &format!("q w e\r\r{strong}\r{strong}\r"),
+    );
+
+    assert!(ok, "{seen}");
+    assert_eq!(seen.matches("(y/N) ").count(), 1, "{seen}");
+    assert!(seen.contains("■■■■■ excellent (entropy >64 bit)"), "{seen}");
+    assert!(seen.contains("RECOVERY KEY"), "{seen}");
 }
 
 /// Six random words fill the bar and the line says excellent.
@@ -234,7 +259,11 @@ fn a_strong_passphrase_fills_the_bar() {
     );
 
     assert!(ok, "{seen}");
-    assert!(seen.contains("■■■■■ excellent (entropy"), "{seen}");
+    assert!(seen.contains("■■■■■ excellent (entropy >64 bit)"), "{seen}");
+    assert!(
+        !seen.contains("(y/N)"),
+        "a strong passphrase is not questioned: {seen}"
+    );
     assert!(
         !seen.contains(passphrase),
         "nothing typed is echoed: {seen}"

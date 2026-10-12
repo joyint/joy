@@ -675,10 +675,11 @@ have signed or encrypted under that identity.
 
 **Passphrase strength:**
 
-Any passphrase is accepted, from one character on; nothing is enforced.
-While you type a new one, the line above the prompt shows how strong it
-is: five squares and the level with the entropy in bits, from red to
-dark green.
+Any passphrase is accepted, from one character on. While you type a
+new one, the line above the prompt shows how strong it is: five squares
+and the level with the entropy in bits, from red to dark green. An
+insufficient one is taken only after you confirm `I know and accept the
+risk. (y/N)`; the default starts the entry over.
 
 | Level | Entropy |
 | --- | --- |
@@ -686,7 +687,7 @@ dark green.
 | sufficient | from 28 bit |
 | good | from 45 bit |
 | very good | from 60 bit |
-| excellent | from 80 bit |
+| excellent | 64 bit, the estimator's ceiling, shown as `>64 bit` |
 
 The estimate is zxcvbn's (Dropbox; Wheeler and Lowe, "zxcvbn: Low-Budget
 Password Strength Estimation", USENIX Security 2016), as the open source
@@ -695,10 +696,11 @@ knows common passwords, dictionary words, names, keyboard walks, dates
 and repeats, and counts ten guesses per character of anything else.
 Green means that guessing offline, with the wrapped seed in hand and
 Joy's Argon2id parameters slowing every guess, is out of reach. It says
-nothing about quantum computers. Four random words with spaces reach
-"excellent"; a proverb of the same length stays at "good"; twenty-five
-random characters reach "excellent". The same line shows in the app
-when a passphrase is chosen there.
+nothing about quantum computers. The Rust estimator stops counting at
+64 bit; everything beyond is "excellent". Four random words with spaces
+reach it; a proverb of four words stays at "good"; twenty-five random
+characters reach it. The same line and the same question show in the
+app when a passphrase is chosen there.
 
 **Adding a human teammate:**
 

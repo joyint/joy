@@ -13,7 +13,7 @@
 
 use std::io::{self, Write};
 
-use joy_passphrase::{strength, Level, Strength};
+use joy_passphrase::{strength, Level, Strength, RISK_SENTENCE};
 use zeroize::Zeroizing;
 
 /// What a key does here. Anything else a terminal sends is ignored.
@@ -56,7 +56,8 @@ fn colour(level: Level) -> &'static str {
     }
 }
 
-/// The line: `■■■□□ good (entropy 47 bit)`.
+/// The line: `■■■□□ good (entropy 47 bit)`; the words are
+/// joy-passphrase's, the same the app shows.
 pub fn line(s: &Strength, color: bool) -> String {
     // nothing typed, nothing filled; a level needs at least one character
     let filled = if s.bits == 0.0 {
@@ -65,11 +66,7 @@ pub fn line(s: &Strength, color: bool) -> String {
         usize::from(s.level.rank())
     };
     let bar: String = (0..5).map(|i| if i < filled { '■' } else { '□' }).collect();
-    let text = format!(
-        "{} (entropy {} bit)",
-        s.level.label(),
-        s.bits.round() as u64
-    );
+    let text = s.text();
     if color {
         format!("{}{bar}{RESET} {text}", colour(s.level))
     } else {
@@ -82,19 +79,24 @@ pub fn line(s: &Strength, color: bool) -> String {
 /// [`Draw::PromptOnly`] the prompt alone. What was drawn is erased
 /// before returning, so nothing of the entry lingers. `None` when the
 /// person cancelled or the keys ended before Enter.
+///
+/// Enter on an insufficient passphrase (operator 2026-10-12) does not
+/// take it: the prompt line asks `I know and accept the risk. (y/N)`,
+/// `y` takes it, anything else starts the entry over.
 pub fn read(
     prompt: &str,
     keys: impl IntoIterator<Item = Key>,
     out: &mut impl Write,
     draw: Draw,
 ) -> io::Result<Option<Zeroizing<String>>> {
+    let mut keys = keys.into_iter();
     let mut typed = Zeroizing::new(String::new());
     match draw {
         Draw::Meter { color } => write!(out, "{}\r\n{prompt}", line(&strength(""), color))?,
         Draw::PromptOnly => write!(out, "{prompt}")?,
     }
     out.flush()?;
-    for key in keys {
+    while let Some(key) = keys.next() {
         match key {
             Key::Char(c) => typed.push(c),
             Key::Backspace => {
@@ -102,6 +104,31 @@ pub fn read(
             }
             Key::ClearLine => typed.clear(),
             Key::Enter => {
+                if matches!(draw, Draw::Meter { .. })
+                    && strength(&typed).needs_risk_acknowledgement()
+                {
+                    write!(out, "\r\x1b[2K{RISK_SENTENCE} (y/N) ")?;
+                    out.flush()?;
+                    match keys.next() {
+                        Some(Key::Char('y')) | Some(Key::Char('Y')) => {}
+                        Some(Key::Cancel) | None => {
+                            erase(out, draw)?;
+                            return Ok(None);
+                        }
+                        Some(_) => {
+                            typed.clear();
+                            if let Draw::Meter { color } = draw {
+                                write!(
+                                    out,
+                                    "\x1b[1A\r\x1b[2K{}\r\n\x1b[2K{prompt}",
+                                    line(&strength(""), color)
+                                )?;
+                                out.flush()?;
+                            }
+                            continue;
+                        }
+                    }
+                }
                 erase(out, draw)?;
                 return Ok(Some(typed));
             }
@@ -258,8 +285,13 @@ mod tests {
     fn every_key_redraws_the_line_and_enter_returns_what_was_typed() {
         let mut keys = typed("q w e");
         keys.push(Key::Enter);
+        keys.push(Key::Char('y'));
         let (got, out) = drawn(keys, false);
         assert_eq!(got.as_deref(), Some("q w e"));
+        assert!(
+            out.contains("I know and accept the risk. (y/N) "),
+            "{out:?}"
+        );
         // the first drawing, before any key
         assert!(out.starts_with("□□□□□ insufficient (entropy 0 bit)\r\nPassphrase: "));
         // one redraw per key: up, clear, line, down, clear, prompt
@@ -280,9 +312,51 @@ mod tests {
     fn the_bar_fills_as_the_passphrase_grows() {
         let mut keys = typed("ladle quartz nimbus fjord carapace velvet");
         keys.push(Key::Enter);
-        let (_, out) = drawn(keys, false);
-        assert!(out.contains("■■■■■ excellent (entropy"), "{out}");
+        let (got, out) = drawn(keys, false);
+        assert_eq!(
+            got.as_deref(),
+            Some("ladle quartz nimbus fjord carapace velvet")
+        );
+        assert!(out.contains("■■■■■ excellent (entropy >64 bit)"), "{out}");
         assert!(out.contains("■■□□□ sufficient (entropy"), "{out}");
+        // a strong passphrase is taken without a question
+        assert!(!out.contains("accept the risk"), "{out:?}");
+    }
+
+    #[test]
+    fn an_insufficient_passphrase_is_taken_with_a_y_and_started_over_without() {
+        // N (the default, any other key) starts over: the line is back at
+        // nothing typed, and what follows is a new entry
+        let mut keys = typed("q w e");
+        keys.push(Key::Enter);
+        keys.push(Key::Enter);
+        keys.extend(typed("ladle quartz nimbus fjord"));
+        keys.push(Key::Enter);
+        let (got, out) = drawn(keys, false);
+        assert_eq!(got.as_deref(), Some("ladle quartz nimbus fjord"));
+        assert!(
+            out.contains("I know and accept the risk. (y/N) "),
+            "{out:?}"
+        );
+        let after = out.rsplit("(y/N) ").next().unwrap();
+        assert!(
+            after.contains("□□□□□ insufficient (entropy 0 bit)"),
+            "{after:?}"
+        );
+
+        // cancel at the question is no passphrase
+        let mut keys = typed("q w e");
+        keys.push(Key::Enter);
+        keys.push(Key::Cancel);
+        assert_eq!(drawn(keys, false).0, None);
+
+        // the question is the meter's; a confirmation takes what it gets
+        let mut out = Vec::new();
+        let mut keys = typed("q w e");
+        keys.push(Key::Enter);
+        let got = read("Confirm: ", keys, &mut out, Draw::PromptOnly).unwrap();
+        assert_eq!(got.unwrap().to_string(), "q w e");
+        assert!(!String::from_utf8(out).unwrap().contains("risk"));
     }
 
     #[test]
@@ -291,12 +365,14 @@ mod tests {
         keys.push(Key::Backspace);
         keys.extend(typed("d"));
         keys.push(Key::Enter);
+        keys.push(Key::Char('y'));
         assert_eq!(drawn(keys, false).0.as_deref(), Some("abd"));
 
         let mut keys = typed("abc");
         keys.push(Key::ClearLine);
         keys.extend(typed("z"));
         keys.push(Key::Enter);
+        keys.push(Key::Char('y'));
         assert_eq!(drawn(keys, false).0.as_deref(), Some("z"));
 
         // backspace on nothing is nothing
@@ -330,6 +406,7 @@ mod tests {
     fn colour_sits_on_the_bar_alone() {
         let mut keys = typed("q w e");
         keys.push(Key::Enter);
+        keys.push(Key::Char('y'));
         let (_, out) = drawn(keys, true);
         assert!(
             out.contains("\x1b[38;5;196m■□□□□\x1b[0m insufficient"),
