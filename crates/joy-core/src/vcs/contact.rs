@@ -2086,7 +2086,17 @@ pub fn run_as<T>(
     let dialled = super::ssh_config::effective_url(url);
     let host = host_of(dialled.as_deref().unwrap_or(url));
     let transport = transport_of(url);
-    let span = tracing::info_span!("forge.contact", verb, forge = %host);
+    // `waited_ms` is joy's OWN wait for this host's turn, apart from
+    // the time the forge then takes (JP-011F-8E): the span's duration is
+    // the sum of both, and without the part that is joy's nobody could
+    // tell a slow forge from a full line (a week of spans read "fetch
+    // from codeberg.org: 2.6 s" for a forge that answered in 0.2 s).
+    let span = tracing::info_span!(
+        "forge.contact",
+        verb,
+        forge = %host,
+        waited_ms = tracing::field::Empty
+    );
     let _s = span.enter();
     // A host joy refuses to speak to at all (ProxyCommand, ProxyJump)
     // opens no socket, so it spends no turn: the refusal below costs
@@ -2100,6 +2110,7 @@ pub fn run_as<T>(
     } else {
         Turn::none()
     };
+    span.record("waited_ms", turn.waited.as_millis() as u64);
     if !turn.waited.is_zero() {
         tracing::debug!(
             waited_ms = turn.waited.as_millis() as u64,
