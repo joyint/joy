@@ -8,8 +8,8 @@ capabilities:
 effort: 4
 created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
 created: 2026-10-12T05:50:57.805597694Z
-updated: 2026-10-12T06:22:27.817197459Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-12T10:01:39.783607916Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Implements JI-01A5-93 in joy. Depends on CRYPT-0016-B0, the crate joy-passphrase: strength(&str) -> Strength { bits: f64, level: Level } with the five levels Insufficient, Sufficient, Good, VeryGood, Excellent at 28, 45, 60, 80 bit, and accept(&str) that refuses only an empty passphrase.
 
@@ -28,3 +28,7 @@ description: |-
   - SECURITY.md: one sentence after the Argon2id paragraph that the strength shown at set time is the zxcvbn estimate and that no minimum is enforced.
 
   Done when: cargo test of joy-core and joy-cli green including the recorded-key tests of the meter; a manual run of joy auth init in a terminal shows the line change colour while typing; the tutorial part is in both copies.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-10-12T10:01:39.783599359Z
+  text: 'Done on feat/passphrase-meter (95dcee3, rebased onto main after joy#68). joy-core: accept_passphrase refuses only an empty passphrase, PassphraseTooShort and MIN_PASSPHRASE_WORDS are gone, enroll calls the new rule. CLI: a new module passphrase_meter draws five squares and the level with the entropy above every prompt that chooses a passphrase (auth init, auth passphrase, recover, OTP redeem, init --anonymous), redrawn per key in crossterm raw mode; crossterm is a plain dependency now, the tui feature is ratatui alone. The confirmation is read over the same keys, because crossterm buffers typed-ahead input and a hidden line read from the tty on its own would never see it (found by the pty test). Flag, environment, stdin and every unlock prompt are unchanged. Tests: six unit tests over recorded keys, two pty tests (a weak passphrase is accepted and was shown red, a strong one fills the bar, nothing typed is echoed, with the terminal''s own echo off). Tutorial (both copies) and SECURITY.md name zxcvbn and the five levels. Facts worth knowing: zxcvbn counts ten guesses per character of random text, so 14 random characters are ''good'' (47 bit) and 25 are ''excellent''; four random words with spaces are 80 bit and more.'
