@@ -21,3 +21,8 @@
 2026-10-12T06:38:47.187Z JOY-02CC-C1 item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-12T06:48:38.890Z JOY-02CC-C1 comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-12T06:48:38.916Z JOY-02CC-C1 item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-12T18:05:14.045Z auth auth.session_created "session created for claude via delegation token" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-12T18:05:14.136Z JOY-02CD-3E item.created [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-12T18:05:14.188Z JOY-02CD-3E item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-12T18:07:39.032Z JOY-02CD-3E comment.added [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-12T18:07:39.054Z JOY-02CD-3E item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
