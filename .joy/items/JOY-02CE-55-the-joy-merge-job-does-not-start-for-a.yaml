@@ -1,7 +1,7 @@
 id: JOY-02CE-55
 title: The joy merge job does not start for a pull request that already conflicts
 type: bug
-status: review
+status: closed
 priority: high
 parent: JOY-02AC-53
 assignees:
@@ -11,8 +11,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.013397381Z
-updated: 2026-10-13T06:10:54.273293143Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:46.057420646Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   GitHub starts no pull_request workflow while a pull request has a merge conflict, and the conflict the forge sees in the Joy files is the one this job is there to merge: plain git on the forge stops at .joy/logs/<day>.log as soon as the branch and the target both logged that day. So the job runs only for a pull request that is still conflict free when it is opened. Seen on 2026-10-12: joyint/app#88 and joyint/website#43 had no workflow run at all and stayed at CONFLICTING until main was merged into the branch by hand.
 

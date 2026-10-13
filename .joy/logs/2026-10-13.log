@@ -34,3 +34,5 @@
 2026-10-13T13:32:43.209Z JOY-02D2-42 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-10-13T13:32:44.526Z JOY-02D1-21 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-10-13T13:32:45.224Z JOY-02D0-A1 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
+2026-10-13T13:32:46.080Z JOY-02CE-55 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
+2026-10-13T13:32:46.204Z JOY-02AC-53 item.status_changed "in-progress -> closed (all children closed)" [horst.schwarz@joydev.com]
