@@ -1,7 +1,7 @@
 id: JOY-02CD-3E
 title: A forge contact says how long joy itself waited before it went out
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -9,8 +9,8 @@ capabilities:
 - implement
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-12T18:05:14.134359094Z
-updated: 2026-10-12T18:07:39.051182638Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:46.787898534Z
+updated_by: horst.schwarz@joydev.com
 description: 'Every contact to a forge host stands in joy''s own line for that host (vcs::contact, take_turn), and the span forge.contact covers the wait in the line and the forge''s own time together. The wait alone is only a debug line, which no host exports. Found 2026-10-12 while reading a week of spans (JP-011F-8E): a fetch from codeberg.org read 2.6 s in the median and a push 5.5 s, while the forge answered a single request in 0.2 to 0.6 s. Nobody could tell a slow forge from a full line. Wanted: the span carries waited_ms, joy''s own wait, on every contact (0 when the line was free). No behaviour changes.'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
