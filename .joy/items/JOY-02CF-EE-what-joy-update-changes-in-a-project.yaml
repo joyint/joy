@@ -1,0 +1,38 @@
+id: JOY-02CF-EE
+title: What joy update changes in a project is committed as one commit
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T05:59:27.100090699Z
+updated: 2026-10-13T06:03:13.844021098Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  When a newer joy brings a project up to date it rewrites the files it manages: the ignore and attribute blocks, the CI merge file, the hooks, SECURITY.md, the defaults, the project file and, with joy update, the member files. Nobody commits them. They lie in the checkout as changes nobody remembers making, get taken for leftovers and are discarded, and then something stops working with no trace of why.
+
+  Wanted (operator, 2026-10-13):
+  - joy update at a terminal shows what it refreshed, as today, and then asks: Commit Joy project updates? [Y/n]. Yes writes ONE commit with exactly the files the update touched and nothing else that is changed in the checkout.
+  - joy update --force commits without asking. Without a terminal there is nobody to ask, so it commits as well.
+  - The sync joy runs by itself on the first call after a version change commits without asking, and its one line names the commit.
+  - The commit says in general words that the project was brought from joy X to joy Y, and its subject carries [no-item].
+  - With workflow.auto-git off joy touches git for nobody, so nothing is committed there.
+  - The CLI help and the tutorial say it, as briefly as the other entries.
+
+  The platform and the desktop client run the same sync when a project is opened. They commit without asking as well, signed by the person who opened the project; that is an item in each of their projects, built on what this one adds to joy-core.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T06:03:13.844019771Z
+  text: |-
+    Plan:
+    1. joy-core, update framework: a caller takes a picture of the checkout before a sync and asks afterwards which paths the sync changed (status and content of every changed, new or removed path, ignored files left out). One function commits exactly those paths through commit_index_paths, signed for the acting member like every commit joy writes, with the Delegated-By trailer for an AI member.
+    2. The message: 'chore(joy): project files updated from joy X to joy Y [no-item]' and one general sentence below. Without an earlier marker it says 'set up for joy Y', at an unchanged version 'refreshed by joy Y'. X is the clone's marker read before the sync.
+    3. What is left alone: a path OUTSIDE .joy/ that already carried uncommitted changes before the sync is not committed, because the file would take the person's own half finished edit into joy's commit; it is named in one line. Under .joy/ everything the sync touched is committed. With workflow.auto-git off nothing is committed. When joy cannot tell who acts (no session, no member for the git address) nothing is committed and one line says so.
+    4. joy update: after the table it asks 'Commit Joy project updates? [Y/n]' when a person sits at a terminal; --force and every run without a terminal (--json included) commit without asking. The member files joy update brings over are part of the same commit. --check changes nothing, as before.
+    5. The sync on the first call after a version change commits without asking; its line ends with the short id of the commit, or with why nothing was committed.
+    6. joy-chat-store gets the same step beside its sync, so the desktop and the platform call one function when a project is opened; their call sites are items in their own projects.
+    7. Tests: unit tests in joy-core for the picture, the scope of the commit, the three messages, the path left alone, auto-git off and the trailer; a scripted answer for the question; bats cases in update_command.bats for --force, for a run without a terminal and for the silent sync after a changed marker.
+    8. Help of joy update and the two Tutorial copies say it in a line each, without item ids.
