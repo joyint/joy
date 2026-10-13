@@ -1,0 +1,39 @@
+id: JOY-02D2-42
+title: 'The sync takes the passphrase sentence out of SECURITY.md: the template does not carry it'
+type: bug
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T07:30:45.335085399Z
+updated: 2026-10-13T07:38:24.766817517Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  JOY-02CC-46 added a sentence to this repository's SECURITY.md by hand: no minimum is enforced on a passphrase, and what is shown while a new one is typed is the zxcvbn estimate in bits and five levels. SECURITY.md is rendered from crates/joy-core/templates/SECURITY.md, which was not changed. So every sync writes the old paragraph back; seen on 2026-10-13, when the first joy call in a fresh worktree removed the sentence again. joyint/crypt carries the same sentence in its own words and loses it the same way.
+
+  Since JOY-02CF-EE the sync commits what it changes, so after the next release the sentence would be removed by a commit in both repositories.
+
+  To do: the template carries the sentence, in words that hold in any project (no name of a workspace); this repository's SECURITY.md is the template's rendering; a test holds that the template says it.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T07:30:45.365020471Z
+  text: |-
+    Plan:
+    1. A test in joy-core security_md.rs: the rendered body says that no minimum is enforced and names the zxcvbn estimate.
+    2. crates/joy-core/templates/SECURITY.md gets the sentence after the Argon2id sentence, without the name of a workspace, so it reads right in every project.
+    3. This repository's SECURITY.md becomes exactly what the template renders; joy update --check from this branch must call it current.
+    4. just check, just test-int against this build.
+    joyint/crypt is not changed here: its SECURITY.md is brought to the template's words by the sync of the next release, which commits it.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T07:38:24.736495544Z
+  text: |-
+    Result:
+    [x] crates/joy-core/templates/SECURITY.md says after the Argon2id sentence: no minimum is enforced on the passphrase; what joy shows while a new one is typed is the zxcvbn estimate of the joy-passphrase crate, in bits and five levels. No workspace is named, the text goes into every project.
+    [x] This repository's SECURITY.md carries exactly that; joy update --check from this branch calls it up to date.
+    [x] Test in joy-core security_md.rs: the_template_says_how_a_passphrase_is_judged. It failed before the change.
+    [x] just check green (1592 Rust tests), just test-int green (645 bats cases) against this build.
+    joyint/crypt still carries the sentence in its own words (in this workspace); the sync of the next release brings it to the template's words and commits that (JOY-02CF-EE).

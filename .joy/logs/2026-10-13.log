@@ -11,3 +11,8 @@
 2026-10-13T06:11:44.253Z JOY-02CF-EE item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T06:28:18.288Z JOY-02CF-EE comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T06:28:18.319Z JOY-02CF-EE item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T07:30:45.338Z JOY-02D2-42 item.created [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T07:30:45.369Z JOY-02D2-42 comment.added [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T07:30:45.449Z JOY-02D2-42 item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T07:38:24.740Z JOY-02D2-42 comment.added [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T07:38:24.770Z JOY-02D2-42 item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
