@@ -533,8 +533,15 @@ release bump="patch" prerelease="":
     echo "Refreshing Cargo.lock..."
     cargo update --workspace
     echo "Checking (format, lint, test)..."
-    if ! just check > /dev/null 2>&1; then
-        echo "Checks failed. Run 'just check' for details. Rolling bump back."
+    # The output is kept: a check that fails only here, on the bumped
+    # tree, cannot be asked again once the bump is rolled back.
+    check_log="${TMPDIR:-/tmp}/joy-release-check.log"
+    if ! just check > "$check_log" 2>&1; then
+        echo "Checks failed. What failed, from $check_log:"
+        grep -E 'FAILED|panicked at|^error|^not ok|recipe .* failed' "$check_log" | tail -n 20 || true
+        echo "The last lines:"
+        tail -n 25 "$check_log"
+        echo "Rolling bump back."
         # The root manifest is a version file too (release.version-files
         # in .joy/project.yaml): it carries the `[workspace.package]`
         # version that joy-process, joy-forge-net and joy-telemetry
