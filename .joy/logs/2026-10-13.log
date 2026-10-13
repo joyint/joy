@@ -29,3 +29,5 @@
 2026-10-13T08:48:50.705Z JOY-02D3-83 item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T08:59:18.956Z JOY-02D3-83 comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T08:59:19.060Z JOY-02D3-83 item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T13:32:42.463Z JOY-02D3-83 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
+2026-10-13T13:32:42.564Z JOY-02CF-EE item.status_changed "review -> closed (all children closed)" [horst.schwarz@joydev.com]

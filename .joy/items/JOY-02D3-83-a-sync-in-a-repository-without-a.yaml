@@ -1,7 +1,7 @@
 id: JOY-02D3-83
 title: A sync in a repository without a commit writes a first commit that holds only what the sync changed
 type: bug
-status: review
+status: closed
 priority: high
 parent: JOY-02CF-EE
 assignees:
@@ -11,8 +11,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T08:48:47.321117507Z
-updated: 2026-10-13T08:59:19.054077311Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:42.288150174Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Found by the desktop client's test for JAPP-0319-10 on 2026-10-13: the client founds a project (joy_core::init) and then runs the checkout reconcile, which renders SECURITY.md. Since JOY-02CF-EE the sync commits what it changed, and here that commit is the first one in the repository and carries SECURITY.md alone, while everything else the founding wrote is only staged. The person's own first commit then comes second and holds the rest.
 

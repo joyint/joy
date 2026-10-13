@@ -1,7 +1,7 @@
 id: JOY-02CF-EE
 title: What joy update changes in a project is committed as one commit
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -11,8 +11,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.100090699Z
-updated: 2026-10-13T06:28:18.314887063Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:42.559636231Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   When a newer joy brings a project up to date it rewrites the files it manages: the ignore and attribute blocks, the CI merge file, the hooks, SECURITY.md, the defaults, the project file and, with joy update, the member files. Nobody commits them. They lie in the checkout as changes nobody remembers making, get taken for leftovers and are discarded, and then something stops working with no trace of why.
 
