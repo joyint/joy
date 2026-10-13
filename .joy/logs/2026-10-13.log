@@ -21,3 +21,6 @@
 2026-10-13T08:17:24.161Z JOY-02D0-A1 comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T08:19:55.221Z JOY-02D1-21 comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-13T08:19:55.329Z JOY-02D1-21 item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T08:20:27.171Z JOY-02D0-A1 item.status_changed "new -> in-progress" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T08:35:42.788Z JOY-02D0-A1 comment.added [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T08:35:42.893Z JOY-02D0-A1 item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]

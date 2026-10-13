@@ -705,7 +705,7 @@ pub const CI_GITLAB: CiTemplate = CiTemplate {
     target: ".joy/ci/gitlab.yml",
     content: include_str!("../data/ci/gitlab.yml"),
     note: Some(
-        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nand set the CI variable JOY_PUSH_TOKEN",
+        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nset the CI variable JOY_PUSH_TOKEN, and keep one more job that runs for merge requests",
     ),
 };
 
@@ -1037,6 +1037,42 @@ mod ci_template_tests {
                 }
             }
         }
+    }
+
+    /// What a GitLab told us when it ran the job (JOY-02D0-A1): the
+    /// installer unpacks a .tar.xz, which the slim image cannot; the push
+    /// has to go where the server is, on http or another port as well;
+    /// and GitLab starts no pipeline for a job of the .pre stage alone,
+    /// which the person has to be told.
+    #[test]
+    fn the_gitlab_job_runs_as_a_gitlab_ran_it() {
+        let job = CI_GITLAB.content;
+        assert!(
+            job.contains("apt-get install -y -qq curl ca-certificates git xz-utils"),
+            "{job}"
+        );
+        assert!(
+            job.contains(
+                "\"${CI_SERVER_PROTOCOL}://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git\""
+            ),
+            "{job}"
+        );
+        assert!(!job.contains("https://oauth2"), "{job}");
+        // a merge request that conflicts gets its pipeline all the same,
+        // so the rule stays the plain one
+        assert!(
+            job.contains("- if: $CI_PIPELINE_SOURCE == \"merge_request_event\""),
+            "{job}"
+        );
+        let note = CI_GITLAB.note.expect("the note");
+        assert!(
+            note.contains("one more job that runs for merge requests"),
+            "{note}"
+        );
+        assert!(
+            job.contains("one more job that runs for merge requests"),
+            "{job}"
+        );
     }
 
     #[test]

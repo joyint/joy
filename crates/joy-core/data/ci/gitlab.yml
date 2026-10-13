@@ -13,6 +13,10 @@
 # The job needs to push to the source branch, so give the project a
 # token with write access and put it in the CI variable JOY_PUSH_TOKEN
 # (Settings, CI/CD, Variables, masked and protected).
+#
+# GitLab starts no pipeline that holds only jobs of the .pre and .post
+# stages: the project needs one more job that runs for merge requests,
+# or this one never runs.
 joy-merge:
   stage: .pre
   image: debian:stable-slim
@@ -22,11 +26,11 @@ joy-merge:
     GIT_STRATEGY: clone
     GIT_DEPTH: 0
   before_script:
-    - apt-get update -qq && apt-get install -y -qq curl ca-certificates git
+    - apt-get update -qq && apt-get install -y -qq curl ca-certificates git xz-utils
     - curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joyint/joy/releases/latest/download/joy-cli-installer.sh | sh
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
-    - git remote set-url origin "https://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git"
+    - git remote set-url origin "${CI_SERVER_PROTOCOL}://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git"
     - joy merge ci
 # joy:end
