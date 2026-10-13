@@ -234,6 +234,14 @@ fn commit_project_update_at(
     if level == AutoGit::Off {
         return UpdateCommit::Off;
     }
+    // Nothing is a leftover of an earlier state where there is no earlier
+    // state: a commit of joy's own would be the first one and hold a part
+    // of what the person's first commit is for (JOY-02D3-83).
+    if crate::vcs::forge::head_oid(root).is_none() {
+        return UpdateCommit::Left(
+            "this repository has no commit yet; the files go into its first one".to_string(),
+        );
+    }
     let project = store::load_project(root).ok();
     let resolved = at_rest_identity(identity, project.as_ref());
     let delegator = match resolved.split_once(" delegated-by:") {
@@ -543,6 +551,34 @@ mod tests {
             UpdateCommit::Nothing
         );
         assert_eq!(head(), first);
+    }
+
+    /// In a repository without a commit nothing is a leftover of an
+    /// earlier state: what a sync changes there goes into the person's
+    /// first commit with everything else, and joy writes none of its own
+    /// that would hold a part of it (JOY-02D3-83).
+    #[test]
+    fn nothing_is_committed_before_the_persons_first_commit() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        forge::init_repo(root, "main").unwrap();
+        std::fs::create_dir_all(root.join(".joy")).unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "name: fresh").unwrap();
+        std::fs::write(root.join("SECURITY.md"), "rendered").unwrap();
+        forge::stage_paths(root, &[".joy"]).unwrap();
+        let changed = Changed {
+            paths: vec!["SECURITY.md".into()],
+            left: vec![],
+            from: None,
+        };
+
+        let outcome = commit_project_update_at(root, &changed, "horst@joydev.test", AutoGit::Add);
+        let UpdateCommit::Left(why) = &outcome else {
+            panic!("committed into a repository without a commit: {outcome:?}");
+        };
+        assert!(why.contains("no commit yet"), "{why}");
+        assert!(forge::head_oid(root).is_none(), "still no commit");
+        assert!(root.join("SECURITY.md").is_file());
     }
 
     #[test]
