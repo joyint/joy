@@ -182,3 +182,15 @@ stale_project() {
     [[ "$stderr" != *"synced this repo"* ]]
     [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
 }
+
+@test "joy update commits nothing before the person's first commit" {
+    joy init --name "Test"
+    # a file of joy's own as an older joy left it, in a repository that
+    # has no commit at all
+    echo "# what an older joy wrote" >> .joy/config.defaults.yaml
+    run joy update --no-binary --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Not committed: this repository has no commit yet"* ]]
+    run git rev-parse --verify --quiet HEAD
+    [ "$status" -ne 0 ]
+}
