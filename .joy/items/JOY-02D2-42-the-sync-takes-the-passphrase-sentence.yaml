@@ -1,7 +1,7 @@
 id: JOY-02D2-42
 title: 'The sync takes the passphrase sentence out of SECURITY.md: the template does not carry it'
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T07:30:45.335085399Z
-updated: 2026-10-13T07:38:24.766817517Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:43.189096320Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   JOY-02CC-46 added a sentence to this repository's SECURITY.md by hand: no minimum is enforced on a passphrase, and what is shown while a new one is typed is the zxcvbn estimate in bits and five levels. SECURITY.md is rendered from crates/joy-core/templates/SECURITY.md, which was not changed. So every sync writes the old paragraph back; seen on 2026-10-13, when the first joy call in a fresh worktree removed the sentence again. joyint/crypt carries the same sentence in its own words and loses it the same way.
 
