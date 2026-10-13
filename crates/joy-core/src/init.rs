@@ -986,6 +986,59 @@ mod ci_template_tests {
         }
     }
 
+    /// A forge starts no `pull_request` job for a pull request it already
+    /// shows as conflicting, and the conflict it sees in the Joy files is
+    /// the one this job merges (JOY-02CE-55).
+    #[test]
+    fn the_job_starts_for_a_pull_request_that_already_conflicts() {
+        for template in [CI_GITHUB, CI_GITEA] {
+            assert!(
+                template.content.contains("\n  pull_request_target:\n"),
+                "{} does not listen on pull_request_target",
+                template.target
+            );
+            assert!(
+                !template.content.contains("\n  pull_request:\n"),
+                "{} still listens on pull_request",
+                template.target
+            );
+        }
+    }
+
+    /// Under `pull_request_target` the job's token may write for a fork's
+    /// pull request too, so nothing of a fork is checked out or run: every
+    /// step but the one that asks the contributor is bound to a branch of
+    /// this repository (JOY-02CE-55).
+    #[test]
+    fn a_fork_is_asked_and_never_checked_out() {
+        const OWN: &str = "if: github.event.pull_request.head.repo.full_name == github.repository";
+        const FORK: &str = "if: github.event.pull_request.head.repo.full_name != github.repository";
+        for template in [CI_GITHUB, CI_GITEA] {
+            let steps = template
+                .content
+                .split("    steps:\n")
+                .nth(1)
+                .expect("the steps");
+            let steps: Vec<&str> = steps
+                .split("\n      - ")
+                .filter(|step| step.contains("uses:") || step.contains("name:"))
+                .collect();
+            assert_eq!(steps.len(), 4, "{}: {steps:#?}", template.target);
+            for step in &steps {
+                if step.contains("Ask the contributor") {
+                    assert!(step.contains(FORK), "{}: {step}", template.target);
+                    assert!(
+                        step.contains("GH_REPO: ${{ github.repository }}"),
+                        "{}: the question names no repository: {step}",
+                        template.target
+                    );
+                } else {
+                    assert!(step.contains(OWN), "{}: {step}", template.target);
+                }
+            }
+        }
+    }
+
     #[test]
     fn a_file_of_someone_else_is_never_overwritten() {
         let dir = std::env::temp_dir().join(format!("joy-ci-tpl-{}", std::process::id()));
