@@ -1,7 +1,7 @@
 id: JOY-02D0-A1
 title: Try the GitLab merge job on a merge request that already conflicts
 type: task
-status: review
+status: closed
 priority: medium
 parent: JOY-02AC-53
 assignees:
@@ -10,8 +10,8 @@ capabilities:
 - implement
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.186277426Z
-updated: 2026-10-13T08:35:42.887723503Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:45.201912876Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   The GitHub job did not start for a pull request that conflicts (see the bug beside this one under JOY-02AC-53). The GitLab file, .joy/ci/gitlab.yml, runs on merge_request_event. Nobody has tried whether a merge request pipeline starts when the merge request already conflicts in a Joy file, for example .joy/logs/<day>.log written on both sides.
 
