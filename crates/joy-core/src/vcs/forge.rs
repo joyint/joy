@@ -3731,6 +3731,39 @@ pub fn joy_dirty_fingerprint(repo_dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// Every path of a checkout that differs from HEAD, untracked included
+/// and ignored left out, with what the file holds at this moment
+/// (`gone` for a path that is no file any more).
+///
+/// Two pictures taken around a write say which paths that write changed,
+/// whatever else lay changed in the checkout before (JOY-02CF-EE): a path
+/// the second one shows for the first time, or shows holding something
+/// else. Staging alone changes nothing here, so a file joy merely added
+/// to the index is not taken for one it wrote. A repository that cannot
+/// be read gives an empty picture.
+pub fn checkout_picture(repo_dir: &Path) -> std::collections::BTreeMap<String, String> {
+    let mut picture = std::collections::BTreeMap::new();
+    let Ok(repo) = open(repo_dir) else {
+        return picture;
+    };
+    let mut opts = git2::StatusOptions::new();
+    opts.include_untracked(true).recurse_untracked_dirs(true);
+    let Ok(statuses) = repo.statuses(Some(&mut opts)) else {
+        return picture;
+    };
+    let workdir = repo.workdir().unwrap_or(repo_dir).to_path_buf();
+    for entry in statuses.iter() {
+        let Ok(path) = entry.path() else {
+            continue;
+        };
+        let holds = git2::Oid::hash_file(git2::ObjectType::Blob, workdir.join(path))
+            .map(|oid| oid.to_string())
+            .unwrap_or_else(|_| "gone".to_string());
+        picture.insert(path.to_string(), holds);
+    }
+    picture
+}
+
 /// The commit signature of the acting member: the ONE place that decides what git2 stamps on
 /// a commit joy writes.
 ///
@@ -5691,6 +5724,45 @@ mod tests {
             .unwrap();
         assert!(tree.get_path(Path::new(".joy/project.yaml")).is_err());
         assert!(tree.get_path(Path::new("src.rs")).is_err());
+    }
+
+    /// Two pictures around a write name the paths that write changed,
+    /// and only those (JOY-02CF-EE).
+    #[test]
+    fn two_pictures_name_what_was_written_between_them() {
+        let dir = tempfile::tempdir().unwrap();
+        git2::Repository::init(dir.path()).unwrap();
+        std::fs::write(dir.path().join("kept.txt"), "committed").unwrap();
+        std::fs::write(dir.path().join("gone.txt"), "committed").unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "ignored.txt\n").unwrap();
+        stage_paths(dir.path(), &["kept.txt", "gone.txt", ".gitignore"]).unwrap();
+        commit_index(dir.path(), "first", "m", "m@e.c").unwrap();
+
+        // what lay around before: one edit of the person's, one new file
+        std::fs::write(dir.path().join("kept.txt"), "the person's edit").unwrap();
+        std::fs::write(dir.path().join("theirs.txt"), "untracked").unwrap();
+        let before = checkout_picture(dir.path());
+        assert_eq!(
+            before.keys().collect::<Vec<_>>(),
+            ["kept.txt", "theirs.txt"],
+            "a clean path is not in the picture"
+        );
+
+        // the write: a new file, a removed one, an ignored one; and the
+        // person's untracked file is merely staged
+        std::fs::write(dir.path().join("written.txt"), "new").unwrap();
+        std::fs::remove_file(dir.path().join("gone.txt")).unwrap();
+        std::fs::write(dir.path().join("ignored.txt"), "never seen").unwrap();
+        stage_paths(dir.path(), &["theirs.txt"]).unwrap();
+        let after = checkout_picture(dir.path());
+
+        let changed: Vec<&String> = after
+            .iter()
+            .filter(|(path, holds)| before.get(*path) != Some(*holds))
+            .map(|(path, _)| path)
+            .collect();
+        assert_eq!(changed, ["gone.txt", "written.txt"]);
+        assert_eq!(after["gone.txt"], "gone");
     }
 
     /// The staged content of `path`, or `None` when the index holds no

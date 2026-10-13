@@ -496,7 +496,8 @@ quietly refreshes the AI instruction files (and the rest of the
 joy-managed state) when it sees a version mismatch. When that happens
 joy prints a one-line `joy X.Y.Z: synced this repo (...)` notice on
 stderr; if your AI tool's instruction file is mentioned in that
-output, re-read it before continuing the session.
+output, re-read it before continuing the session. What the refresh
+changed is committed as one commit, and the notice names it.
 
 If you want an explicit audit, run:
 
@@ -901,8 +902,16 @@ single command:
 joy update                       # Swap binary + refresh in-repo state
 joy update --check               # Read-only audit of every joy-managed artefact
 joy update --no-binary           # In-repo refresh only
+joy update --force               # Commit what the refresh changed without asking
 joy update --json                # Same, machine-readable envelope
 ```
+
+What the refresh changed goes into one commit that carries those files
+and nothing else. At a terminal joy asks first, `Commit Joy project
+updates? [Y/n]`; with `--force`, and wherever there is no terminal, it
+commits right away. A file outside `.joy/` that you had already changed
+is left to you and named. With `workflow.auto-git: off` joy commits
+nothing.
 
 `joy update` is receipt-gated for the binary swap: only builds installed
 through the cargo-dist installer carry the receipt that lets joy update
@@ -917,11 +926,12 @@ see "Downgrade guard" below).
 You almost never have to run `joy update` for the in-repo refresh.
 Every joy invocation cheaply compares the running binary's version
 against `joy.last-sync-version` (kept in this clone's local git config)
-and silently catches up when they differ. When that happens you see a
-single stderr line such as:
+and silently catches up when they differ. What it changed is committed
+without a question. When that happens you see a single stderr line such
+as:
 
 ```
-joy 0.15.0: synced this repo (previous marker: 0.14.2).
+joy 0.15.0: synced this repo (previous marker: 0.14.2), committed as 3f2a1b9.
 ```
 
 If the file mentioned alongside that line is your AI tool's instruction

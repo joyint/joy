@@ -99,3 +99,86 @@ EOF
     stamped=$(git config --local --get joy.last-sync-version)
     [ "$stamped" = "0.0.0-stale" ]
 }
+
+# What a sync changes is committed as one commit.
+
+# A project whose files are committed and whose clone an older joy synced
+# last, with SECURITY.md as that joy left it and a file of the person's.
+stale_project() {
+    joy init --name "Test"
+    joy ls >/dev/null 2>&1
+    git add -A && git commit -m "init [no-item]" --quiet
+    echo "what an older joy wrote" > SECURITY.md
+    git add -A && git commit -m "older [no-item]" --quiet
+    git config --local joy.last-sync-version "0.0.1"
+    echo "mine" > notes.txt
+}
+
+@test "joy update --force commits what it changed as one commit" {
+    stale_project
+    commits=$(git rev-list --count HEAD)
+    run joy update --no-binary --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Committed as "* ]]
+    [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
+    [[ "$(git log -1 --format=%s)" == "chore(joy): project files updated from joy 0.0.1 to joy "*" [no-item]" ]]
+    [[ "$(git show --stat --format= HEAD)" == *"SECURITY.md"* ]]
+    # the person's file is not in the commit and still theirs
+    [[ "$(git show --stat --format= HEAD)" != *"notes.txt"* ]]
+    [ "$(git status --porcelain)" = "?? notes.txt" ]
+}
+
+@test "joy update without a terminal commits without asking" {
+    stale_project
+    commits=$(git rev-list --count HEAD)
+    run joy update --no-binary </dev/null
+    [ "$status" -eq 0 ]
+    [[ "$output" != *"[Y/n]"* ]]
+    [[ "$output" == *"Committed as "* ]]
+    [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
+}
+
+@test "joy update --json names the commit" {
+    stale_project
+    out=$(joy --json update --no-binary 2>/dev/null)
+    [[ "$out" == *"\"committed\""* ]]
+    [[ "$out" == *"$(git rev-parse HEAD)"* ]]
+}
+
+@test "joy update leaves a file alone that the person had already changed" {
+    stale_project
+    echo "what an older joy wrote, edited by hand" > SECURITY.md
+    head=$(git rev-parse HEAD)
+    run joy update --no-binary --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Left for you to commit, changed before the sync: SECURITY.md"* ]]
+    # whatever else the update committed, this file is not in it
+    [[ "$(git diff --name-only "$head" HEAD)" != *"SECURITY.md"* ]]
+    [[ "$(git status --porcelain)" == *"SECURITY.md"* ]]
+}
+
+@test "joy update commits nothing with workflow.auto-git off" {
+    stale_project
+    # written by hand: a joy call here would run the sync before the switch
+    printf 'version: 1\nworkflow:\n  auto-git: "off"\n' > .joy/config.yaml
+    commits=$(git rev-list --count HEAD)
+    run joy update --no-binary --force
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"Not committed: workflow.auto-git is off."* ]]
+    [ "$(git rev-list --count HEAD)" -eq "$commits" ]
+}
+
+@test "the sync after a version change commits what it changed and names the commit" {
+    stale_project
+    commits=$(git rev-list --count HEAD)
+    run --separate-stderr joy ls
+    [ "$status" -eq 0 ]
+    [[ "$stderr" == *"synced this repo (previous marker: 0.0.1), committed as "* ]]
+    [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
+    [[ "$(git log -1 --format=%s)" == "chore(joy): project files updated from joy 0.0.1 to joy "* ]]
+    [ "$(git status --porcelain)" = "?? notes.txt" ]
+    # and the next call finds nothing to do
+    run --separate-stderr joy ls
+    [[ "$stderr" != *"synced this repo"* ]]
+    [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
+}
