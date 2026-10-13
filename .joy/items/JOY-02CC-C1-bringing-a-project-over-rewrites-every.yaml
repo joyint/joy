@@ -1,7 +1,7 @@
 id: JOY-02CC-C1
 title: Bringing a project over rewrites every item, job, milestone, release and log
 type: bug
-status: review
+status: closed
 priority: critical
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-12T06:38:38.489630860Z
-updated: 2026-10-12T06:48:38.912618184Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:47.540959841Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   When a person is first there with their key, a project from before the member files is brought over (JI-019D-46): the members move from project.yaml into files of their own, and the person signs what the AI members may do. That part is the change itself.
 
