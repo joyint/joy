@@ -522,7 +522,8 @@ release bump="patch" prerelease="":
     # its own audit trail.
     just auto-commit
     if [ -n "$(git status --porcelain)" ]; then
-        echo "Error: working tree is not clean."
+        echo "Error: working tree is not clean:"
+        git status --short | sed -n '1,20s/^/  /p'
         exit 1
     fi
     echo "Updating external dependencies..."
