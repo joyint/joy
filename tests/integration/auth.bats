@@ -224,6 +224,9 @@ TEST_PASSPHRASE="correct horse battery staple extra words"
     run joy auth token add dev@example.com --passphrase "$TEST_PASSPHRASE"
     [ "$status" -ne 0 ]
     [[ "$output" == *"not an AI member"* ]]
+    # an AI member is known by its name: the refusal asks for no prefix
+    [[ "$output" == *"known by its name"* ]]
+    [[ "$output" != *"must start with"* ]]
 }
 
 @test "joy auth token add rejects unregistered AI member" {

@@ -1058,6 +1058,15 @@ fn run_token_add(args: TokenAddArgs, user_flag: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// The refusal for an id that is no AI member's (JOY-02D1-21): an AI
+/// member is known by its name, so the sentence asks for no prefix.
+fn not_an_ai_member(id: &str) -> String {
+    format!(
+        "{id} is not an AI member: an AI member is known by its name, \
+         for example claude, and a person by an address"
+    )
+}
+
 /// Create a delegation token for `ai_member` issued by the human
 /// `operator`. Returns `(encoded_token, ttl_hours)`.
 ///
@@ -1085,7 +1094,7 @@ pub(crate) fn create_delegation_token(
     let project = store::load_project(root)?;
 
     if !is_ai_member(ai_member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", ai_member);
+        anyhow::bail!(not_an_ai_member(ai_member));
     }
     if !project.has_member_key(ai_member) {
         anyhow::bail!(
@@ -1297,7 +1306,7 @@ fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
 
     if let Some(m) = filter_member {
         if !is_ai_member(m) {
-            anyhow::bail!("{m} is not an AI member (must start with ai:)");
+            anyhow::bail!(not_an_ai_member(m));
         }
     }
 
@@ -1635,7 +1644,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     let acting = joy_core::identity::acting_human_key(&root)?;
 
     if !is_ai_member(member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", member);
+        anyhow::bail!(not_an_ai_member(member));
     }
     if !project.has_member_key(member) {
         anyhow::bail!("{} is not a registered project member.", member);
@@ -1707,4 +1716,22 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     joy_core::git_ops::auto_git_post_command(&root, &format!("ai rotate {}", member), &acting);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An AI member is known by its name and a person by an address: the
+    /// refusal says that, and asks for no prefix (JOY-02D1-21).
+    #[test]
+    fn the_refusal_says_what_an_ai_member_is_known_by() {
+        let refusal = not_an_ai_member("dev@example.com");
+        assert_eq!(
+            refusal,
+            "dev@example.com is not an AI member: an AI member is known by its name, \
+             for example claude, and a person by an address"
+        );
+        assert!(!refusal.contains("must start with"), "{refusal}");
+    }
 }

@@ -1,16 +1,34 @@
 id: JOY-02D1-21
 title: 'Three messages still say an AI member must start with ai:'
 type: bug
-status: new
+status: review
 priority: low
+assignees:
+- member: claude
 capabilities:
 - implement
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.272510839Z
-updated: 2026-10-13T05:59:27.272510839Z
+updated: 2026-10-13T08:19:55.323975208Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   Since an AI member is known by its name (claude, not ai:claude@joy), is_ai_member accepts a bare name. joy auth token add, the token listing with a member filter and the member redemption path still refuse with "<name> is not an AI member (must start with ai:)". The check is right, the sentence is not: a person who types an address is told to use a prefix that no longer exists.
 
   To do: the three messages in crates/joy-cli/src/commands/auth.rs say what an AI member is today.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T07:55:42.685039521Z
+  text: |-
+    Plan:
+    1. One function in crates/joy-cli/src/commands/auth.rs says the refusal for all three places (joy auth token add, the delegation listing with a member filter, the rotation): the name is not an AI member's, and an AI member is known by its name while a person is known by an address.
+    2. A unit test holds the sentence and that it asks for no prefix; a bats case holds that joy auth token add with an address is refused in those words.
+    3. just check, just test-int.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T08:19:55.217491253Z
+  text: |-
+    Result:
+    [x] crates/joy-cli/src/commands/auth.rs: one function, not_an_ai_member, says the refusal for joy auth token add, the delegation listing with a member filter and the rotation: '<id> is not an AI member: an AI member is known by its name, for example claude, and a person by an address'.
+    [x] Unit test the_refusal_says_what_an_ai_member_is_known_by; the bats case 'joy auth token add rejects non-AI member' in tests/integration/auth.bats holds the words and that no prefix is asked for.
+    [x] just check green (1593 Rust tests); just test-int green on the run before the two test lines were reworded, and auth.bats (72 cases) again after it.
+    On the way: the guard legacy_ai_name_only_in_one_place refused my first test lines, which spelled the old prefix out; they now name the old sentence's words instead.
