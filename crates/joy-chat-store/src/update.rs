@@ -99,3 +99,97 @@ pub fn sync(root: &Path, reach: Reach) -> Vec<(&'static str, RefreshRow)> {
     }
     out
 }
+
+/// What [`sync_and_commit`] did.
+pub struct Synced {
+    /// The rows of [`sync`].
+    pub rows: Vec<(&'static str, RefreshRow)>,
+    /// What the sync changed in the checkout.
+    pub changed: joy_core::update::Changed,
+    /// What became of those changes.
+    pub commit: joy_core::git_ops::UpdateCommit,
+}
+
+/// [`sync`], and what it changed goes into one commit (JOY-02CF-EE).
+///
+/// For a host that opens a project for a person and has nobody to ask,
+/// the desktop and the platform: `identity` names the person who opened
+/// it, in the event-log form, and the commit is signed for them. What a
+/// sync leaves uncommitted in a checkout is taken for a leftover, and on
+/// a server it rides out in the commit of whatever a person does next.
+pub fn sync_and_commit(root: &Path, reach: Reach, identity: &str) -> Synced {
+    let before = joy_core::update::before(root);
+    let rows = sync(root, reach);
+    let changed = joy_core::update::changed_since(root, &before);
+    let commit = joy_core::git_ops::commit_project_update(root, &changed, identity);
+    Synced {
+        rows,
+        changed,
+        commit,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use joy_core::git_ops::UpdateCommit;
+    use joy_core::vcs::forge;
+
+    /// A project whose files are all committed and whose clone was last
+    /// synced by an older joy.
+    fn a_committed_project() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        joy_core::init::init(joy_core::init::InitOptions {
+            name: Some("Synced".into()),
+            acronym: Some("SY".into()),
+            user: Some("horst@example.com".into()),
+            ..joy_core::init::InitOptions::new(dir.path().to_path_buf())
+        })
+        .unwrap();
+        sync(dir.path(), Reach::Checkout);
+        forge::commit_everything(dir.path(), "init [no-item]", "m", "m@e.c").unwrap();
+        joy_core::init::set_last_sync_version(dir.path(), "0.0.1").unwrap();
+        dir
+    }
+
+    /// The host that opens a project gets the sync's changes as one
+    /// commit, signed for the person who opened it, and their own files
+    /// stay out of it (JOY-02CF-EE).
+    #[test]
+    fn opening_a_project_commits_what_the_sync_changed() {
+        let dir = a_committed_project();
+        let root = dir.path();
+        // an older joy's SECURITY.md, and a file of the person's
+        std::fs::write(root.join("SECURITY.md"), "what an older joy wrote\n").unwrap();
+        forge::commit_everything(root, "older [no-item]", "m", "m@e.c").unwrap();
+        std::fs::write(root.join("notes.txt"), "mine").unwrap();
+
+        let synced = sync_and_commit(root, Reach::Checkout, "horst@example.com");
+        let UpdateCommit::Written(id) = &synced.commit else {
+            panic!("no commit: {:?}", synced.commit);
+        };
+        assert!(synced.changed.paths.contains(&"SECURITY.md".to_string()));
+        assert_eq!(synced.changed.from.as_deref(), Some("0.0.1"));
+
+        let repo = git2::Repository::open(root).unwrap();
+        let commit = repo.head().unwrap().peel_to_commit().unwrap();
+        assert_eq!(&commit.id().to_string(), id);
+        assert_eq!(commit.author().email().ok(), Some("horst@example.com"));
+        let message = commit.message().unwrap_or_default().to_string();
+        let subject = message.lines().next().unwrap_or_default();
+        assert!(
+            subject.starts_with("chore(joy): project files updated from joy 0.0.1 to joy "),
+            "{subject}"
+        );
+        assert!(commit.tree().unwrap().get_name("notes.txt").is_none());
+        assert_eq!(
+            forge::checkout_picture(root).keys().collect::<Vec<_>>(),
+            ["notes.txt"],
+            "nothing of the sync is left in the checkout"
+        );
+
+        // opened again: nothing changed, nothing committed
+        let again = sync_and_commit(root, Reach::Checkout, "horst@example.com");
+        assert_eq!(again.commit, UpdateCommit::Nothing);
+    }
+}

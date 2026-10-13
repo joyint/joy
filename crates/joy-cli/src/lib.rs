@@ -375,9 +375,34 @@ fn auto_sync_repo() {
             // update + stamp marker). Each routine prints its own
             // summary; the trailing one-liner ties them together so the
             // user / AI can spot the version transition.
+            let before = joy_core::update::before(&root);
             let _ = commands::update::run_full_sync(&root, false);
+            // What the sync changed is committed without a question:
+            // changes nobody remembers making get thrown away, and then
+            // nobody knows why something stopped working (JOY-02CF-EE).
+            use joy_core::git_ops::UpdateCommit;
+            let changed = joy_core::update::changed_since(&root, &before);
+            let commit = joy_core::git_ops::commit_project_update(
+                &root,
+                &changed,
+                &commands::update::acting(&root),
+            );
             let prev = recorded.unwrap_or_else(|| "(never)".to_string());
-            eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
+            match &commit {
+                UpdateCommit::Written(id) => eprintln!(
+                    "joy {current}: synced this repo (previous marker: {prev}), committed as {}.",
+                    commands::update::short_id(id)
+                ),
+                _ => eprintln!("joy {current}: synced this repo (previous marker: {prev})."),
+            }
+            if !matches!(commit, UpdateCommit::Written(_)) {
+                if let Some(line) = commands::update::commit_line(&commit) {
+                    eprintln!("  {line}");
+                }
+            }
+            if let Some(line) = commands::update::left_line(&changed) {
+                eprintln!("  {line}");
+            }
         }
     }
 }

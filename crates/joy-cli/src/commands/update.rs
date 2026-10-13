@@ -50,12 +50,14 @@ const SECTION_ORDER: &[&str] = &[
 #[derive(Args)]
 #[command(after_help = "\
 Updates the joy binary (when distributed via cargo-dist / GitHub
-Releases) and synchronises the current repo's joy-managed state.
+Releases) and synchronises the current repo's joy-managed state. What
+the sync changed goes into one commit; at a terminal joy asks first.
 
 Examples:
   joy update                Update binary, then sync this repo
   joy update --check        Check whether anything would change
-  joy update --no-binary    Sync only, do not touch the binary")]
+  joy update --no-binary    Sync only, do not touch the binary
+  joy update --force        Commit what the sync changed without asking")]
 pub struct UpdateArgs {
     /// Read-only audit; exit 2 if stale.
     #[arg(long)]
@@ -64,6 +66,10 @@ pub struct UpdateArgs {
     /// Skip the binary self-update; only run the in-repo sync.
     #[arg(long = "no-binary")]
     pub no_binary: bool,
+
+    /// Commit what the sync changed without asking.
+    #[arg(long)]
+    pub force: bool,
 }
 
 pub fn run(args: UpdateArgs) -> Result<()> {
@@ -129,6 +135,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             );
             return Ok(());
         }
+        let before = joy_core::update::before(&root);
         let mut changed = run_full_sync(&root, true);
         // The one moment a project from before the member files is
         // brought over (JOY-02CC-C1): a person asked for the update.
@@ -163,6 +170,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             n => format!("Joy update complete -- {n} artefacts refreshed."),
         };
         println!("{}", color::footer(&summary));
+        commit_what_changed(&root, &before, args.force);
     } else {
         println!();
         println!(
@@ -176,6 +184,84 @@ pub fn run(args: UpdateArgs) -> Result<()> {
     crate::ps_alias::offer_alias_fix();
 
     Ok(())
+}
+
+/// The acting member in the event-log form, or nothing when this machine
+/// names nobody: joy-core then asks the project who acts in the checkout.
+pub(crate) fn acting(root: &Path) -> String {
+    joy_core::identity::resolve_identity(root)
+        .map(|identity| identity.log_user())
+        .unwrap_or_default()
+}
+
+/// Whether `joy update` asks before it commits: only a person at a
+/// terminal can be asked, and `--force` says the answer in advance.
+fn asks_first(force: bool, at_a_terminal: bool) -> bool {
+    !force && at_a_terminal
+}
+
+/// What a person typed after `[Y/n]`: an empty line is the default.
+fn says_yes(answer: &str) -> bool {
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "" | "y" | "yes"
+    )
+}
+
+/// One line for what became of a sync's changes, `None` when there is
+/// nothing to say.
+pub(crate) fn commit_line(commit: &joy_core::git_ops::UpdateCommit) -> Option<String> {
+    use joy_core::git_ops::UpdateCommit;
+    match commit {
+        UpdateCommit::Written(id) => Some(format!("Committed as {}.", short_id(id))),
+        UpdateCommit::Nothing => None,
+        UpdateCommit::Off => Some("Not committed: workflow.auto-git is off.".to_string()),
+        UpdateCommit::Left(why) => Some(format!("Not committed: {why}")),
+    }
+}
+
+/// A commit id the way git abbreviates it.
+pub(crate) fn short_id(id: &str) -> &str {
+    id.get(..7).unwrap_or(id)
+}
+
+/// One line for the files a sync wrote into although they already
+/// carried a person's uncommitted changes.
+pub(crate) fn left_line(changed: &joy_core::update::Changed) -> Option<String> {
+    if changed.left.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Left for you to commit, changed before the sync: {}",
+        changed.left.join(", ")
+    ))
+}
+
+/// Commit what this update changed in the checkout as one commit
+/// (JOY-02CF-EE). A person at a terminal is asked first.
+fn commit_what_changed(root: &Path, before: &joy_core::update::Before, force: bool) {
+    use std::io::{IsTerminal, Write};
+    let changed = joy_core::update::changed_since(root, before);
+    if let Some(line) = left_line(&changed) {
+        println!("{}", color::warning(&line));
+    }
+    if changed.paths.is_empty() {
+        return;
+    }
+    let at_a_terminal = std::io::stdin().is_terminal() && std::io::stdout().is_terminal();
+    if asks_first(force, at_a_terminal) {
+        print!("Commit Joy project updates? [Y/n] ");
+        let _ = std::io::stdout().flush();
+        let mut answer = String::new();
+        if std::io::stdin().read_line(&mut answer).is_err() || !says_yes(&answer) {
+            println!("{}", color::inactive("Not committed."));
+            return;
+        }
+    }
+    let commit = joy_core::git_ops::commit_project_update(root, &changed, &acting(root));
+    if let Some(line) = commit_line(&commit) {
+        println!("{line}");
+    }
 }
 
 /// Iterate the update registry, refreshing every item. Prints joy-style
@@ -359,6 +445,16 @@ struct UpdatePayload {
     /// `joy update` after the binary swap above takes effect.
     #[serde(skip_serializing_if = "Option::is_none")]
     downgrade_blocked: Option<String>,
+    /// The commit that carries what the sync changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    committed: Option<String>,
+    /// Why the sync's changes are not committed, when they are not.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    not_committed: Option<String>,
+    /// Files the sync wrote into that already carried a person's
+    /// uncommitted changes; they are left to that person.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    left_uncommitted: Vec<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -539,6 +635,9 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
     let mut refreshed_count = 0u32;
     let mut repo_root: Option<String> = None;
     let mut downgrade_blocked: Option<String> = None;
+    let mut committed: Option<String> = None;
+    let mut not_committed: Option<String> = None;
+    let mut left_uncommitted: Vec<String> = Vec::new();
 
     if let Some(root) = project_root {
         repo_root = Some(root.display().to_string());
@@ -548,6 +647,7 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
             // marker so callers can prompt the user.
             downgrade_blocked = Some(marker);
         } else {
+            let before = joy_core::update::before(&root);
             let items = update_registry::all();
             if let MembersBroughtOver::Moved = crate::auth_gate::bring_members_over(&root) {
                 refreshed_count += 1;
@@ -581,6 +681,17 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
                     });
                 }
             }
+            // Nobody can be asked through an envelope: what the sync
+            // changed is committed (JOY-02CF-EE).
+            use joy_core::git_ops::UpdateCommit;
+            let changed = joy_core::update::changed_since(&root, &before);
+            match joy_core::git_ops::commit_project_update(&root, &changed, &acting(&root)) {
+                UpdateCommit::Written(id) => committed = Some(id),
+                UpdateCommit::Nothing => {}
+                UpdateCommit::Off => not_committed = Some("workflow.auto-git is off".into()),
+                UpdateCommit::Left(why) => not_committed = Some(why),
+            }
+            left_uncommitted = changed.left;
         }
     }
 
@@ -590,6 +701,9 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
         sections,
         refreshed_count,
         downgrade_blocked,
+        committed,
+        not_committed,
+        left_uncommitted,
     })?;
     Ok(())
 }
@@ -738,6 +852,53 @@ mod tests {
     /// A current `joy` without `joy-forge` is not "up to date" for someone
     /// whose release just failed: the row names the gap and the command,
     /// and says nothing while a connector is there.
+    /// `joy update` asks only a person at a terminal, and `--force` is
+    /// the answer said in advance (JOY-02CF-EE).
+    #[test]
+    fn the_question_is_for_a_person_at_a_terminal_without_force() {
+        assert!(asks_first(false, true));
+        assert!(!asks_first(true, true), "--force never asks");
+        assert!(!asks_first(false, false), "nobody there to ask");
+        assert!(!asks_first(true, false));
+    }
+
+    #[test]
+    fn an_empty_line_is_yes_and_only_a_no_declines() {
+        for yes in ["", "\n", "y\n", "Y\n", "yes\n", "  y  \n"] {
+            assert!(says_yes(yes), "{yes:?}");
+        }
+        for no in ["n\n", "N\n", "no\n", "later\n"] {
+            assert!(!says_yes(no), "{no:?}");
+        }
+    }
+
+    #[test]
+    fn what_became_of_the_changes_is_one_line() {
+        use joy_core::git_ops::UpdateCommit;
+        assert_eq!(
+            commit_line(&UpdateCommit::Written("0123456789abcdef".into())).as_deref(),
+            Some("Committed as 0123456.")
+        );
+        assert_eq!(commit_line(&UpdateCommit::Nothing), None);
+        assert_eq!(
+            commit_line(&UpdateCommit::Off).as_deref(),
+            Some("Not committed: workflow.auto-git is off.")
+        );
+        assert_eq!(
+            commit_line(&UpdateCommit::Left("nobody acts here".into())).as_deref(),
+            Some("Not committed: nobody acts here")
+        );
+        let changed = joy_core::update::Changed {
+            left: vec![".gitignore".into(), "SECURITY.md".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            left_line(&changed).as_deref(),
+            Some("Left for you to commit, changed before the sync: .gitignore, SECURITY.md")
+        );
+        assert_eq!(left_line(&joy_core::update::Changed::default()), None);
+    }
+
     #[test]
     fn a_missing_connector_is_named_with_the_command_that_restores_it() {
         assert_eq!(connector_row(false, None), None);
