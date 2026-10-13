@@ -29,10 +29,9 @@ the member's passphrase (combined with the public kdf_nonce) or with
 the externally held recovery key. The wrap KEKs are derived via
 Argon2id (memory-hard KDF, RFC 9106), giving strong brute-force
 resistance even if the encrypted file leaks. No minimum is enforced on
-the passphrase; what the CLI shows while a new one is typed is the
-zxcvbn estimate of the `joy-passphrase` crate (crypt workspace), in bits
-and five levels. The threat model is
-documented in the
+the passphrase; what joy shows while a new one is typed is the zxcvbn
+estimate of the `joy-passphrase` crate, in bits and five levels. The
+threat model is documented in the
 [Joy authentication docs](https://joyint.com/joy/docs/features/)
 (the "Authentication and Onboarding" section).
 
