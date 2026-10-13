@@ -554,6 +554,14 @@ release bump="patch" prerelease="":
         git restore Cargo.toml crates/ Cargo.lock
         exit 1
     fi
+    # The record commits only what joy wrote, the version files. The lock
+    # file refreshed for the bumped version goes in before it: left
+    # uncommitted behind the tag, it keeps this checkout changed, and the
+    # umbrella release that follows stops on that.
+    if ! git diff --quiet Cargo.lock; then
+        git add Cargo.lock
+        git commit --quiet -m "chore: Cargo.lock for the release [no-item]"
+    fi
     joy release record "{{bump}}" "{{prerelease}}"
     tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "unknown")
     echo "Tagged ${tag} locally. Run 'just publish' to ship."
