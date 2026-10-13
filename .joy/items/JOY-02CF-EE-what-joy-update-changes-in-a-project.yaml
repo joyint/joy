@@ -1,15 +1,17 @@
 id: JOY-02CF-EE
 title: What joy update changes in a project is committed as one commit
 type: story
-status: new
+status: review
 priority: high
+assignees:
+- member: claude
 capabilities:
 - plan
 - implement
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.100090699Z
-updated: 2026-10-13T06:03:13.844021098Z
+updated: 2026-10-13T06:28:18.314887063Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   When a newer joy brings a project up to date it rewrites the files it manages: the ignore and attribute blocks, the CI merge file, the hooks, SECURITY.md, the defaults, the project file and, with joy update, the member files. Nobody commits them. They lie in the checkout as changes nobody remembers making, get taken for leftovers and are discarded, and then something stops working with no trace of why.
@@ -36,3 +38,18 @@ comments:
     6. joy-chat-store gets the same step beside its sync, so the desktop and the platform call one function when a project is opened; their call sites are items in their own projects.
     7. Tests: unit tests in joy-core for the picture, the scope of the commit, the three messages, the path left alone, auto-git off and the trailer; a scripted answer for the question; bats cases in update_command.bats for --force, for a run without a terminal and for the silent sync after a changed marker.
     8. Help of joy update and the two Tutorial copies say it in a line each, without item ids.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T06:28:18.260783719Z
+  text: |-
+    Result:
+    [x] joy-core vcs: checkout_picture, every path that differs from HEAD with what it holds; two pictures around a write name what the write changed.
+    [x] joy-core update: before() and changed_since() tell a sync's changes from what lay in the checkout before, and keep the clone's marker from before the sync.
+    [x] joy-core git_ops: commit_project_update writes ONE commit with exactly those paths, signed for the acting member, with the Delegated-By trailer for an AI member; project_update_message gives 'chore(joy): project files updated from joy X to joy Y [no-item]' and a general sentence, with 'set up for joy Y' without a marker and 'refreshed by joy Y' at an unchanged version.
+    [x] joy update: after the table 'Commit Joy project updates? [Y/n]' at a terminal; --force, a run without a terminal and --json commit without asking. The envelope names the commit (committed), or why there is none (not_committed), and the files left (left_uncommitted).
+    [x] The sync on the first call after a version change commits without asking; its line ends with ', committed as <id>.'
+    [x] joy-chat-store: sync_and_commit, the one call for a host that opens a project for a person.
+    [x] Left alone, as planned: a file outside .joy/ that already carried uncommitted changes is named and not committed; workflow.auto-git off commits nothing; a checkout where joy cannot name who acts keeps the changes and says why.
+    [x] Help of joy update and both Tutorial copies say it; no item ids in them.
+    [x] Tests: joy-core two_pictures_name_what_was_written_between_them, what_a_sync_changed_is_told_from_what_lay_there_before, a_syncs_changes_become_one_commit_with_exactly_those_paths, an_ai_members_commit_names_who_delegated, nothing_is_committed_where_joy_may_not_or_cannot, the_message_says_the_version_move_in_general_words; joy-chat-store opening_a_project_commits_what_the_sync_changed; joy-cli three for the question and the lines; six cases in tests/integration/update_command.bats. The question itself tried by hand at a pseudo terminal: n leaves the change, Enter commits.
+    [x] just check green (1591 Rust tests), just test-int green (645 bats cases) against this build.
+    Still owed, outside this repository: the desktop client and the platform call sync and commit nothing. Each needs an item in its own project (JAPP, JP) that switches its call to sync_and_commit with the person who opened the project; on the platform the sync runs in the fetch lane, which knows the forge credential and not the member, so the opener has to be handed through.
