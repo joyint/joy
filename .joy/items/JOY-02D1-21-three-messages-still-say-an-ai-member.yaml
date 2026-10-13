@@ -1,7 +1,7 @@
 id: JOY-02D1-21
 title: 'Three messages still say an AI member must start with ai:'
 type: bug
-status: review
+status: closed
 priority: low
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-13T05:59:27.272510839Z
-updated: 2026-10-13T08:19:55.323975208Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-13T13:32:44.480597309Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Since an AI member is known by its name (claude, not ai:claude@joy), is_ai_member accepts a bare name. joy auth token add, the token listing with a member filter and the member redemption path still refuse with "<name> is not an AI member (must start with ai:)". The check is right, the sentence is not: a person who types an address is told to use a prefix that no longer exists.
 
