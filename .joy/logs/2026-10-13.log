@@ -39,3 +39,4 @@
 2026-10-13T13:32:46.792Z JOY-02CD-3E item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-10-13T13:32:47.575Z JOY-02CC-C1 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-10-13T14:46:52.944Z JOY-02D4-5A item.created [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-13T21:32:31.082Z v0.23.0 release.created [horst.schwarz@joydev.com]
