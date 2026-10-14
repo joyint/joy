@@ -140,75 +140,9 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     })
 }
 
-/// What [`bring_members_over`] did.
-pub enum MembersBroughtOver {
-    /// The project keeps its members in files already, or has none.
-    NothingToDo,
-    /// Done now: one file per member, signed by the person here.
-    Moved,
-    /// Still to do: nobody is signed in here and nobody could be asked
-    /// (no terminal, no passphrase given), or the passphrase was wrong.
-    WaitsForSignIn,
-}
-
-/// The one sentence `joy update` says before it asks for the passphrase.
-const WHY_THE_PASSPHRASE: &str = "Members move to their own files; your passphrase signs that.";
-
-/// Bring a project from before the member files over (JI-019D-46). ONLY
-/// `joy update` calls this (JOY-02CC-C1): it changes what an older joy
-/// can read, so it happens when a person asks for an update, never as a
-/// side effect of a sign-in or of any other command. The key that signs
-/// what the AI members may do is the one in the session of the person
-/// signed in at this terminal. Where nobody is signed in, `joy update`
-/// asks for the passphrase itself, with one sentence that says why, and
-/// signs in with it the way `joy auth` does (operator, 2026-10-14: an
-/// update, then `joy auth`, then the update again was nobody's idea of
-/// a way). It asks only where somebody can answer: at a terminal, or
-/// with a passphrase given. Otherwise the project stays as it is and
-/// keeps working as it is.
-pub fn bring_members_over(root: &Path, at_a_terminal: bool) -> MembersBroughtOver {
-    use std::io::IsTerminal;
-    if !joy_core::member_migration::pending(root) {
-        return MembersBroughtOver::NothingToDo;
-    }
-    let Ok(project) = joy_core::store::load_project(root) else {
-        return MembersBroughtOver::WaitsForSignIn;
-    };
-    let Ok(member_key) = joy_core::identity::acting_human_key(root) else {
-        return MembersBroughtOver::WaitsForSignIn;
-    };
-    let keypair = match session_seed(root, &project, &member_key) {
-        Some(seed) => IdentityKeypair::from_seed(&seed),
-        None => {
-            let can_answer = at_a_terminal && std::io::stdin().is_terminal();
-            if !passphrase_given() && !can_answer {
-                return MembersBroughtOver::WaitsForSignIn;
-            }
-            if !passphrase_given() {
-                eprintln!("{WHY_THE_PASSPHRASE}");
-            }
-            match unlock(root, &project, &member_key) {
-                Ok(unlocked) => unlocked.keypair,
-                Err(e) => {
-                    eprintln!("Members not moved: {e}");
-                    return MembersBroughtOver::WaitsForSignIn;
-                }
-            }
-        }
-    };
-    match joy_core::member_migration::migrate(root, &member_key, &keypair) {
-        Ok(true) => MembersBroughtOver::Moved,
-        Ok(false) => MembersBroughtOver::WaitsForSignIn,
-        Err(e) => {
-            eprintln!("Warning: this project's members could not be moved to their own files: {e}");
-            MembersBroughtOver::WaitsForSignIn
-        }
-    }
-}
-
 /// The seed cached in this terminal's session, if that session is the
 /// acting member's and valid.
-fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
+pub(crate) fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
     let identity = joy_core::identity::resolve_identity(root).ok()?;
     if !identity.authenticated || identity.member.id() != member_key {
         return None;
