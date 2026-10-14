@@ -775,3 +775,46 @@ publish-crates: sync-tutorial
 # Publish workspace crates, then push + forge release.
 publish: publish-crates
     joy release publish
+
+# Push the AUR package joyint-joy-bin for the published release <version>
+# (with or without the v): the template in packaging/aur takes the
+# release's checksums, is test-built and goes to the AUR with its
+# .SRCINFO. Arch only; the release's AUR job (.github/workflows/aur.yml)
+# runs it in an Arch container with the AUR key.
+publish-aur version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in makepkg curl git; do command -v "$t" >/dev/null || { echo "$t not found: the AUR package is built on Arch"; exit 1; }; done
+    version="{{version}}"
+    version="${version#v}"
+    pkg=joyint-joy-bin
+    out="{{source_directory()}}/target/aur/$pkg"
+    rm -rf "$out"; mkdir -p "$out"
+    base="https://github.com/joyint/joy/releases/download/v$version"
+    sha() {
+        curl -fsSL --proto '=https' --retry 6 --retry-delay 20 --retry-all-errors \
+            "$base/joy-cli-$1-unknown-linux-gnu.tar.xz.sha256" | cut -d' ' -f1
+    }
+    x86_64=$(sha x86_64 || true)
+    aarch64=$(sha aarch64 || true)
+    if [ ${#x86_64} -ne 64 ] || [ ${#aarch64} -ne 64 ]; then
+        echo "no published checksums for v$version: publish the release first"
+        exit 1
+    fi
+    sed -e "s|@PKGVER@|${version//-/_}|g" -e "s|@VER@|$version|g" \
+        -e "s|@SHA256_X86_64@|$x86_64|" -e "s|@SHA256_AARCH64@|$aarch64|" \
+        "{{source_directory()}}/packaging/aur/$pkg/PKGBUILD" > "$out/PKGBUILD"
+    cd "$out"
+    makepkg --printsrcinfo > .SRCINFO
+    # --nodeps: nothing is built, the release archive is repacked; the
+    # libraries it runs on are needed where it is installed, not here.
+    makepkg --force --cleanbuild --noconfirm --nodeps
+    repo=$(mktemp -d)
+    trap 'rm -rf "$repo"' EXIT
+    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$repo"
+    cp PKGBUILD .SRCINFO "$repo/"
+    cd "$repo"
+    git add PKGBUILD .SRCINFO
+    git diff --cached --quiet && { echo "AUR already at $version"; exit 0; }
+    git commit -m "Update to $version"
+    git push origin HEAD:master

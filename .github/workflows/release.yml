@@ -650,3 +650,15 @@ jobs:
           # changes before creating the submission branch. The default
           # GITHUB_TOKEN cannot push to a fork in another org.
           token: ${{ secrets.WINGET_TOKEN }}
+
+  # Arch Linux: the AUR package follows the published release
+  # (.github/workflows/aur.yml); a prerelease is not pushed.
+  aur:
+    needs:
+      - plan
+      - host
+    if: ${{ always() && needs.host.result == 'success' && !fromJson(needs.host.outputs.val).announcement_is_prerelease }}
+    uses: ./.github/workflows/aur.yml
+    with:
+      version: ${{ needs.plan.outputs.tag }}
+    secrets: inherit
