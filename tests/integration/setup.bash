@@ -14,6 +14,31 @@ if [ ! -x "$JOY_BIN" ]; then
 fi
 export PATH="$(dirname "$JOY_BIN"):$PATH"
 
+# A case sees what CI sees: no terminal behind it. Started from one, joy
+# asks that terminal for its width and cuts its tables to it, so a title a
+# case looks for is gone in a narrow window, and it asks there for a
+# passphrase where a case expects a refusal, and waits. So `joy` on the
+# path of a case is a few lines that start the binary in a session of its
+# own, which has no terminal. A case that wants one says so (pty_run).
+# Where there is no setsid (macOS), nothing changes.
+if command -v setsid >/dev/null 2>&1; then
+    JOY_NO_TERMINAL_DIR="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/joy-test-no-terminal"
+    mkdir -p "$JOY_NO_TERMINAL_DIR"
+    if [ ! -x "$JOY_NO_TERMINAL_DIR/joy" ]; then
+        {
+            printf '#!/bin/sh\n'
+            printf 'if [ -n "${TEST_WANTS_TERMINAL:-}" ]; then exec "%s" "$@"; fi\n' "$JOY_BIN"
+            # Its input neither: a terminal as standard input is taken as
+            # someone who can be asked.
+            printf 'if [ -t 0 ]; then exec setsid -w "%s" "$@" < /dev/null; fi\n' "$JOY_BIN"
+            printf 'exec setsid -w "%s" "$@"\n' "$JOY_BIN"
+        } > "$JOY_NO_TERMINAL_DIR/joy.$$"
+        chmod 755 "$JOY_NO_TERMINAL_DIR/joy.$$"
+        mv -f "$JOY_NO_TERMINAL_DIR/joy.$$" "$JOY_NO_TERMINAL_DIR/joy"
+    fi
+    export PATH="$JOY_NO_TERMINAL_DIR:$PATH"
+fi
+
 # A test inherits nothing of the developer's shell and session
 # (JOY-02BB-C7), the same rule crates/joy-test-env holds for the Rust
 # tests: no JOY_ variable (JOY_BIN is the suite's own, which binary to
@@ -198,7 +223,7 @@ sed_inplace() {
 # Run a shell command inside a real PTY, portably across BSD (macOS)
 # and util-linux `script` flavours.
 pty_run() {
-    local cmd="$1"
+    local cmd="export TEST_WANTS_TERMINAL=1; $1"
     if script --version 2>&1 | grep -q util-linux; then
         script -qc "$cmd" /dev/null
     else
