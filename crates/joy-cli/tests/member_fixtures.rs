@@ -241,7 +241,7 @@ fn still_works(fixture: &str, host: Host) {
     let waits = project.joy(&["update", "--no-binary"]);
     assert!(waits.status.success(), "{ctx}: {}", text(&waits));
     assert!(
-        text(&waits).contains("sign in with joy auth, then run joy update"),
+        text(&waits).contains("run joy update at a terminal, or with --passphrase"),
         "{ctx}: {}",
         text(&waits)
     );
@@ -420,6 +420,51 @@ fn still_works(fixture: &str, host: Host) {
         "{ctx}: {}",
         text(&ls)
     );
+}
+
+/// `joy update` with nobody signed in asks for the passphrase itself and
+/// brings the project over in the same run (operator, 2026-10-14: an
+/// update, then `joy auth`, then the update again was nobody's idea of
+/// a way). Here the passphrase is given, the way a terminal would hand
+/// it over.
+#[test]
+fn joy_update_asks_for_the_passphrase_and_brings_the_project_over_at_once() {
+    let project = Project::clone_of("open");
+    let update = project.joy(&[
+        "update",
+        "--no-binary",
+        "--user",
+        FOUNDER,
+        "--passphrase",
+        FOUNDER_PASS,
+    ]);
+    assert!(update.status.success(), "{}", text(&update));
+    assert!(
+        text(&update).contains("moved to their own files"),
+        "{}",
+        text(&update)
+    );
+    let files = std::fs::read_dir(project.root.join(".joy/members"))
+        .map(|dir| dir.count())
+        .unwrap_or(0);
+    assert_eq!(files, 3, "three member files");
+    // a wrong passphrase moves nothing and says so
+    let other = Project::clone_of("open");
+    let wrong = other.joy(&[
+        "update",
+        "--no-binary",
+        "--user",
+        FOUNDER,
+        "--passphrase",
+        "not the passphrase at all",
+    ]);
+    assert!(wrong.status.success(), "{}", text(&wrong));
+    assert!(
+        text(&wrong).contains("Members not moved"),
+        "{}",
+        text(&wrong)
+    );
+    assert!(!other.root.join(".joy/members").exists());
 }
 
 #[test]

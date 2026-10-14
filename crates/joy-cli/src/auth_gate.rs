@@ -140,50 +140,9 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
     })
 }
 
-/// What [`bring_members_over`] did.
-pub enum MembersBroughtOver {
-    /// The project keeps its members in files already, or has none.
-    NothingToDo,
-    /// Done now: one file per member, signed by the person here.
-    Moved,
-    /// Still to do, and nobody is signed in here whose key could sign.
-    WaitsForSignIn,
-}
-
-/// Bring a project from before the member files over (JI-019D-46). ONLY
-/// `joy update` calls this (JOY-02CC-C1): it changes what an older joy
-/// can read, so it happens when a person asks for an update, never as a
-/// side effect of a sign-in or of any other command. The key that signs
-/// what the AI members may do is the one in the session of the person
-/// signed in at this terminal; where there is none, the project stays as
-/// it is and keeps working as it is.
-pub fn bring_members_over(root: &Path) -> MembersBroughtOver {
-    if !joy_core::member_migration::pending(root) {
-        return MembersBroughtOver::NothingToDo;
-    }
-    let seed = joy_core::store::load_project(root)
-        .ok()
-        .and_then(|project| {
-            let member_key = joy_core::identity::acting_human_key(root).ok()?;
-            Some((session_seed(root, &project, &member_key)?, member_key))
-        });
-    let Some((seed, member_key)) = seed else {
-        return MembersBroughtOver::WaitsForSignIn;
-    };
-    let keypair = IdentityKeypair::from_seed(&seed);
-    match joy_core::member_migration::migrate(root, &member_key, &keypair) {
-        Ok(true) => MembersBroughtOver::Moved,
-        Ok(false) => MembersBroughtOver::WaitsForSignIn,
-        Err(e) => {
-            eprintln!("Warning: this project's members could not be moved to their own files: {e}");
-            MembersBroughtOver::WaitsForSignIn
-        }
-    }
-}
-
 /// The seed cached in this terminal's session, if that session is the
 /// acting member's and valid.
-fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
+pub(crate) fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
     let identity = joy_core::identity::resolve_identity(root).ok()?;
     if !identity.authenticated || identity.member.id() != member_key {
         return None;

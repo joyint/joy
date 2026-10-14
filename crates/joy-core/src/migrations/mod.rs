@@ -19,11 +19,18 @@
 //! - [`repo`]: filesystem-aware, one-shot reconciles run at sync time.
 //! - [`ai_member_name`]: how the name of an AI member is read, in every
 //!   file, chat, token and typed word alike.
+//! - [`m_2026_10_member_files`]: the members from project.yaml into files
+//!   of their own (JI-019D-46). The one migration that needs a person's
+//!   key, so it is not applied on read or at sync time: `joy update`
+//!   runs it, and joy-cli's own `migrations` module holds the part that
+//!   asks for the passphrase. Removing it is deleting the two modules of
+//!   that name and their calls in `joy update`.
 
 /// Reading the name of an AI member, whichever form it was written or
 /// typed in: THE one way, for every crate and every host.
 pub use joy_model::migrations::ai_member_name;
 
 pub mod item_yaml;
+pub mod m_2026_10_member_files;
 pub mod project_yaml;
 pub mod repo;

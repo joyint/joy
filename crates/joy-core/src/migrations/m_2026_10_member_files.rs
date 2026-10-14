@@ -1,7 +1,9 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Bringing a project from before the member files over (JI-019D-46).
+//! Bringing a project from before the member files over (JI-019D-46),
+//! a migration under ADR JOY-0244-9E: delete this module and joy-cli's
+//! module of the same name once no project from before is left.
 //!
 //! Such a project keeps its whole member map in project.yaml, writes an
 //! AI member by its legacy form ([`joy_model::migrations::ai_member_name`]), and has a

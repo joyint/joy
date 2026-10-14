@@ -17,6 +17,7 @@ mod effort;
 mod forge;
 mod member_names;
 mod member_resolver;
+mod migrations;
 mod output;
 mod passphrase_meter;
 mod prompt;
