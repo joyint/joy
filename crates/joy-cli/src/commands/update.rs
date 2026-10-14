@@ -29,7 +29,8 @@ use crate::update_registry::{self, RowMark, UpdateItem};
 /// The members of a project from before the member files (JI-019D-46).
 const SECTION_MEMBERS: &str = "Members";
 const MEMBERS_MOVED: &str = "moved to their own files";
-const MEMBERS_WAIT: &str = "still in project.yaml: sign in with joy auth, then run joy update";
+const MEMBERS_WAIT: &str =
+    "still in project.yaml: run joy update at a terminal, or with --passphrase";
 
 /// Cargo-dist installer writes the receipt under this name (matches
 /// the joy-cli Cargo package name, not the binary name `joy`).
@@ -139,7 +140,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         let mut changed = run_full_sync(&root, true);
         // The one moment a project from before the member files is
         // brought over (JOY-02CC-C1): a person asked for the update.
-        match crate::auth_gate::bring_members_over(&root) {
+        match crate::auth_gate::bring_members_over(&root, true) {
             MembersBroughtOver::NothingToDo => {}
             MembersBroughtOver::Moved => {
                 changed += 1;
@@ -649,7 +650,7 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
         } else {
             let before = joy_core::update::before(&root);
             let items = update_registry::all();
-            if let MembersBroughtOver::Moved = crate::auth_gate::bring_members_over(&root) {
+            if let MembersBroughtOver::Moved = crate::auth_gate::bring_members_over(&root, false) {
                 refreshed_count += 1;
                 sections.push(UpdateSection {
                     name: SECTION_MEMBERS,
