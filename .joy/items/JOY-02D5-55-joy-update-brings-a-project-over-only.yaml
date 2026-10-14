@@ -1,7 +1,7 @@
 id: JOY-02D5-55
 title: joy update brings a project over only when somebody signed in before
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-14T04:54:15.737528378Z
-updated: 2026-10-14T05:06:35.420637692Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-14T05:50:30.868097023Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator, 2026-10-14, with joy 0.23: joy update, then joy auth, and the members were still in project.yaml; only a second joy update moved them. JOY-02CC-C1 made joy update the one moment a project is brought over, but only with a session already standing; without one it printed a row and moved nothing. Since the platform and the desktop no longer bring a project over, a project only ever used there never moves at all. Wanted: joy update asks for the passphrase itself when nobody is signed in, with one short sentence that says why, signs in with it as joy auth does, and brings the project over in the same run. It asks only where somebody can answer: at a terminal, or with --passphrase given.'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
