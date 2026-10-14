@@ -56,6 +56,12 @@ Windows:
 winget install -s winget joyint.joy
 ```
 
+Arch Linux (AUR):
+
+```sh
+yay -S joyint-joy-bin
+```
+
 From source:
 
 ```sh
@@ -69,7 +75,7 @@ cargo install joy-cli
 irm get.joyint.com/joy.ps1 | iex
 ```
 
-The script installers drop `joy` and its forge connector `joy-forge` into `~/.local/bin`. The Windows script also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc). A winget install is managed by winget and updates with `winget upgrade`; a script install updates with `joy update`.
+The script installers drop `joy` and its forge connector `joy-forge` into `~/.local/bin`. The Windows script also adds that directory to your user PATH (no administrator rights required); on macOS / Linux add it yourself if it isn't already (`export PATH="$HOME/.local/bin:$PATH"` in your shell rc). A winget install is managed by winget and updates with `winget upgrade`, an AUR install by your AUR helper (`yay -Syu`); a script install updates with `joy update`.
 
 </details>
 
