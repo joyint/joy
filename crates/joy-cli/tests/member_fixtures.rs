@@ -411,8 +411,10 @@ fn still_works(fixture: &str, host: Host) {
         text(&add)
     );
 
-    // And the item from before is still there to be read.
-    let ls = project.joy(&["ls"]);
+    // And the item from before is still there to be read. As JSON: the
+    // table cuts a title to the width of the terminal the test is started
+    // from, and in a narrow one this title was no longer in it.
+    let ls = project.joy(&["ls", "--json"]);
     assert!(
         text(&ls).contains("A task from before the member files"),
         "{ctx}: {}",
