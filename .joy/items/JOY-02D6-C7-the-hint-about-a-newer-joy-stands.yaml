@@ -1,0 +1,22 @@
+id: JOY-02D6-C7
+title: The hint about a newer joy stands above the output and scrolls away
+type: bug
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-15T04:58:36.824789851Z
+updated: 2026-10-15T05:01:58.572477084Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: 'Operator, 2026-10-14: with an older joy in a repo a newer joy has synced, ''warning: this repo was last synced with joy X; you are running joy Y. Update joy before continuing'' is printed before the command runs, so it stands above the list of a joy ls and scrolls away with it. Wanted: the hint comes after the command''s output, the error included, so it is the last thing on the screen.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-15T04:58:36.910378834Z
+  text: 'Result: auto_sync_repo no longer prints the hint; it hands it to say_after, and main says it with say_what_waits once the command and its error, if any, are out. main prints the error itself, word for word as Rust''s own Termination did (''Error: {error:?}''), and returns the same exit codes. Test update_command.bats ''the hint about a newer joy comes after the output, where it is seen'' (joy ls, and joy show of a missing item). just check green, all 642 bats green. Takes effect from the release that carries it: a joy 0.22 in a repo synced by 0.23 still prints it on top.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-15T05:01:58.572475491Z
+  text: 'And light orange (operator): the hint is coloured with the 256-colour 215 on stderr, only where stderr is a terminal and colour is not off (color::hint_on_stderr, the same rule as stdout, asked of stderr). Without a terminal it stays plain text. just check green.'
