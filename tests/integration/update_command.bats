@@ -56,6 +56,26 @@ load setup
     [ "$stamped" != "0.0.0-stale" ]
 }
 
+@test "the hint about a newer joy comes after the output, where it is seen" {
+    # operator, 2026-10-14: the hint stood above the list of a `joy ls`
+    # and scrolled away with it
+    joy init --name "Test"
+    joy add task "the one item"
+    git add -A && git commit -m "init [no-item]" --quiet
+    git config --local joy.last-sync-version "99.0.0"
+    run joy ls
+    [ "$status" -eq 0 ]
+    [[ "${lines[0]}" != *"last synced with joy"* ]]
+    [[ "$output" == *"the one item"* ]]
+    [[ "${lines[-2]}" == *"this repo was last synced with joy 99.0.0"* ]]
+    [[ "${lines[-1]}" == *"Update joy before continuing"* ]]
+    # after an error too
+    run joy show NOPE-0000
+    [ "$status" -ne 0 ]
+    [[ "${lines[0]}" == *"item not found"* ]]
+    [[ "${lines[-1]}" == *"Update joy before continuing"* ]]
+}
+
 @test "auto-sync keeps --json stdout clean (JOY-01FF-36)" {
     joy init --name "Test"
     git add -A && git commit -m "init [no-item]" --quiet

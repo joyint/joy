@@ -8,6 +8,8 @@ use joy_core::model::config::{ColorMode, OutputConfig};
 use joy_core::model::item::{ItemType, JobFeedback, Priority, Status, Validity};
 
 static ENABLED: OnceLock<bool> = OnceLock::new();
+/// Colour for what goes to stderr: the same rule, asked of stderr.
+static STDERR_ENABLED: OnceLock<bool> = OnceLock::new();
 static EMOJI_ENABLED: OnceLock<bool> = OnceLock::new();
 static SHORT_MODE: OnceLock<bool> = OnceLock::new();
 
@@ -25,6 +27,13 @@ pub fn init(output: &OutputConfig) {
         }
     };
     let _ = ENABLED.set(color_enabled);
+    let _ = STDERR_ENABLED.set(match output.color {
+        ColorMode::Always => true,
+        ColorMode::Never => false,
+        ColorMode::Auto => {
+            std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal()
+        }
+    });
 
     let emoji_enabled = if std::env::var_os("JOY_NO_EMOJI").is_some() {
         false
@@ -553,6 +562,20 @@ pub fn success(text: &str) -> String {
 /// Wrap text in warning color (yellow).
 pub fn warning(text: &str) -> String {
     wrap(WARNING, text)
+}
+
+/// Light orange (256-colour 215) for a hint joy says on stderr after the
+/// command's output, so it stands apart from that output (operator,
+/// 2026-10-14, JOY-02D6-C7). Coloured only where stderr is a terminal and
+/// colour is not switched off.
+pub fn hint_on_stderr(text: &str) -> String {
+    let on = *STDERR_ENABLED
+        .get_or_init(|| std::env::var_os("NO_COLOR").is_none() && std::io::stderr().is_terminal());
+    if on {
+        format!("\x1b[38;5;215m{text}{RESET}")
+    } else {
+        text.to_string()
+    }
 }
 
 /// Wrap text in info color (cyan).

@@ -317,6 +317,31 @@ struct CloseShortcutArgs {
     no_items: bool,
 }
 
+/// What joy says AFTER the command's own output: a hint that must be the
+/// last thing on the screen, where it is seen (operator, 2026-10-14:
+/// "this repo was last synced with a newer joy" stood above the list of
+/// a `joy ls` and scrolled away with it). Said by [`say_what_waits`],
+/// which `main` calls once the command and its error, if any, are out.
+static SAID_AFTER: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn say_after(words: String) {
+    SAID_AFTER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(words);
+}
+
+/// Say on stderr what waited for the command's output to end.
+pub fn say_what_waits() {
+    for words in SAID_AFTER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .drain(..)
+    {
+        eprintln!("{}", color::hint_on_stderr(&words));
+    }
+}
+
 /// Detect a binary-version mismatch against the per-clone marker and,
 /// when auto-sync is enabled, run the repo sync. Best-effort: any error
 /// here is swallowed; never blocks a user-facing command.
@@ -350,10 +375,10 @@ fn auto_sync_repo() {
         .as_ref()
         .and_then(|state| state.last_sync_version.clone());
     if let Some(marker) = joy_core::update::marker_ahead(recorded.as_deref(), current) {
-        eprintln!(
+        say_after(format!(
             "warning: this repo was last synced with joy {marker}; you are running joy {current}.\n\
              Update joy before continuing to avoid downgrading repo state."
-        );
+        ));
         return;
     }
 
