@@ -6,10 +6,10 @@ priority: high
 capabilities:
 - conceive
 validity: accepted
-created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-07-11T14:28:59.397290401Z
-updated: 2026-09-01T21:00:37.783456678Z
-updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-16T21:02:19.528114515Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   DECISION: Jobs are first-class Joy items of type `job`. A job is the assignment of work (to an AI or a human) over a scope of items, governed by the standard item machinery: six statuses, transition verbs, gates, priorities, deps, description, comments. The separate `.joy/ai/jobs` record model (own status enum, own review rounds, own approve/request-changes verbs) is retired.
 
@@ -54,9 +54,12 @@ description: |-
   - Crypt: job-bound zone grants (not yet implemented) attach to the platform-held attempt/session context, never to the job item YAML.
   - Terminology: `budget` on a job is expected execution cost; `effort` stays unused on jobs rather than being re-interpreted.
 comments:
-- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-07-11T17:29:55.518990756Z
   text: 'Clarifications from the sandbox design discussion (2026-07-11, operator-approved): (1) Job agents never leave their container and never talk to the platform for writes - no ACP write back-channel; item state is written exclusively via the joy CLI (Guard/gates in-process) against a job-owned checkout of main (joywork/) inside the job workspace; code is edited in the branch worktree. (2) Agents commit their code themselves (they know when a unit is done); the platform validates after process exit (any branch commit touching .joy fails the attempt), pushes branch and .joy changes (no forge credentials in the container, completion = process exit, no polling). (3) AcceptJob refuses branches whose diff touches .joy. (4) The job branch is platform-owned and deterministic (joy/<member>/<job-id>), recorded per attempt; agents need no knowledge of it. (5) The app needs no branch switcher: review happens on the forge via the branch link from the latest attempt. (6) Enforcement lives at seams the platform owns (attempt end, merge), backend-agnostic across AgentRunner backends; container mounts may add hardening but never carry the policy (no sparse checkout - libgit2 lacks it).'
-- author: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+- author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-09-01T21:00:37.630019226Z
   text: 'Closed in the backlog sweep of 2026-09-01 (ordered by Horst): delivered. decision in force: jobs are items in CLI, platform and app.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T21:02:19.528113634Z
+  text: 'Lifecycle rules refined 2026-10-16 (operator, JOY-02D9-0F): what the platform does and what every surface shows, decided in joy_core::job_lifecycle only. new + cannot start: new -> open refused, signal blocked with the reason. open + cannot start: back to new, reason in the event log. open + can: the assignee takes it. Round ended with work: review, signal delivered. Round ended with a question in the job''s comments: review, signal question (no longer held in in-progress: nobody looks there). Round broke: review, signal failed with the error, once in the activity. Stopped by a person: as the person set it. review + answer in: the round resumes. The status bar stays the item bar; while blocked in new it offers nothing. Escalated tool requests are written as the AI would ask, with the level it needs.'

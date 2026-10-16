@@ -24,6 +24,7 @@ pub mod host;
 pub mod identity;
 pub mod init;
 pub mod items;
+pub mod job_lifecycle;
 pub mod member_files;
 pub mod member_id;
 pub mod member_ref;
