@@ -1243,6 +1243,21 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 // What I allow this AI member myself, within what the
                 // project allows it: signed with my own key, and nobody
                 // needs to hold manage for it (JI-019D-46).
+                // A project whose data is from an older joy has no place
+                // for them yet: asked here, and on a yes it is updated.
+                let grant_said = !matches!(named, NamedCapabilities::Unsaid)
+                    || !a.add_capability.is_empty()
+                    || !a.rm_capability.is_empty()
+                    || level.is_some();
+                let name = joy_core::migrations::ai_member_name::read(&key).to_string();
+                let what = if grant_said {
+                    format!("What you allow {name} yourself")
+                } else {
+                    format!("Your own model for {name}")
+                };
+                if crate::migrations::needed_for(&ctx.root, &what)? {
+                    *project = joy_core::store::load_project(&ctx.root)?;
+                }
                 let me = joy_core::identity::acting_human_key(&ctx.root)?;
                 // My own model, while the project leaves the choice to
                 // each person; empty hands it back to the tool. A model
@@ -1255,10 +1270,6 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                         Some(model.as_str()),
                     )?;
                 }
-                let grant_said = !matches!(named, NamedCapabilities::Unsaid)
-                    || !a.add_capability.is_empty()
-                    || !a.rm_capability.is_empty()
-                    || level.is_some();
                 if !grant_said {
                     joy_core::store::save_project(&ctx.root, project)?;
                     println!(
