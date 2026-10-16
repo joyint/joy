@@ -121,6 +121,26 @@ impl Project {
         }
     }
 
+    /// What a yes of the founder to the update does, with their key.
+    fn update_as_founder(&self) {
+        let loaded = joy_core::store::load_project(&self.root).unwrap();
+        let founder = loaded
+            .member_key_for_email(FOUNDER)
+            .unwrap_or_else(|| FOUNDER.to_string());
+        let member = loaded.member_by_key(&founder).expect("the founder");
+        let unlocked = joy_core::auth::unlock_identity(member, FOUNDER_PASS).unwrap();
+        let waiting = joy_core::migrations::waiting(&self.root);
+        assert_eq!(
+            waiting.map(|w| w.question()).as_deref(),
+            Some("Project data is from an older joy. Update? Everyone then needs joy 0.23+")
+        );
+        assert!(
+            joy_core::migrations::update_with(&self.root, &founder, &unlocked.keypair).unwrap(),
+            "updated"
+        );
+        assert!(joy_core::migrations::waiting(&self.root).is_none());
+    }
+
     /// Redeem the issued token and hand back the AI's session.
     fn ai_session(&self) -> String {
         let out = self.joy(&["auth", "--token", &self.token, "--json"]);
@@ -236,12 +256,12 @@ fn still_works(fixture: &str, host: Host) {
     );
     let ctx = format!("{fixture} opened as {host:?}");
 
-    // `joy update` with nobody signed in whose key could sign says what
-    // it waits for, and leaves the project as it is.
+    // `joy update` where nobody can be asked (no terminal here) says the
+    // data is from an older joy, and leaves the project as it is.
     let waits = project.joy(&["update", "--no-binary"]);
     assert!(waits.status.success(), "{ctx}: {}", text(&waits));
     assert!(
-        text(&waits).contains("run joy update at a terminal, or with --passphrase"),
+        text(&waits).contains("from an older joy, some features don't work"),
         "{ctx}: {}",
         text(&waits)
     );
@@ -312,18 +332,11 @@ fn still_works(fixture: &str, host: Host) {
     assert!(text(&shown).contains("claude"), "{ctx}: {}", text(&shown));
     assert!(!text(&shown).contains(&older), "{ctx}: {}", text(&shown));
 
-    // The founder signs in and asks for the update: now the project is
-    // brought over (JI-019D-46): one file per member, project.yaml lists
-    // them, and the AI member is known by its name.
-    let auth = project.joy(&["auth", "--user", FOUNDER, "--passphrase", FOUNDER_PASS]);
-    assert!(auth.status.success(), "{ctx}: {}", text(&auth));
-    let update = project.joy(&["update", "--no-binary"]);
-    assert!(update.status.success(), "{ctx}: {}", text(&update));
-    assert!(
-        text(&update).contains("moved to their own files"),
-        "{ctx}: {}",
-        text(&update)
-    );
+    // The founder says yes to the update (at a terminal, which
+    // `old_project_data_terminal.rs` drives): now the project is brought
+    // over (JI-019D-46): one file per member, project.yaml lists them,
+    // and the AI member is known by its name.
+    project.update_as_founder();
     let members = joy_test_env::project_text(&project.root);
     let files = std::fs::read_dir(project.root.join(".joy/members"))
         .map(|dir| dir.count())
@@ -420,51 +433,6 @@ fn still_works(fixture: &str, host: Host) {
         "{ctx}: {}",
         text(&ls)
     );
-}
-
-/// `joy update` with nobody signed in asks for the passphrase itself and
-/// brings the project over in the same run (operator, 2026-10-14: an
-/// update, then `joy auth`, then the update again was nobody's idea of
-/// a way). Here the passphrase is given, the way a terminal would hand
-/// it over.
-#[test]
-fn joy_update_asks_for_the_passphrase_and_brings_the_project_over_at_once() {
-    let project = Project::clone_of("open");
-    let update = project.joy(&[
-        "update",
-        "--no-binary",
-        "--user",
-        FOUNDER,
-        "--passphrase",
-        FOUNDER_PASS,
-    ]);
-    assert!(update.status.success(), "{}", text(&update));
-    assert!(
-        text(&update).contains("moved to their own files"),
-        "{}",
-        text(&update)
-    );
-    let files = std::fs::read_dir(project.root.join(".joy/members"))
-        .map(|dir| dir.count())
-        .unwrap_or(0);
-    assert_eq!(files, 3, "three member files");
-    // a wrong passphrase moves nothing and says so
-    let other = Project::clone_of("open");
-    let wrong = other.joy(&[
-        "update",
-        "--no-binary",
-        "--user",
-        FOUNDER,
-        "--passphrase",
-        "not the passphrase at all",
-    ]);
-    assert!(wrong.status.success(), "{}", text(&wrong));
-    assert!(
-        text(&wrong).contains("Members not moved"),
-        "{}",
-        text(&wrong)
-    );
-    assert!(!other.root.join(".joy/members").exists());
 }
 
 #[test]

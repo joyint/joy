@@ -1,0 +1,25 @@
+id: JOY-02D8-1C
+title: 'Project data from an older joy: ask for the update where it is needed'
+type: task
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+effort: 4
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-16T13:50:44.797892120Z
+updated: 2026-10-16T17:09:18.194223811Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-10-16: a project whose data is from an older joy (members still in project.yaml) asks a person with a passphrase for the update, never silently. CLI: only the commands that need it (joy project member edit <ai> for oneself) and joy update ask, as the last line in light orange: ''Project data is from an older joy. Update? Everyone then needs joy 0.23+ [Y/n]''. A yes asks for the passphrase if there is no session, updates and the command goes on. Without a terminal a plain hint: ''Your own model for claude needs an update of this project. Run joy update at a terminal.'' No jargon. Everything that decides and says it sits in joy-core''s migrations module (waiting, update_with, prepare_update, finish_update, needs_an_update) and is called only through it, so removing the dated migration is deleting its module and its lines there (ADR JOY-0244-9E).'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T13:50:49.666652048Z
+  text: 'Plan: joy-core migrations/mod.rs gets the one entry (waiting, update_with, prepare/finish for a browser host, the texts); the dated module only answers it. joy-cli''s dated module goes, migrations/mod.rs asks generically (offer, needed_for). joy update and the personal branch of member edit call it; the JSON update no longer moves anything. grants.rs refusal in plain words. Tests: pty test for yes, no and no terminal; fixtures update through the central entry.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T14:07:32.709938743Z
+  text: 'Result: joy-core migrations/mod.rs holds the one entry: waiting(root) with the question, the window lines and NEEDS_JOY from the dated module, needs_an_update(what), update_with, prepare_update and finish_update. Nothing outside it names m_2026_10_member_files; joy-cli''s dated module is gone, migrations/mod.rs asks generically (offer, needed_for). joy update asks at the bottom in light orange with [Y/n], a yes takes the session or asks the passphrase; without a terminal it says ''from an older joy, some features don''t work''; the JSON update moves nothing. joy project member edit <ai> for oneself asks the same and goes on after a yes; without a terminal: ''Your own model for claude needs an update of this project. Run joy update at a terminal.'' grants refuses the personal model and the personal grant on older data in those words. Tests: old_project_data_terminal.rs (pty: yes, no, the command, no terminal), member_fixtures through the central entry; just lint and just test green.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T17:09:18.194223150Z
+  text: 'Operator 2026-10-16: --passphrase is proof of who you are, never a yes to the update; without a terminal nothing is updated, in scripts and --json too. The browser spec for this one-off case (older-project-data.e2e.ts) stays out of the nightly lane on purpose.'

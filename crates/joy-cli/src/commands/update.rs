@@ -23,7 +23,7 @@ use clap::Args;
 use joy_core::store;
 
 use crate::color;
-use crate::migrations::m_2026_10_member_files as member_files;
+use crate::migrations::Outcome as DataUpdate;
 use crate::update_registry::{self, RowMark, UpdateItem};
 
 /// Cargo-dist installer writes the receipt under this name (matches
@@ -132,31 +132,23 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         }
         let before = joy_core::update::before(&root);
         let mut changed = run_full_sync(&root, true);
-        // The one moment a project from before the member files is
-        // brought over (JOY-02CC-C1): a person asked for the update.
-        match member_files::bring_over(&root, true) {
-            member_files::Outcome::NothingToDo => {}
-            member_files::Outcome::Moved => {
+        // A project whose data is from an older joy is updated when a
+        // person asked for the update and says yes to it (JOY-02CC-C1).
+        let data_row = |mark: &str, words: String| {
+            println!("{}", color::section("Project data"));
+            println!("  {mark}{:<24} {words}", "project data");
+            println!();
+        };
+        match crate::migrations::offer(&root) {
+            DataUpdate::NothingWaits => {}
+            DataUpdate::Updated => {
                 changed += 1;
-                println!("{}", color::section(member_files::SECTION));
-                println!(
-                    "  {}{:<24} {}",
-                    color::check_mark(),
-                    "members",
-                    color::success(member_files::MOVED)
-                );
-                println!();
+                data_row(color::check_mark(), color::success("updated"));
             }
-            member_files::Outcome::WaitsForSignIn => {
-                println!("{}", color::section(member_files::SECTION));
-                println!(
-                    "  {}{:<24} {}",
-                    color::warn_mark(),
-                    "members",
-                    color::warning(member_files::WAITS)
-                );
-                println!();
-            }
+            DataUpdate::NotNow | DataUpdate::NobodyToAsk => data_row(
+                color::warn_mark(),
+                color::warning("from an older joy, some features don't work"),
+            ),
         }
         println!();
         let summary = match changed {
@@ -196,7 +188,7 @@ fn asks_first(force: bool, at_a_terminal: bool) -> bool {
 }
 
 /// What a person typed after `[Y/n]`: an empty line is the default.
-fn says_yes(answer: &str) -> bool {
+pub(crate) fn says_yes(answer: &str) -> bool {
     matches!(
         answer.trim().to_ascii_lowercase().as_str(),
         "" | "y" | "yes"
@@ -644,16 +636,6 @@ fn run_update_json(args: UpdateArgs) -> Result<()> {
         } else {
             let before = joy_core::update::before(&root);
             let items = update_registry::all();
-            if let member_files::Outcome::Moved = member_files::bring_over(&root, false) {
-                refreshed_count += 1;
-                sections.push(UpdateSection {
-                    name: member_files::SECTION,
-                    rows: vec![UpdateRowJson {
-                        name: "members".to_string(),
-                        action: Some(member_files::MOVED),
-                    }],
-                });
-            }
             for section in SECTION_ORDER {
                 let mut rows: Vec<UpdateRowJson> = Vec::new();
                 for item in items.iter().filter(|i| &i.section() == section) {

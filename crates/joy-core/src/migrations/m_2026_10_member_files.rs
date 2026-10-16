@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 //! Bringing a project from before the member files over (JI-019D-46),
-//! a migration under ADR JOY-0244-9E: delete this module and joy-cli's
-//! module of the same name once no project from before is left.
+//! a migration under ADR JOY-0244-9E: delete this module and its lines
+//! in `migrations` (waiting, update_with, prepare_update, finish_update) once no
+//! project from before is left. Nothing else names it.
 //!
 //! Such a project keeps its whole member map in project.yaml, writes an
 //! AI member by its legacy form ([`joy_model::migrations::ai_member_name`]), and has a
@@ -15,9 +16,8 @@
 //! under what an AI member may do. So this does not run with the other
 //! reconciles when a project is opened, and it needs a person's key.
 //!
-//! It runs when a person asks for an update, and at no other moment
-//! (JOY-02CC-C1): on the command line that is `joy update` of somebody
-//! signed in. A project brought over cannot be read by a joy from before
+//! It runs when a person says yes to the update, and at no other moment
+//! (JOY-02CC-C1). A project brought over cannot be read by a joy from before
 //! the member files, so it must never happen as a side effect of a
 //! sign-in or of a command that only reads. Until then the project is
 //! read and written as it was, by the same code as before, and nothing
@@ -44,6 +44,9 @@ use crate::model::project::{
 };
 use crate::store;
 use joy_model::{migrations::ai_member_name, InteractionLevel};
+
+/// The joy that reads a project brought over: everybody needs it after.
+pub const NEEDS_JOY: &str = "0.23";
 
 /// Whether the project at `root` still keeps its members in project.yaml.
 pub fn pending(root: &Path) -> bool {

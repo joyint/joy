@@ -125,6 +125,11 @@ fn personal_target(
     level: Option<InteractionLevel>,
 ) -> Result<(Vec<Capability>, InteractionLevel), JoyError> {
     let name = ai_member_name::read(ai_key);
+    if !applies(project) {
+        return Err(JoyError::Other(crate::migrations::needs_an_update(
+            &format!("What you allow {name} yourself"),
+        )));
+    }
     let max = maximum(project, ai_key).map_err(JoyError::Other)?;
     let current = delegator
         .delegation_to(ai_key)
@@ -258,9 +263,8 @@ pub fn set_personal_model(
 ) -> Result<(), JoyError> {
     let name = ai_member_name::read(ai_key).to_string();
     if !applies(project) {
-        return Err(JoyError::Other(format!(
-            "a model of your own for {name} needs the project's member files: \
-             sign in once and the project is brought over"
+        return Err(JoyError::Other(crate::migrations::needs_an_update(
+            &format!("Your own model for {name}"),
         )));
     }
     let Some(ai) = project.member_by_key(ai_key) else {
