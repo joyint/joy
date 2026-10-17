@@ -379,6 +379,9 @@ fn parse_log_line(line: &str) -> Option<LogEntry> {
 pub const ITEM_ATTRIBUTE_EVENTS: &[&str] = &[
     "item.updated",
     "item.status_changed",
+    // a job's steps, the platform's included (operator 2026-10-17: the
+    // trail of a job ended at its creation)
+    "job.status_changed",
     "item.assigned",
     "item.unassigned",
     "dep.added",
