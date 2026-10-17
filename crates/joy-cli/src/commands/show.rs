@@ -314,16 +314,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
         let date = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
             .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|_| entry.timestamp.clone());
-        // a status step says its statuses, and the reason where the
-        // platform had one; every other entry stays the line it was
-        let what = entry
-            .details
-            .as_deref()
-            .filter(|d| !d.is_empty() && entry.event_type.ends_with("status_changed"))
-            .map(|d| format!(" ({d})"))
-            .unwrap_or_default();
         println!(
-            "{} {} by {}{what}",
+            "{} {} by {}",
             color::label("Updated:"),
             color::label(&date),
             color::user(&entry.user),
