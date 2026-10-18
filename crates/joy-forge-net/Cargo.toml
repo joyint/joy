@@ -27,29 +27,12 @@ joy-process = { workspace = true }
 # is where the lock files and the login pin belong.
 # The version pin is inherited too, so a bump cannot leave it
 # asking crates.io for a joy-core that no longer exists there.
-joy-core = { workspace = true }
-# The operating system credential store. The feature set is the
-# corrected one: `linux-native` alone is the kernel keyutils store,
-# which is in memory and "will not persist across reboots", so the
-# persistent Secret Service collection is asked for beside it.
-# `crypto-rust` keeps the session encryption off OpenSSL.
-keyring = { version = "3.6", default-features = false, features = [
-    "apple-native",
-    "windows-native",
-    "linux-native-sync-persistent",
-    "crypto-rust",
-    # `vendored` is not a fifth store, it is how the fourth one links.
-    # `linux-native-sync-persistent` reaches the Secret Service through
-    # libdbus, and without this the connector needs libdbus-1-dev to
-    # build and libdbus-1.so at run time: the agent image builds
-    # joy-cli from source, and a minimal container would then carry a
-    # binary that cannot start at all, which is worse than the 0600
-    # fallback it would otherwise take. joy vendors libgit2 and OpenSSL
-    # for exactly this reason (joy-core/Cargo.toml), and this is the
-    # same rule applied to the same kind of dependency. Inert off
-    # Linux, where no dbus dependency exists.
-    "vendored",
-] }
+# The operating system credential store is reached through
+# `joy_core::keychain` and nowhere else (JOY-02DB-25), so this crate
+# carries no keyring of its own. `keychain-vendored` because the
+# connector has to start in a container without libdbus (joy-core's
+# Cargo.toml says why).
+joy-core = { workspace = true, features = ["keychain-vendored"] }
 # PKCE S256, the token fingerprint and the lock file name are
 # all SHA-256; the challenge and the verifier are base64url without
 # padding, and the verifier and the CSRF state come from the OS random

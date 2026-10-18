@@ -20,3 +20,6 @@
 2026-10-18T19:19:36.582Z JOY-02DE-40 item.created [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-18T19:22:16.937Z JOY-02DE-40 comment.added [claude delegated-by:horst.schwarz@joydev.com]
 2026-10-18T19:22:16.990Z JOY-02DE-40 item.status_changed "new -> closed" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-18T18:15:30.760Z auth auth.session_created "session created for claude via delegation token" [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-18T18:15:38.568Z JOY-02DB-25 item.created [claude delegated-by:horst.schwarz@joydev.com]
+2026-10-18T18:40:01.284Z JOY-02DB-25 item.status_changed "new -> closed" [claude delegated-by:horst.schwarz@joydev.com]

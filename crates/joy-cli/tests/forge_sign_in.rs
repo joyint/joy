@@ -16,10 +16,11 @@
 //!
 //! No real network and no forge CLI: PATH is emptied for every child,
 //! the forge is an in process fake on the loopback interface, and the
-//! credential store is the 0600 file, because every child gets
-//! a `DBUS_SESSION_BUS_ADDRESS` that answers nothing. That is not a
-//! trick: it is the machine the rule wrote the fallback for, a host whose
-//! credential store cannot be reached.
+//! credential store is the 0600 file, because every child finds the
+//! door to the operating system's store closed
+//! (`joy_test_env::NO_KEYCHAIN`). That is not a trick: it is the machine
+//! the rule wrote the fallback for, a host whose credential store cannot
+//! be reached.
 
 #![cfg(unix)]
 
@@ -116,11 +117,9 @@ impl Sandbox {
             .env("XDG_CONFIG_HOME", self.path().join("config"))
             .env("XDG_STATE_HOME", self.path().join("state"))
             // No credential store answers here, which is the case the
-            // 0600 file exists for.
-            .env(
-                "DBUS_SESSION_BUS_ADDRESS",
-                "unix:path=/nonexistent/joy-test-no-bus",
-            )
+            // 0600 file exists for. The environment was cleared, so the
+            // door is closed again.
+            .env(joy_test_env::NO_KEYCHAIN, "1")
             .env("XDG_RUNTIME_DIR", self.path().join("run"));
         command
     }

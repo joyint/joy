@@ -11,9 +11,9 @@ joy_test_env::isolate!();
 #[test]
 fn the_process_was_swept_before_the_first_case_ran() {
     assert_eq!(
-        std::env::var_os(joy_test_env::SESSION_BUS).as_deref(),
-        Some(std::ffi::OsStr::new(joy_test_env::NO_SESSION_BUS)),
-        "the loader ran isolate! ahead of main"
+        std::env::var_os(joy_test_env::NO_KEYCHAIN).as_deref(),
+        Some(std::ffi::OsStr::new("1")),
+        "the loader ran isolate! ahead of main, and the door to the credential store is closed"
     );
     assert!(
         joy_test_env::inherited_state().is_empty(),

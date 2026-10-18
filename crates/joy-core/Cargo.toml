@@ -98,6 +98,23 @@ termimad = { version = "0.31", optional = true }
 inquire = { version = "0.7", default-features = false, features = ["crossterm"], optional = true }
 terminal_size = { version = "0.4", optional = true }
 
+# The operating system credential store, reached through `keychain` and
+# nowhere else (JOY-02DB-25). Optional: the platform keeps no secret of a
+# person's and carries no keyring. The feature set is the corrected
+# one: `linux-native` alone is the kernel keyutils store, which is in
+# memory and "will not persist across reboots" (keyring 3.6.3,
+# src/keyutils.rs), so the persistent Secret Service collection is asked
+# for beside it, which keeps keyutils as the fast in memory cache and
+# writes the entry into the login keyring as well. `crypto-rust` keeps
+# the Secret Service session encryption off OpenSSL. One set for every
+# consumer, so one machine has one answer about where a secret lives.
+keyring = { version = "3.6", default-features = false, optional = true, features = [
+    "apple-native",
+    "windows-native",
+    "linux-native-sync-persistent",
+    "crypto-rust",
+] }
+
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
@@ -164,6 +181,23 @@ forge-net = ["git2/https", "git2/ssh", "git2/vendored-openssl"]
 # `just guard-interactive` keeps the platform's manifest from drifting
 # back.
 interactive = []
+# `keychain`: the one door to the operating system's credential store
+# (JOY-02DB-25). The connector and the desktop turn it on, the platform
+# does not.
+keychain = ["dep:keyring"]
+# The same door, with libdbus compiled in. `vendored` is not a fifth
+# store, it is how the Linux one links: `linux-native-sync-persistent`
+# reaches the Secret Service through libdbus, and without this the
+# connector needs libdbus-1-dev to build and libdbus-1.so at run time.
+# The agent image builds joy-cli from source, and a minimal container
+# would then carry a binary that cannot start at all, which is worse
+# than the 0600 fallback it would otherwise take. joy vendors libgit2
+# and OpenSSL for exactly this reason (above), and this is the same rule
+# applied to the same kind of dependency. Inert off Linux, where no dbus
+# dependency exists. The connector asks for this one; the desktop asks
+# for `keychain` alone, because it is a GTK and WebKit application that
+# already links `libdbus-1.so.3` on every Linux it can run on at all.
+keychain-vendored = ["keychain", "keyring?/vendored"]
 
 [dev-dependencies]
 # What a test never inherits from the person's shell, said once

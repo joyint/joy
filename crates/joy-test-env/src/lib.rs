@@ -18,19 +18,21 @@
 //! whose name starts with `JOY_`, and none of [`GIT_IDENTITY`]. What a
 //! case wants set, it sets itself, after this.
 //!
-//! The person's session bus is the third thing a test must not reach.
-//! The forge connector keeps tokens in the operating system's credential
-//! store, on Linux the Secret Service on the D-Bus session bus, and a
-//! test that starts the connector with the developer's bus address reads
-//! the developer's own keychain. On 2026-10-04 gnome-keyring aborted
-//! during a run of this suite, on a client that was gone in the middle of
-//! its negotiation; a watch on the bus then showed the suite asking the
-//! Secret Service for its test hosts. So every test gets
-//! [`NO_SESSION_BUS`]: the machine the
-//! 0600 file fallback was written for, a host whose credential store
-//! cannot be reached. This is Linux only. The macOS keychain and the
-//! Windows credential manager are not behind a variable, so there a test
-//! stays away from the store by building its own vault, as before.
+//! The operating system's credential store is the third thing a test
+//! must not reach. The forge connector keeps tokens there and the
+//! desktop app its remembered seed and platform session, and a test that
+//! reaches it reads and writes the developer's own keychain. On
+//! 2026-10-04 gnome-keyring aborted during a run of this suite, on a
+//! client that was gone in the middle of its negotiation; a watch on the
+//! bus then showed the suite asking the Secret Service for its test
+//! hosts. Every call into that store goes through one door,
+//! `joy_core::keychain`, and [`NO_KEYCHAIN`] closes it: the store then
+//! answers like a machine that has none, and every caller takes the
+//! fallback it already has, the connector its 0600 file. The sweep sets
+//! it in this process and [`command`] on every process a test starts, so
+//! a `joy-forge` a case runs inherits it, on every system: a bus address
+//! nothing answers at was Linux alone, the macOS keychain and the
+//! Windows credential manager are behind no such variable.
 //!
 //! The fourth is the person's forge CLI. joy asks `gh`, `glab` and `tea`
 //! for the token they hold, so that nobody signs in twice, and a test
@@ -104,17 +106,18 @@ fn path_without_the_persons_forge_clis() -> OsString {
     std::env::join_paths(std::iter::once(stand_ins.clone()).chain(rest)).unwrap_or(inherited)
 }
 
-/// The variable that names the D-Bus session bus.
-pub const SESSION_BUS: &str = "DBUS_SESSION_BUS_ADDRESS";
-
-/// A session bus address nothing answers at: the Secret Service is out
-/// of reach, at once and without a wait.
-pub const NO_SESSION_BUS: &str = "unix:path=/nonexistent/joy-test-no-bus";
+/// The variable that closes `joy_core::keychain`, the one door to the
+/// operating system's credential store, set to `1`. It exists for tests
+/// alone. The name is joy-core's `keychain::TEST_SWITCH`, said twice
+/// because joy-core is built on this crate and not the other way round;
+/// joy-core's own test holds the two together.
+pub const NO_KEYCHAIN: &str = "JOY_TEST_NO_KEYCHAIN";
 
 /// Is `name` a variable a test must not inherit?
 ///
 /// Windows reads a variable whatever the case of its name, so there
 /// `Joy_Session` is `JOY_SESSION` and is compared that way.
+/// [`NO_KEYCHAIN`] is not one of them: it is what this crate sets.
 pub fn is_inherited_state(name: &OsStr) -> bool {
     let Some(name) = name.to_str() else {
         return false;
@@ -124,7 +127,7 @@ pub fn is_inherited_state(name: &OsStr) -> bool {
     } else {
         name.to_string()
     };
-    name.starts_with(JOY_PREFIX)
+    (name.starts_with(JOY_PREFIX) && name != NO_KEYCHAIN)
         || GIT_IDENTITY.contains(&name.as_str())
         || FORGE_CLI.contains(&name.as_str())
 }
@@ -139,27 +142,30 @@ pub fn inherited_state() -> Vec<OsString> {
 }
 
 /// A [`Command`] for `program` that inherits none of the person's joy
-/// state and cannot reach their session bus: [`joy_process::command`],
-/// with every variable of [`inherited_state`] removed and
-/// [`NO_SESSION_BUS`] as the bus. A case that wants one of them sets it
-/// on the returned command.
+/// state and cannot reach their credential store:
+/// [`joy_process::command`], with every variable of [`inherited_state`]
+/// removed and [`NO_KEYCHAIN`] set. A case that wants one of them sets
+/// it on the returned command. A case that clears the environment of
+/// the command sets [`NO_KEYCHAIN`] again after that.
 pub fn command(program: impl AsRef<OsStr>) -> Command {
     let mut command = joy_process::command(program);
     for name in inherited_state() {
         command.env_remove(name);
     }
-    command.env(SESSION_BUS, NO_SESSION_BUS);
+    command.env(NO_KEYCHAIN, "1");
     command.env("PATH", path_without_the_persons_forge_clis());
     command
 }
 
-/// Sweep THIS process: remove the person's joy state, take the session
-/// bus away and put the forge CLI stand-ins first on PATH.
+/// Sweep THIS process: remove the person's joy state, close the door to
+/// the credential store and put the forge CLI stand-ins first on PATH.
+/// The door is closed after the removal, which would take a `JOY_`
+/// variable away again.
 fn sweep() {
     for name in inherited_state() {
         std::env::remove_var(name);
     }
-    std::env::set_var(SESSION_BUS, NO_SESSION_BUS);
+    std::env::set_var(NO_KEYCHAIN, "1");
     std::env::set_var("PATH", path_without_the_persons_forge_clis());
 }
 
@@ -186,7 +192,8 @@ pub fn scrub_process() {
 /// function pointer in the section the loader runs through before
 /// `main` (`.init_array` on ELF, `__mod_init_func` on Mach-O,
 /// `.CRT$XCU` on Windows). At that point the process has one thread, so
-/// moving the environment there races with nothing.
+/// moving the environment there races with nothing, and no case has
+/// asked the credential store anything yet.
 #[macro_export]
 macro_rules! isolate {
     () => {
@@ -240,7 +247,13 @@ mod tests {
         ] {
             assert!(is_inherited_state(OsStr::new(name)), "{name}");
         }
-        for name in ["HOME", "PATH", "GIT_CONFIG_NOSYSTEM", "ENJOY_THIS"] {
+        for name in [
+            "HOME",
+            "PATH",
+            "GIT_CONFIG_NOSYSTEM",
+            "ENJOY_THIS",
+            NO_KEYCHAIN,
+        ] {
             assert!(!is_inherited_state(OsStr::new(name)), "{name}");
         }
         // The case of a name counts where the system says it does.
@@ -281,9 +294,9 @@ mod tests {
 
         assert!(
             command.get_envs().any(|(key, value)| {
-                key == OsStr::new(SESSION_BUS) && value == Some(OsStr::new(NO_SESSION_BUS))
+                key == OsStr::new(NO_KEYCHAIN) && value == Some(OsStr::new("1"))
             }),
-            "the command cannot reach the person's session bus"
+            "the command cannot reach the person's credential store"
         );
 
         let path = command
@@ -309,9 +322,9 @@ mod tests {
         }
         assert!(inherited_state().is_empty());
         assert_eq!(
-            std::env::var_os(SESSION_BUS).as_deref(),
-            Some(OsStr::new(NO_SESSION_BUS)),
-            "and the process cannot reach the session bus"
+            std::env::var_os(NO_KEYCHAIN).as_deref(),
+            Some(OsStr::new("1")),
+            "and the process cannot reach the credential store"
         );
     }
 }

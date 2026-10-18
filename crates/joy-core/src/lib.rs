@@ -25,6 +25,8 @@ pub mod identity;
 pub mod init;
 pub mod items;
 pub mod job_lifecycle;
+#[cfg(feature = "keychain")]
+pub mod keychain;
 pub mod member_files;
 pub mod member_id;
 pub mod member_ref;
