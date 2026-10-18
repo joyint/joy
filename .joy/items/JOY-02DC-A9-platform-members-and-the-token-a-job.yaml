@@ -1,0 +1,24 @@
+id: JOY-02DC-A9
+title: Platform members, and the token a job carries from its opening
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-18T15:21:01.006615027Z
+updated: 2026-10-18T15:21:01.006615027Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Implements JI-01A7-0F in joy.
+
+  - Platform members (type platform, JOY-02DB-09): `joy project member add --platform <https-url>` fetches https://<domain>/.well-known/joy-platform-key and the person signs the member: named by its domain, its public key, capability `jobs` by default. Never assignable and never delegated to; edited and removed like any member.
+  - Guard: a platform authenticates with its own key (no passphrase). Its session may only set a job whose runs_on is itself back to new, and comment. Places that see only an id never take a platform for an AI member.
+  - Job fields: runs_on (a domain), and the sealed token with its platform, expiry and opener in clear.
+  - Opening (new -> open, persons only): needs a platform member ("sign in on a platform first") and the opener's delegation to the assignee. Issues a delegation token (7 days, scope job:<id>, the grant as it stands), seals it for runs_on (pairwise X25519, joy-crypt) and stores it at the job. With more than one platform, --platform is required. Every step that hands the job back to its AI issues a fresh token.
+  - Job scope: a session from a job-scoped token writes only that job and its result branch.
+  - `joy job revoke <ID>` (persons with jobs): token and runs_on removed, status new, a comment naming who and from where.
+  - Output: joy project and joy project member list persons, AI members and platforms in their own blocks, an empty block not shown; joy ls shows the platform of a job.
+  - Tests for each, and an older joy told to update.
