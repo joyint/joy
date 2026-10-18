@@ -176,7 +176,7 @@ guard-vcs:
 # (JOY-02BB-C7 - One list of the variables a test never inherits from the
 # person's shell). A developer's shell carries JOY_SESSION, sometimes
 # JOY_USER or JOY_PASSPHRASE, git's identity variables, a forge CLI that
-# is signed in, and a session bus with their keychain behind it. Every
+# is signed in, and their keychain. Every
 # test binary used to keep its own list of what to remove, the lists
 # drifted, and under a shell that had the three variables set 47 cases
 # failed while others asked the developer's keychain and their gh.
@@ -199,7 +199,12 @@ guard-vcs:
 # Measured, not assumed: with stray variables in the shell, a canary gh,
 # glab and tea first on PATH and dbus-monitor on the session bus, a run
 # of the unit and bats suites is green, reaches no canary and makes no
-# call to org.freedesktop.Secret.Service.
+# call to org.freedesktop.Secret.Service. Since the store has one door
+# that JOY_TEST_NO_KEYCHAIN closes (JOY-02DB-25), the session bus is no
+# longer taken away: on 2026-10-18 `just test` under a private bus with
+# an unlocked gnome-keyring on it made no call to
+# org.freedesktop.secrets, and the connector case
+# forge_keeps_off_the_keychain with the door open made 29.
 guard-test-env:
     #!/usr/bin/env bash
     set -euo pipefail
