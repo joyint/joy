@@ -178,26 +178,15 @@ pub enum UpdateCommit {
     Left(String),
 }
 
-/// The message of the commit a sync's changes go into: in general words
-/// that the project moved from one joy version to another, under a
-/// subject that names no item, because no item asked for it.
-pub fn project_update_message(from: Option<&str>, to: &str, delegator: Option<&str>) -> String {
-    let (subject, body) = match from {
-        Some(from) if from != to => (
-            format!("chore(joy): project files updated from joy {from} to joy {to} [no-item]"),
-            format!(
-                "joy brought the files it manages in this project from version {from} to version {to}."
-            ),
-        ),
-        Some(_) => (
-            format!("chore(joy): project files refreshed by joy {to} [no-item]"),
-            format!("joy brought the files it manages in this project back in line with version {to}."),
-        ),
-        None => (
-            format!("chore(joy): project files set up for joy {to} [no-item]"),
-            format!("joy wrote the files it manages in this project for version {to}."),
-        ),
-    };
+/// The message of the commit a sync's changes go into: what this joy did,
+/// under a subject that names no item, because no item asked for it. It
+/// names no version the files came from: the only one joy knows is the
+/// last sync of this clone (`joy.last-sync-version` in its git config),
+/// which says nothing about what the repository held.
+pub fn project_update_message(to: &str, delegator: Option<&str>) -> String {
+    let subject = format!("chore(joy): project files refreshed by joy {to} [no-item]");
+    let body =
+        format!("joy brought the files it manages in this project in line with version {to}.");
     match delegator {
         Some(delegator) => format!("{subject}\n\n{body}\n\nDelegated-By: {delegator}"),
         None => format!("{subject}\n\n{body}"),
@@ -248,11 +237,7 @@ fn commit_project_update_at(
         Some((member, delegator)) if crate::model::project::is_ai_member(member) => Some(delegator),
         _ => None,
     };
-    let message = project_update_message(
-        changed.from.as_deref(),
-        crate::update::CURRENT_VERSION,
-        delegator,
-    );
+    let message = project_update_message(crate::update::CURRENT_VERSION, delegator);
     let signature = match acting_signature(root, identity, project.as_ref()) {
         Ok(signature) => signature,
         Err(e) => return UpdateCommit::Left(e.to_string()),
@@ -484,7 +469,7 @@ mod tests {
         assert_eq!(author, "horst@joydev.test");
         assert_eq!(
             message,
-            project_update_message(Some("0.1.0"), crate::update::CURRENT_VERSION, None)
+            project_update_message(crate::update::CURRENT_VERSION, None)
         );
         assert!(
             forge::checkout_picture(root).contains_key("src.rs"),
@@ -582,29 +567,16 @@ mod tests {
     }
 
     #[test]
-    fn the_message_says_the_version_move_in_general_words() {
-        let moved = project_update_message(Some("0.22.0"), "0.23.0", None);
+    fn the_message_says_what_this_joy_did_and_no_version_before() {
+        let message = project_update_message("0.23.0", None);
         assert_eq!(
-            moved.lines().next(),
-            Some("chore(joy): project files updated from joy 0.22.0 to joy 0.23.0 [no-item]")
-        );
-        assert!(
-            moved.contains("from version 0.22.0 to version 0.23.0"),
-            "{moved}"
-        );
-
-        let never = project_update_message(None, "0.23.0", None);
-        assert_eq!(
-            never.lines().next(),
-            Some("chore(joy): project files set up for joy 0.23.0 [no-item]")
-        );
-        let same = project_update_message(Some("0.23.0"), "0.23.0", None);
-        assert_eq!(
-            same.lines().next(),
+            message.lines().next(),
             Some("chore(joy): project files refreshed by joy 0.23.0 [no-item]")
         );
+        assert!(message.contains("in line with version 0.23.0"), "{message}");
+        assert!(!message.contains("from"), "{message}");
         // and the trailer of a delegated commit closes the message
-        let delegated = project_update_message(None, "0.23.0", Some("horst@joydev.test"));
+        let delegated = project_update_message("0.23.0", Some("horst@joydev.test"));
         assert!(
             delegated.ends_with("Delegated-By: horst@joydev.test"),
             "{delegated}"

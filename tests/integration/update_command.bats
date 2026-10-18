@@ -141,7 +141,7 @@ stale_project() {
     [ "$status" -eq 0 ]
     [[ "$output" == *"Committed as "* ]]
     [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
-    [[ "$(git log -1 --format=%s)" == "chore(joy): project files updated from joy 0.0.1 to joy "*" [no-item]" ]]
+    [[ "$(git log -1 --format=%s)" == "chore(joy): project files refreshed by joy "*" [no-item]" ]]
     [[ "$(git show --stat --format= HEAD)" == *"SECURITY.md"* ]]
     # the person's file is not in the commit and still theirs
     [[ "$(git show --stat --format= HEAD)" != *"notes.txt"* ]]
@@ -195,7 +195,7 @@ stale_project() {
     [ "$status" -eq 0 ]
     [[ "$stderr" == *"synced this repo (previous marker: 0.0.1), committed as "* ]]
     [ "$(git rev-list --count HEAD)" -eq $((commits + 1)) ]
-    [[ "$(git log -1 --format=%s)" == "chore(joy): project files updated from joy 0.0.1 to joy "* ]]
+    [[ "$(git log -1 --format=%s)" == "chore(joy): project files refreshed by joy "* ]]
     [ "$(git status --porcelain)" = "?? notes.txt" ]
     # and the next call finds nothing to do
     run --separate-stderr joy ls
