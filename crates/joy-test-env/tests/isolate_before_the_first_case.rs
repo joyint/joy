@@ -26,4 +26,23 @@ fn the_process_was_swept_before_the_first_case_ran() {
         Some(joy_test_env::forge_cli_dir()),
         "the forge CLI stand-ins come first"
     );
+    // The store of every entry is keyring's mock, on every system, so
+    // nothing here reaches the operating system's credential store; and
+    // like that mock, it persists nothing past the entry written through.
+    let entry = keyring::Entry::new("joy-test-env", "probe").expect("an entry");
+    assert!(
+        entry
+            .get_credential()
+            .downcast_ref::<keyring::mock::MockCredential>()
+            .is_some(),
+        "the loader made keyring's mock the default store"
+    );
+    entry.set_password("written").expect("the mock takes it");
+    assert!(
+        keyring::Entry::new("joy-test-env", "probe")
+            .expect("a second entry")
+            .get_password()
+            .is_err(),
+        "a second entry finds nothing"
+    );
 }

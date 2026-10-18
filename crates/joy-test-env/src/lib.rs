@@ -25,12 +25,20 @@
 //! the developer's own keychain. On 2026-10-04 gnome-keyring aborted
 //! during a run of this suite, on a client that was gone in the middle of
 //! its negotiation; a watch on the bus then showed the suite asking the
-//! Secret Service for its test hosts. So every test gets
-//! [`NO_SESSION_BUS`]: the machine the
-//! 0600 file fallback was written for, a host whose credential store
-//! cannot be reached. This is Linux only. The macOS keychain and the
-//! Windows credential manager are not behind a variable, so there a test
-//! stays away from the store by building its own vault, as before.
+//! Secret Service for its test hosts. A variable can only take the bus
+//! away, which is Linux alone: the macOS keychain and the Windows
+//! credential manager are not behind one. So the test binary itself
+//! never asks the operating system's store, on any system:
+//! [`isolate!`] makes keyring's in memory mock the store of every
+//! `keyring::Entry` the binary builds ([`keep_off_the_keychain`]). That
+//! mock keeps a secret inside the one `Entry` it was written through,
+//! so a second `Entry` for the same service and user finds nothing:
+//! a store that persists nothing, which is what joy's connector detects
+//! and answers with its 0600 file, the same answer a Linux test gets
+//! without a bus. A process the test starts is not covered by that, it
+//! builds its own entries, and so every process and the binary itself
+//! still get [`NO_SESSION_BUS`]: on Linux a child cannot reach the
+//! Secret Service either.
 //!
 //! The fourth is the person's forge CLI. joy asks `gh`, `glab` and `tea`
 //! for the token they hold, so that nobody signs in twice, and a test
@@ -163,15 +171,26 @@ fn sweep() {
     std::env::set_var("PATH", path_without_the_persons_forge_clis());
 }
 
-/// [`sweep`], once per process. This is what [`isolate!`] runs when the
-/// test binary loads; nothing else has to call it.
+/// Make keyring's in memory mock the store of every `keyring::Entry`
+/// this process builds from now on, so none of them reaches the
+/// operating system's credential store (see the crate documentation).
+pub fn keep_off_the_keychain() {
+    keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
+}
+
+/// [`sweep`] and [`keep_off_the_keychain`], once per process. This is
+/// what [`isolate!`] runs when the test binary loads; nothing else has
+/// to call it.
 ///
 /// Once, because the environment is process wide and the cases of a
 /// binary run side by side: a second sweep would take away what a case
 /// has set for itself in the meantime.
 pub fn scrub_process() {
     static ONCE: std::sync::Once = std::sync::Once::new();
-    ONCE.call_once(sweep);
+    ONCE.call_once(|| {
+        sweep();
+        keep_off_the_keychain();
+    });
 }
 
 /// Leave the person's shell and session when this test binary LOADS,
@@ -186,7 +205,8 @@ pub fn scrub_process() {
 /// function pointer in the section the loader runs through before
 /// `main` (`.init_array` on ELF, `__mod_init_func` on Mach-O,
 /// `.CRT$XCU` on Windows). At that point the process has one thread, so
-/// moving the environment there races with nothing.
+/// moving the environment there races with nothing, and no case has
+/// built a `keyring::Entry` yet that could still reach the real store.
 #[macro_export]
 macro_rules! isolate {
     () => {

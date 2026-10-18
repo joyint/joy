@@ -2604,6 +2604,7 @@ name = "joy-test-env"
 version = "0.23.1"
 dependencies = [
  "joy-process",
+ "keyring",
 ]
 
 [[package]]

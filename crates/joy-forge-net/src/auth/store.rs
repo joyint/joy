@@ -444,9 +444,9 @@ impl Vault {
 
     /// A vault that asks the OPERATING SYSTEM's credential store and
     /// falls back to a file under `dir`. Behind `fake-api`, and only a
-    /// test that has installed keyring's mock credential builder may
-    /// build one: on a machine with a real Secret Service this writes
-    /// into the person's own keychain.
+    /// test binary where keyring's mock credential builder is installed
+    /// may build one (`joy_test_env::isolate!` installs it in every
+    /// one): without it this writes into the person's own keychain.
     #[cfg(feature = "fake-api")]
     pub fn os_keychain_at(dir: impl AsRef<Path>) -> Self {
         Vault {
