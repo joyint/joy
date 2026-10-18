@@ -1184,7 +1184,7 @@ GitHub, GitLab and Gitea merge on their servers with plain git, and they do not 
 
 ### What joy does about it
 
-`joy init` writes a small CI file for your forge, so the merge happens where joy is installed:
+`joy init` writes a small CI file for your forge:
 
 | Forge | File |
 |---|---|
@@ -1192,7 +1192,9 @@ GitHub, GitLab and Gitea merge on their servers with plain git, and they do not 
 | Gitea, Forgejo | `.gitea/workflows/joy-merge.yml` |
 | GitLab | `.joy/ci/gitlab.yml`, included from your `.gitlab-ci.yml` |
 
-You do not call anything. On a pull request the job merges the target branch into your branch, resolves the Joy files by Joy's rules and pushes the result. The forge then only has to fast forward, which cannot fail, and the button turns green. If both sides really changed the same field, the job stops and names the file, because that decision is yours.
+You do not call anything. On a pull request the job tries the merge where joy is installed. Where plain git can do it, the job says nothing. Where Joy files stand in the way, it leaves one comment with the three commands for your clone: switch to the branch, pull the target, push. Your `git pull` runs the merge driver `joy init` registered, so the Joy files resolve by themselves, and after the push the button turns green. A later push updates the comment instead of adding one.
+
+The job pushes nothing itself. A push by a CI job's own token is one the forges treat as a stranger's: on GitHub the pull request's checks then wait for a person to approve them, which stalls exactly what the job was meant to speed up.
 
 Adding it later, or in a repository that has no forge yet:
 

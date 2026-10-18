@@ -1,0 +1,35 @@
+id: JOY-02DD-D2
+title: The joy merge job advises instead of pushing
+type: story
+status: new
+priority: high
+parent: JOY-02AC-53
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-18T18:32:20.419251298Z
+updated: 2026-10-18T18:43:58.878906936Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Since mid 2026 GitHub puts every workflow run that a GITHUB_TOKEN push creates on a pull request into an approval-required state (docs: Triggering a workflow, GITHUB_TOKEN; verified on 2026-10-18 in joyint-test/joy-merge-probe and on joyint/joy#89, #90). The merge commit that 'joy merge ci' pushed is such a push, so every pull request it helped waited for a person to click 'Approve and run'. The push setting of the repository changes nothing, workflow_dispatch runs do not count for the pull request, and no event announces the waiting run. The only pushes the forge trusts come from an identity a person set up (GitHub App, token), and that is one mechanism per forge.
+
+  Decision (operator, 2026-10-18): the job pushes nothing any more. It tries the merge where joy is installed and, only when Joy files stand in the way, tells the author in a comment what to do on their machine: switch to the branch, pull the target, push. The pull runs the merge driver joy init registered, so the Joy files resolve by themselves. Where plain git can merge, the job stays silent. On later pushes it updates its comment instead of adding one. GitHub, Gitea and GitLab alike.
+
+  - [ ] joy merge ci: never pushes; --advise <file> writes the comment when Joy files were resolved or stay in conflict; silent when the target is contained or plain git merges
+  - [ ] The head branch for the 'git switch' line from --head or the CI (GITHUB_HEAD_REF, CI_MERGE_REQUEST_SOURCE_BRANCH_NAME)
+  - [ ] Templates: permissions contents read, the comment step posts the advice (gh pr comment --edit-last, GitLab notes API), the fork step uses the same words
+  - [ ] Tests in init.rs and merge.rs; tutorial chapter 13 and the AI tutorial say what the job does now
+  - [ ] This repository's own joy-merge.yml refreshed from the template
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-18T18:43:58.878906124Z
+  text: |-
+    Result on feat/joy-merge-advises:
+    [x] joy merge ci pushes nothing. --advise <file> gets the note when only Joy's rules merge a file, or when git stops at a file outside Joy's own (then the note names it). Silent when the target is contained or plain git merges alone. --head from the flag, GITHUB_HEAD_REF / CI_MERGE_REQUEST_SOURCE_BRANCH_NAME, or the checked out branch.
+    [x] Templates GitHub, Gitea, GitLab: contents read, the note posted as a comment (gh pr comment --edit-last, else a new one; a later clean run tells the last comment so; GitLab a note over the API with JOY_PUSH_TOKEN, now with the api scope). The fork step says the same words with the base repository's clone URL.
+    [x] Tests: merge.rs (note text, what git stops at), init.rs (the_job_advises_and_never_pushes, the GitLab job, the token on the Try step). just check green.
+    [x] Tutorial chapter 13 and the AI tutorial.
+    [x] Tried against joyint-test/joy-merge-probe with the built binary: a branch behind main with the same item commented gets the note and nothing is pushed; a code-only branch and a contained target stay silent.
+    Open: this repository's own joy-merge.yml is refreshed by joy update once the release with --advise is out; refreshed earlier, the job would call a flag the installed joy does not have. The same holds for every project, which is why the template and the binary ship together.

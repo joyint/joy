@@ -1,18 +1,23 @@
-# joy:start -- managed by joy, do not edit manually (JOY-02AC-53)
+# joy:start -- managed by joy, do not edit manually (JOY-02AC-53, JOY-02DD-D2)
 # Joy stores its items, comments and logs as files in this repository.
-# When two branches touch the same item, GitLab cannot put them back
-# together: it merges with plain git, which does not run Joy's merge
-# rules. This job does that merge here, where joy is installed, and
-# publishes the result. The merge button then only fast forwards, which
-# cannot fail.
+# When two branches touch the same item or the same day's log, GitLab
+# cannot put them back together: it merges with plain git, which does
+# not run Joy's merge rules. Your own clone can, because joy init
+# registered the merge driver there.
+#
+# This job tries the merge where joy is installed and, only when Joy
+# files stand in the way, tells the author in a note what to do: switch
+# to the branch, pull the target, push. It pushes nothing itself
+# (JOY-02DD-D2). Where plain git can merge, the job says nothing.
 #
 # Include it from your .gitlab-ci.yml:
 #   include:
 #     - local: .joy/ci/gitlab.yml
 #
-# The job needs to push to the source branch, so give the project a
-# token with write access and put it in the CI variable JOY_PUSH_TOKEN
-# (Settings, CI/CD, Variables, masked and protected).
+# The job writes the note with the API, which the job token may not. So
+# give the project a token with the api scope and put it in the CI
+# variable JOY_PUSH_TOKEN (Settings, CI/CD, Variables, masked and
+# protected).
 #
 # GitLab starts no pipeline that holds only jobs of the .pre and .post
 # stages: the project needs one more job that runs for merge requests,
@@ -31,6 +36,11 @@ joy-merge:
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
-    - git remote set-url origin "${CI_SERVER_PROTOCOL}://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git"
-    - joy merge ci
+    - joy merge ci --advise /tmp/joy-merge-advice.md
+    - |
+      if [ -f /tmp/joy-merge-advice.md ]; then
+        curl -sS --fail -X POST -H "PRIVATE-TOKEN: $JOY_PUSH_TOKEN" \
+          --data-urlencode "body@/tmp/joy-merge-advice.md" \
+          "$CI_API_V4_URL/projects/$CI_MERGE_REQUEST_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" > /dev/null
+      fi
 # joy:end

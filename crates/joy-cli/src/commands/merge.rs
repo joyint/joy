@@ -34,28 +34,36 @@ pub struct MergeArgs {
 enum MergeCommand {
     /// Three-way YAML merge driver invoked by Git.
     Driver(DriverArgs),
-    /// Merge the target branch into this one, invoked by CI.
+    /// Try the merge of the target branch into this one, invoked by CI.
     Ci(CiArgs),
 }
 
-/// What the CI job runs on a pull request (JOY-02AC-53).
+/// What the CI job runs on a pull request (JOY-02AC-53, JOY-02DD-D2).
 ///
-/// A forge merges with plain git, which runs no merge driver, so a Joy
-/// project cannot be merged from the web interface. This does the merge
-/// where joy IS installed, with Joy's own rules for Joy's own files, and
-/// publishes the result. What the forge then does is a fast forward,
-/// which cannot fail.
+/// A forge merges with plain git, which runs no merge driver, so a pull
+/// request whose Joy files meet the target's shows a conflict there. This
+/// tries that merge where joy IS installed, with Joy's own rules for
+/// Joy's own files, and publishes nothing: a push by the job's token puts
+/// the pull request's checks behind a manual approval on GitHub since
+/// 2026. Instead it writes the author a note, only when Joy files stood
+/// in the way, saying what to do in their own clone, where `joy init`
+/// registered the merge driver.
 #[derive(Args)]
 struct CiArgs {
     /// The branch to merge in. Without it, the one the CI names.
     #[arg(long)]
     target: Option<String>,
-    /// The remote to fetch from and publish to.
+    /// The pull request's own branch, for the note. Without it, the one
+    /// the CI names, else the checked out one.
+    #[arg(long)]
+    head: Option<String>,
+    /// The remote to fetch the target from.
     #[arg(long, default_value = "origin")]
     remote: String,
-    /// Merge only, do not publish. For trying it out.
+    /// Where to write the note for the author. Written only when there is
+    /// something to say; the CI posts it as a comment.
     #[arg(long)]
-    no_push: bool,
+    advise: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -158,6 +166,63 @@ fn target_from_ci() -> Option<String> {
     None
 }
 
+/// The pull request's own branch, as the CI announces it. GitHub and
+/// Gitea Actions set the first, GitLab the second.
+fn head_from_ci() -> Option<String> {
+    for key in ["GITHUB_HEAD_REF", "CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"] {
+        if let Ok(value) = std::env::var(key) {
+            let value = value.trim().to_string();
+            if !value.is_empty() {
+                return Some(value);
+            }
+        }
+    }
+    None
+}
+
+/// The note for the author when the forge cannot merge this pull request
+/// by itself (JOY-02DD-D2). Three commands they can paste: switch to the
+/// branch, pull the target, push. The pull runs the merge driver `joy
+/// init` registered, so the Joy files resolve on their machine without a
+/// word about drivers. `conflicts` are the files outside Joy's own that
+/// both sides changed; they are theirs to settle in that same pull.
+fn advice(head: &str, target: &str, remote: &str, conflicts: &[String]) -> String {
+    let mut note = format!(
+        "This branch and `{target}` both changed Joy files (items or logs). \
+         The forge cannot merge those, joy on your machine can:\n\
+         \n\
+         ```\n\
+         git switch {head}\n\
+         git pull {remote} {target}\n\
+         git push\n\
+         ```\n\
+         \n\
+         joy resolves the Joy files during the pull, your code merges as usual."
+    );
+    if conflicts.is_empty() {
+        note.push_str(" After the push the merge button turns green.\n");
+    } else {
+        note.push_str(&format!(
+            " git also stops at {}: both sides changed it, so decide that in the \
+             same pull, then commit and push.\n",
+            conflicts
+                .iter()
+                .map(|path| format!("`{path}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    note
+}
+
+/// The files outside Joy's own that both sides changed, as
+/// `merge_resolving_joy` names them when it stops.
+fn conflicts_named(err: &anyhow::Error) -> Option<Vec<String>> {
+    let text = err.to_string();
+    let (_, list) = text.split_once("both sides changed the same thing in: ")?;
+    Some(list.split(", ").map(str::to_string).collect())
+}
+
 /// The address on the merge commit. The forge names the person whose
 /// push started this; without one the machine says so plainly.
 fn ci_email() -> String {
@@ -197,27 +262,105 @@ fn run_ci(args: CiArgs) -> Result<()> {
         anyhow::bail!("{target} is not in this checkout and could not be fetched");
     };
 
-    let outcome = joy_core::vcs::forge::merge_resolving_joy(
+    let head = args
+        .head
+        .or_else(head_from_ci)
+        .or_else(|| joy_core::vcs::forge::head_branch(&root))
+        .context("no head branch: pass --head, or let the CI name it")?;
+
+    // The merge stays in this checkout and goes nowhere: it only tells
+    // whether plain git, which is all the forge has, could do it alone.
+    let note = match joy_core::vcs::forge::merge_resolving_joy(
         &root,
         &source,
         &format!("Merge {target} into the pull request branch [no-item]"),
         "Joy CI",
         &ci_email(),
-    )?;
+    ) {
+        Ok(outcome) if !outcome.merged => {
+            println!("{target} is already in this branch, nothing to do");
+            None
+        }
+        Ok(outcome) if outcome.resolved.is_empty() => {
+            println!("plain git merges {target} in by itself, nothing to say");
+            None
+        }
+        Ok(outcome) => {
+            for path in &outcome.resolved {
+                println!("only Joy's rules merge: {path}");
+            }
+            Some(advice(&head, &target, &args.remote, &[]))
+        }
+        Err(err) => match conflicts_named(&err) {
+            Some(conflicts) => Some(advice(&head, &target, &args.remote, &conflicts)),
+            None => return Err(err),
+        },
+    };
 
-    if !outcome.merged {
-        println!("{target} is already in this branch, nothing to do");
-        return Ok(());
+    let Some(note) = note else { return Ok(()) };
+    print!("{note}");
+    if let Some(path) = &args.advise {
+        std::fs::write(path, &note)
+            .with_context(|| format!("write the note to {}", path.display()))?;
     }
-    for path in &outcome.resolved {
-        println!("resolved by Joy's rules: {path}");
-    }
-    if args.no_push {
-        println!("merged, not published (--no-push)");
-        return Ok(());
-    }
-    joy_core::vcs::forge::push_branch(&root, &auth)
-        .with_context(|| format!("publish the merge to {}", args.remote))?;
-    println!("merged {target} in and published the result");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The three commands the author pastes, and nothing about drivers
+    /// (JOY-02DD-D2).
+    #[test]
+    fn the_note_names_the_branches_and_the_three_commands() {
+        let note = advice("feat/passphrase-meter", "main", "origin", &[]);
+        assert_eq!(
+            note,
+            "This branch and `main` both changed Joy files (items or logs). \
+             The forge cannot merge those, joy on your machine can:\n\
+             \n\
+             ```\n\
+             git switch feat/passphrase-meter\n\
+             git pull origin main\n\
+             git push\n\
+             ```\n\
+             \n\
+             joy resolves the Joy files during the pull, your code merges as usual. \
+             After the push the merge button turns green.\n"
+        );
+        assert!(!note.contains("driver"), "{note}");
+    }
+
+    /// A file outside Joy's own that both sides changed is the author's
+    /// to settle, in the same pull.
+    #[test]
+    fn the_note_names_what_git_stops_at() {
+        let note = advice(
+            "fix/one",
+            "develop",
+            "origin",
+            &["README.md".to_string(), "src/lib.rs".to_string()],
+        );
+        assert!(note.contains("git pull origin develop\n"), "{note}");
+        assert!(
+            note.ends_with(
+                "git also stops at `README.md`, `src/lib.rs`: both sides changed it, \
+                 so decide that in the same pull, then commit and push.\n"
+            ),
+            "{note}"
+        );
+        assert!(!note.contains("turns green"), "{note}");
+    }
+
+    /// What merge_resolving_joy says when it stops, read back as paths.
+    #[test]
+    fn the_stopped_merge_names_its_files() {
+        let err = anyhow::anyhow!("both sides changed the same thing in: README.md, src/lib.rs");
+        assert_eq!(
+            conflicts_named(&err),
+            Some(vec!["README.md".to_string(), "src/lib.rs".to_string()])
+        );
+        assert_eq!(conflicts_named(&anyhow::anyhow!("target: not found")), None);
+    }
 }
