@@ -705,7 +705,7 @@ pub const CI_GITLAB: CiTemplate = CiTemplate {
     target: ".joy/ci/gitlab.yml",
     content: include_str!("../data/ci/gitlab.yml"),
     note: Some(
-        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nset the CI variable JOY_PUSH_TOKEN, and keep one more job that runs for merge requests",
+        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nset the CI variable JOY_PUSH_TOKEN (a token with the api scope, for the note), and keep one more job that runs for merge requests",
     ),
 };
 
@@ -1023,7 +1023,7 @@ mod ci_template_tests {
                 .split("\n      - ")
                 .filter(|step| step.contains("uses:") || step.contains("name:"))
                 .collect();
-            assert_eq!(steps.len(), 4, "{}: {steps:#?}", template.target);
+            assert_eq!(steps.len(), 5, "{}: {steps:#?}", template.target);
             for step in &steps {
                 if step.contains("Ask the contributor") {
                     assert!(step.contains(FORK), "{}: {step}", template.target);
@@ -1039,11 +1039,68 @@ mod ci_template_tests {
         }
     }
 
+    /// The job pushes nothing any more: a push by its token puts the pull
+    /// request's checks behind a manual approval on GitHub, so it tries
+    /// the merge and tells the author instead (JOY-02DD-D2). Every
+    /// template hands joy a place for the note and posts it; none asks
+    /// for the right to write to the repository.
+    #[test]
+    fn the_job_advises_and_never_pushes() {
+        for template in [CI_GITHUB, CI_GITEA, CI_GITLAB] {
+            let job = template.content;
+            assert!(job.contains("joy merge ci"), "{}: {job}", template.target);
+            assert!(job.contains("--advise"), "{}: {job}", template.target);
+            assert!(
+                !job.contains("contents: write"),
+                "{}: {job}",
+                template.target
+            );
+            assert!(
+                !job.contains("remote set-url"),
+                "{}: {job}",
+                template.target
+            );
+            assert!(!job.contains("--no-push"), "{}: {job}", template.target);
+        }
+        for template in [CI_GITHUB, CI_GITEA] {
+            let job = template.content;
+            assert!(
+                job.contains("\n  contents: read\n"),
+                "{}: {job}",
+                template.target
+            );
+            // the note replaces the job's last comment, a later push adds none
+            assert!(
+                job.contains("--body-file \"$note\" --edit-last"),
+                "{}: {job}",
+                template.target
+            );
+            // the author pastes the branch they are on
+            assert!(
+                job.contains("--head \"${{ github.event.pull_request.head.ref }}\""),
+                "{}: {job}",
+                template.target
+            );
+        }
+        // GitLab's job token may not write a note, so the project's token does
+        let job = CI_GITLAB.content;
+        assert!(job.contains("PRIVATE-TOKEN: $JOY_PUSH_TOKEN"), "{job}");
+        assert!(
+            job.contains("/merge_requests/$CI_MERGE_REQUEST_IID/notes"),
+            "{job}"
+        );
+        assert!(
+            CI_GITLAB.note.expect("the note").contains("api scope"),
+            "{:?}",
+            CI_GITLAB.note
+        );
+    }
+
     /// What a GitLab told us when it ran the job (JOY-02D0-A1): the
-    /// installer unpacks a .tar.xz, which the slim image cannot; the push
-    /// has to go where the server is, on http or another port as well;
-    /// and GitLab starts no pipeline for a job of the .pre stage alone,
-    /// which the person has to be told.
+    /// installer unpacks a .tar.xz, which the slim image cannot; the note
+    /// goes to the instance's own API, wherever it is; and GitLab starts
+    /// no pipeline for a job of the .pre stage alone, which the person has
+    /// to be told.
     #[test]
     fn the_gitlab_job_runs_as_a_gitlab_ran_it() {
         let job = CI_GITLAB.content;
@@ -1051,13 +1108,8 @@ mod ci_template_tests {
             job.contains("apt-get install -y -qq curl ca-certificates git xz-utils"),
             "{job}"
         );
-        assert!(
-            job.contains(
-                "\"${CI_SERVER_PROTOCOL}://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git\""
-            ),
-            "{job}"
-        );
-        assert!(!job.contains("https://oauth2"), "{job}");
+        assert!(job.contains("\"$CI_API_V4_URL/projects/"), "{job}");
+        assert!(!job.contains("https://gitlab.com"), "{job}");
         // a merge request that conflicts gets its pipeline all the same,
         // so the rule stays the plain one
         assert!(
@@ -1105,17 +1157,20 @@ mod ci_template_tests {
 
 #[cfg(test)]
 mod tests {
-    /// The GitHub job publishes the merge with joy's own git connection,
+    /// The GitHub job fetches the target with joy's own git connection,
     /// which reads GH_TOKEN, not the credentials actions/checkout leaves
-    /// in the git config: without it every merge that has to be pushed
-    /// fails with "Sign in to GitHub to sync".
+    /// in the git config: without it a private repository answers "Sign
+    /// in to GitHub to sync".
     #[test]
     fn the_github_merge_step_gets_the_jobs_token() {
         let step = CI_GITHUB
             .content
-            .split("- name: Merge the target branch in")
+            .split("- name: Try the merge")
             .nth(1)
-            .expect("the merge step");
+            .expect("the merge step")
+            .split("- name: ")
+            .next()
+            .expect("the step body");
         assert!(step.contains("GH_TOKEN: ${{ github.token }}"), "{step}");
     }
 
