@@ -1,7 +1,7 @@
 id: JOY-02DA-62
 title: 'A job''s trail ends at its creation: the status steps are not in the history'
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -11,8 +11,8 @@ capabilities:
 effort: 2
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-17T06:31:32.377174324Z
-updated: 2026-10-17T08:52:38.302614972Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-18T16:24:08.972142232Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator 2026-10-17: the history of a job on joyint-forge-test shows only the creation; every later status change, by a person or by the platform, is missing. The trail is derived from the event log (JOY-0175-9B) over ITEM_ATTRIBUTE_EVENTS, which lists item.status_changed but not job.status_changed, the event every job step writes. Fix: job.status_changed joins the list, and joy show says what an entry changed where the log says it (a status step names its statuses, and the platform''s reason where it had one).'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
