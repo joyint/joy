@@ -1,7 +1,7 @@
 id: JOY-02D6-C7
 title: The hint about a newer joy stands above the output and scrolls away
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-15T04:58:36.824789851Z
-updated: 2026-10-15T05:01:58.572477084Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-18T16:24:13.976081425Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator, 2026-10-14: with an older joy in a repo a newer joy has synced, ''warning: this repo was last synced with joy X; you are running joy Y. Update joy before continuing'' is printed before the command runs, so it stands above the list of a joy ls and scrolls away with it. Wanted: the hint comes after the command''s output, the error included, so it is the last thing on the screen.'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
