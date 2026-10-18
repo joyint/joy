@@ -50,6 +50,7 @@ use crate::turn_engine::{TurnActivity, TurnOutcome, TurnSink, WireActivity};
 // The questions a turn puts to its present person (JOY-028A-DC): the
 // registry and the answer vocabulary, in their own file.
 mod gate;
+mod wire;
 pub use gate::{answer_from_person, GateChoice, OpenGate, PresentPerson, TurnGate};
 use gate::{gate_question, offers_allow};
 
@@ -604,39 +605,34 @@ pub fn answer_chat_permission(
     }
 }
 
-/// A JOB round's permission: the human approved the job, so whatever
-/// offers an allow option is allowed (the joy CLI's guard bounds item
-/// writes inside the sandbox). A request WITHOUT an allow option is a
-/// gate escalation — a human must decide; the round ends cleanly and the
-/// question rides back to the operator.
-pub fn answer_job_permission(request: &RequestPermissionRequest) -> PermissionAnswer {
+/// A JOB round's permission. The job runs at its own level, and that
+/// level answers here exactly as it answers a chat turn nobody attends
+/// (`answer_chat_permission`): what the level allows is allowed, what it
+/// does not is refused to the agent, and joy itself is always allowed,
+/// its guard bounds the item writes. A request WITHOUT an allow option
+/// is a gate escalation: a human must decide, the round ends cleanly and
+/// the question rides back to the operator.
+pub fn answer_job_permission(
+    mode: joy_chat::model::AgentMode,
+    request: &RequestPermissionRequest,
+    known: &KnownCall,
+) -> PermissionAnswer {
+    if offers_allow(request) {
+        return answer_chat_permission(mode, request, known);
+    }
     let title = request
         .tool_call
         .fields
         .title
         .clone()
+        .or_else(|| known.title.clone())
         .unwrap_or_else(|| "tool call".into());
-    match pick_option(
-        request,
-        [
-            PermissionOptionKind::AllowOnce,
-            PermissionOptionKind::AllowAlways,
-        ],
-    ) {
-        Some(option) => PermissionAnswer {
-            selected: Some(option),
-            title,
-            answered: "allowed",
-            question: None,
-            decision: joy_chat::model::permission::Decision::Allow,
-        },
-        None => PermissionAnswer {
-            selected: None,
-            title: title.clone(),
-            answered: "escalated to operator",
-            question: Some(title),
-            decision: joy_chat::model::permission::Decision::Deny,
-        },
+    PermissionAnswer {
+        selected: None,
+        title: title.clone(),
+        answered: "escalated to operator",
+        question: Some(title),
+        decision: joy_chat::model::permission::Decision::Deny,
     }
 }
 
@@ -998,7 +994,7 @@ async fn run_lane(
     let agent = match AcpAgent::from_str(&command) {
         Ok(agent) => agent,
         Err(e) => {
-            let reason = format!("agent command '{command}': {e}");
+            let reason = format!("{e} (agent '{}')", agent_program(&command));
             eprintln!("joyint: acp lane refused: {reason}");
             *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
             return;
@@ -1008,6 +1004,15 @@ async fn run_lane(
         Some(hook) => hook(agent),
         None => agent,
     };
+    // what goes over the wire, for the turn that ends without an answer
+    // (JP-0166-48)
+    let wire = Arc::new(wire::Wire::new());
+    let agent = {
+        let wire = wire.clone();
+        agent.with_debug(move |line, direction| wire.record(line, direction))
+    };
+    let lane_wire = wire.clone();
+    let lane_started = std::time::Instant::now();
     // per-SESSION turn buffers and modes: notifications and permission
     // requests carry the session id, so concurrent chats never mix
     let buffers: Arc<Mutex<HashMap<String, Collected>>> = Arc::default();
@@ -1224,6 +1229,8 @@ async fn run_lane(
             }) = rx.recv().await
             {
                 liveness.touch();
+                let wire_mark = wire.mark();
+                let turn_started = std::time::Instant::now();
                 let (session_id, prompt) = match sessions.get(&turn.chat_id) {
                     Some(sid) => (
                         sid.clone(),
@@ -1488,6 +1495,12 @@ async fn run_lane(
                 } else {
                     None
                 };
+                let ended_shown = match (&ended, &prompted) {
+                    (Some(ended), _) => ended.clone(),
+                    (None, Some(Err(e))) => format!("error: {}", wire::said(e)),
+                    (None, None) => "no answer to the cancel".to_string(),
+                    (None, Some(Ok(_))) => "cancelled".to_string(),
+                };
                 let result = if stop_ok {
                     let state = buffers
                         .lock()
@@ -1537,11 +1550,25 @@ async fn run_lane(
                         prompted
                             .as_ref()
                             .and_then(|r| r.as_ref().err())
-                            .map(|e| e.to_string())
+                            .map(wire::said)
                             .unwrap_or_default()
                     ))
                 };
                 let failed = result.is_err() || unanswered;
+                // A turn that did not end with the agent's own answer says
+                // what went over the wire until then (JP-0166-48): the
+                // silence alone explains nothing.
+                if failed || truncated {
+                    tracing::warn!(
+                        target: "joy_ai::acp_wire",
+                        chat = %turn.chat_id,
+                        turn = %turn.turn_id,
+                        ended = %ended_shown,
+                        seconds = turn_started.elapsed().as_secs(),
+                        wire = %wire.trail(wire_mark, turn_started),
+                        "acp turn ended without the agent's answer"
+                    );
+                }
                 let _ = respond.send(result);
                 if failed || login_required {
                     // a failed prompt poisons the connection state, and a
@@ -1557,11 +1584,44 @@ async fn run_lane(
     // words went to stderr already; this line plus the stored reason is
     // what turn() and the person get instead of a bare sammelsatz
     // (JAPP-01A0-1C: "could not be established" with no trace).
+    if let Err(e) = &connect {
+        tracing::warn!(
+            target: "joy_ai::acp_wire",
+            wire = %lane_wire.trail(0, lane_started),
+            error = %wire::said(e),
+            "acp lane ended"
+        );
+    }
     if let Err(e) = connect {
-        let reason = format!("agent '{command_shown}': {e:#}");
+        let reason = format!(
+            "{} (agent '{}')",
+            wire::said(&e),
+            agent_program(&command_shown)
+        );
         eprintln!("joyint: acp lane ended: {reason}");
         *errors.lock().unwrap_or_else(|e| e.into_inner()) = Some(reason);
     }
+}
+
+/// The one word of an agent command a failure may name: its program.
+/// Never the command itself (JOY-02BC-C8): its arguments and environment
+/// carry the provider key and the session of the member, and a failure
+/// reason travels to stderr, the logs and the chat. Reads both forms
+/// `AcpAgent::from_str` takes, the command line and the JSON spec.
+fn agent_program(command: &str) -> String {
+    let command = command.trim();
+    if command.starts_with('{') {
+        return serde_json::from_str::<serde_json::Value>(command)
+            .ok()
+            .and_then(|spec| spec["command"].as_str().map(str::to_string))
+            .unwrap_or_else(|| "?".into());
+    }
+    command
+        .split_whitespace()
+        // leading NAME=value pairs are environment, not the program
+        .find(|token| !token.contains('='))
+        .unwrap_or("?")
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1580,18 +1640,28 @@ pub struct RoundOutcome {
 /// Run ONE round as a fresh ACP session (a job's `--rm` container, or any
 /// other single-prompt use). The cumulative UsageUpdate IS the round
 /// total, no delta bookkeeping needed.
+///
+/// The round runs at `mode`, the level of the job, the way a chat turn
+/// runs at its level: the mode is set on the session over ACP where the
+/// agent advertises one for it, and it answers the agent's permission
+/// requests (`answer_job_permission`).
 pub async fn single_round(
     config: &LaneConfig,
     prompt: &str,
+    mode: joy_chat::model::AgentMode,
     timeout: std::time::Duration,
 ) -> anyhow::Result<RoundOutcome> {
-    match tokio::time::timeout(timeout, single_round_inner(config, prompt)).await {
+    match tokio::time::timeout(timeout, single_round_inner(config, prompt, mode)).await {
         Ok(result) => result,
         Err(_) => anyhow::bail!("acp round timed out after {}s", timeout.as_secs()),
     }
 }
 
-async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result<RoundOutcome> {
+async fn single_round_inner(
+    config: &LaneConfig,
+    prompt: &str,
+    mode: joy_chat::model::AgentMode,
+) -> anyhow::Result<RoundOutcome> {
     let agent =
         AcpAgent::from_str(&config.command).map_err(|e| anyhow::anyhow!("acp agent spawn: {e}"))?;
     let agent = match &config.prepare {
@@ -1621,7 +1691,11 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
         )
         .on_receive_request(
             async move |request: RequestPermissionRequest, responder, _connection| {
-                let answer = answer_job_permission(&request);
+                let known = perms
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .known(request.tool_call.tool_call_id.0.as_ref());
+                let answer = answer_job_permission(mode, &request, &known);
                 {
                     let mut state = perms.lock().unwrap_or_else(|e| e.into_inner());
                     state.record_permission(
@@ -1657,6 +1731,46 @@ async fn single_round_inner(config: &LaneConfig, prompt: &str) -> anyhow::Result
                     ))
                     .block_task()
                     .await?;
+            }
+            // The job's level reaches the tool itself, as a turn's does
+            // (JOY-0280-A5): an agent that never asks would otherwise run
+            // in whatever mode its setup says.
+            let offered: Vec<String> = session
+                .modes
+                .as_ref()
+                .map(|state| {
+                    state
+                        .available_modes
+                        .iter()
+                        .map(|m| m.id.0.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            match crate::level_enforcement::pick_session_mode(
+                offered.iter().map(String::as_str),
+                mode,
+            ) {
+                Some(mode_id) => {
+                    match connection
+                        .send_request(SetSessionModeRequest::new(
+                            session.session_id.clone(),
+                            mode_id,
+                        ))
+                        .block_task()
+                        .await
+                    {
+                        Ok(_) => tracing::info!(mode = mode_id, "session mode set for the round"),
+                        Err(e) => tracing::warn!(
+                            mode = mode_id,
+                            error = %e,
+                            "the agent refused the session mode; permission answers govern"
+                        ),
+                    }
+                }
+                None => tracing::info!(
+                    round_mode = ?mode,
+                    "the agent advertises no session mode for this level; permission answers govern"
+                ),
             }
             connection
                 .send_request(PromptRequest::new(
@@ -1850,8 +1964,71 @@ mod lane_error_tests {
             assert!(msg.contains("could not be established"), "{msg}");
             assert!(
                 msg.contains("joyint-missing-binary-xyz"),
-                "the reason names the command: {msg}"
+                "the reason names the program: {msg}"
             );
+        });
+    }
+
+    /// JOY-02BC-C8: the reason of a dead lane went to stderr and into
+    /// the chat WITH the whole agent command, the provider key and the
+    /// member's session in it, and the cause came last, behind a cut.
+    /// Both forms of the command, a failure at each stage.
+    #[test]
+    fn a_lane_failure_names_the_cause_and_no_secret() {
+        let line = "KEY_ENV=sk-line-secret joyint-missing-binary-xyz \
+                    --env JOY_SESSION=line-session-secret acp";
+        let spec = serde_json::json!({
+            "name": "agent",
+            "command": "joyint-missing-binary-xyz",
+            "args": ["exec", "--env", "KEY_ENV", "acp"],
+            "env": [{"name": "KEY_ENV", "value": "sk-spec-secret"}],
+        })
+        .to_string();
+        // a command nobody can parse: the quote never closes
+        let broken = "joyint-missing-binary-xyz --env 'KEY_ENV=sk-broken-secret";
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            for (key, command) in [(1u32, line), (2, spec.as_str()), (3, broken)] {
+                let lanes: LaneSet<u32> = LaneSet::default();
+                let config = LaneConfig {
+                    command: command.into(),
+                    adapter: String::new(),
+                    cwd: std::env::temp_dir(),
+                    client_name: "test".into(),
+                    client_version: "1".into(),
+                    fresh_preamble: None,
+                    model: None,
+                    prepare: None,
+                };
+                let request = TurnRequest {
+                    chat_id: "c1".into(),
+                    turn_id: "t1".into(),
+                    prompt_full: "hi".into(),
+                    prompt_delta: None,
+                    mode: joy_chat::model::AgentMode::Plan,
+                    max_price_cents: 0,
+                    activity: None,
+                    present: None,
+                };
+                let err = match lanes
+                    .turn(key, 0, &config, request, std::time::Duration::from_secs(20))
+                    .await
+                {
+                    Err(e) => e,
+                    Ok(_) => panic!("a missing binary cannot make a lane"),
+                };
+                let msg = format!("{err}");
+                assert!(!msg.contains("secret"), "a secret in the reason: {msg}");
+                assert!(!msg.contains("--env"), "the command in the reason: {msg}");
+                // the cause leads, the program closes
+                assert!(
+                    msg.ends_with("(agent 'joyint-missing-binary-xyz')"),
+                    "{msg}"
+                );
+            }
         });
     }
 }
@@ -2137,19 +2314,56 @@ mod tests {
                 { "optionId": "n", "name": "reject", "kind": "reject_once" },
             ],
         }));
-        let answer = answer_job_permission(&request);
+        let answer = answer_job_permission(
+            joy_chat::model::AgentMode::Autonomous,
+            &request,
+            &KnownCall::default(),
+        );
         assert_eq!(answer.answered, "escalated to operator");
         assert!(answer.selected.is_none());
         assert_eq!(answer.question.as_deref(), Some("push to production"));
-        // with an allow option the approved job just runs
-        let allowed = answer_job_permission(&permission_request(serde_json::json!({
-            "sessionId": "s1",
-            "toolCall": { "toolCallId": "t2", "title": "bash: cargo test" },
-            "options": [
-                { "optionId": "y", "name": "allow", "kind": "allow_once" },
-            ],
-        })));
-        assert_eq!(allowed.answered, "allowed");
-        assert!(allowed.question.is_none());
+    }
+
+    /// A job runs at its own level (JI-019D-46), and the level answers
+    /// the agent's requests the way it answers a chat turn nobody
+    /// attends: it used to allow whatever offered an allow option, at
+    /// every level.
+    #[test]
+    fn a_job_round_answers_at_the_level_of_the_job() {
+        use joy_chat::model::AgentMode::{AcceptEdits, Autonomous, Plan};
+        let call = |title: &str, kind: &str| {
+            permission_request(serde_json::json!({
+                "sessionId": "s1",
+                "toolCall": { "toolCallId": "t2", "title": title, "kind": kind },
+                "options": [
+                    { "optionId": "y", "name": "allow", "kind": "allow_once" },
+                    { "optionId": "n", "name": "reject", "kind": "reject_once" },
+                ],
+            }))
+        };
+        let none = KnownCall::default();
+        let shell = call("bash: cargo test", "execute");
+        let edit = call("edit src/lib.rs", "edit");
+        // autonomous: the round just runs
+        let ran = answer_job_permission(Autonomous, &shell, &none);
+        assert_eq!(ran.answered, "allowed");
+        assert!(ran.question.is_none());
+        // confirmed: edits pass, a command is refused to the agent, and
+        // the round goes on without a question to anybody
+        assert_eq!(
+            answer_job_permission(AcceptEdits, &edit, &none).answered,
+            "allowed"
+        );
+        let refused = answer_job_permission(AcceptEdits, &shell, &none);
+        assert_eq!(refused.answered, "denied");
+        assert_eq!(refused.selected.as_ref().map(|o| o.0.as_ref()), Some("n"));
+        assert!(refused.question.is_none());
+        // proposing: no edit either, and joy itself always
+        assert_eq!(answer_job_permission(Plan, &edit, &none).answered, "denied");
+        let joy = call("joy comment IT-0001 \"done\"", "execute");
+        assert_eq!(
+            answer_job_permission(Plan, &joy, &none).answered,
+            "allowed (joy)"
+        );
     }
 }

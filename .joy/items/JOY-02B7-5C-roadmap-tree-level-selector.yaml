@@ -1,0 +1,14 @@
+id: JOY-02B7-5C
+title: Roadmap tree level  selector
+type: story
+status: new
+priority: medium
+capabilities:
+- plan
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-10-02T19:47:44.734706188Z
+updated: 2026-10-02T19:47:44.734706188Z
+updated_by: horst.schwarz@joydev.com
+description: In products with a lot of items it’s quite hard to keep overview of all epics, stories, and other items with the joy roadmap command. It should be possible to define the level of three branches. For example -n 3 to show the two level from milestone to epic. Alternatively with —-to epic for example?

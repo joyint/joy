@@ -1,0 +1,20 @@
+version: v0.21.1
+date: 2026-09-25
+previous: v0.21.0
+contributors:
+- id: ai:agy@joy delegated-by:horst.schwarz@joydev.com
+  events: 6
+  items: 1
+- id: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+  events: 5
+  items: 1
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 2
+  items: 1
+items:
+  bugs:
+  - id: JOY-02AE-84
+    title: A prerelease version breaks the next bump and the release order
+  reworks:
+  - id: JOY-02B1-6B
+    title: Make AI integration instructions token-based and tool-neutral

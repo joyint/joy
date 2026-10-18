@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The rule of D1.2, read without a forge, an agent or a connector.
+//! The rule, read without a forge, an agent or a connector.
 //!
 //! Every fact the resolver decides on is an argument of [`plan_with`],
-//! so the candidate order, the twin trigger of decision 11 and the four
-//! refusals of D1.5 are all decidable here. What needs a real contact
+//! so the candidate order, the twin trigger and the four
+//! refusals are all decidable here. What needs a real contact
 //! (the tracking ref after a twin push, a rejected ref) lives in the
 //! engine tests beside it.
 
@@ -32,7 +32,7 @@ fn ssh_ready() -> SshProbe {
 }
 
 /// A machine with no agent and no readable key: the normal state of a
-/// Windows desktop, and trigger (a) of D1.2.
+/// Windows desktop, and trigger (a).
 fn ssh_empty() -> SshProbe {
     SshProbe {
         candidates: 0,
@@ -54,7 +54,7 @@ fn no_rule(_: &str) -> Option<String> {
     None
 }
 
-// ---- the candidate order (D1.2) --------------------------------------
+// ---- the candidate order --------------------------------------
 
 #[test]
 fn an_ssh_remote_with_a_working_chain_stays_on_ssh_even_with_a_token() {
@@ -70,7 +70,7 @@ fn an_ssh_remote_with_a_working_chain_stays_on_ssh_even_with_a_token() {
     assert_eq!(plan.legs[0].transport, Transport::Ssh);
     assert!(
         matches!(plan.legs[0].credential, LegCredential::Machine),
-        "the ssh candidates come first, whatever tokens exist (D1.2 rule 2)"
+        "the ssh candidates come first, whatever tokens exist"
     );
     // The twin is the SECOND contact, and only after the ssh contact
     // failed with an authentication class failure.
@@ -92,7 +92,7 @@ fn a_host_whose_memory_says_ssh_worked_never_goes_to_the_twin() {
     );
     assert_eq!(plan.legs.len(), 1, "one leg, and it is ssh: {plan:#?}");
     assert_eq!(plan.legs[0].transport, Transport::Ssh);
-    assert!(!plan.uses_twin(), "whatever tokens exist (D1.2 rule 3)");
+    assert!(!plan.uses_twin(), "whatever tokens exist");
     assert!(plan.why().contains("ssh worked for github.com before"));
 }
 
@@ -176,7 +176,7 @@ fn signed_in_to_nothing() -> HostFacts {
     }
 }
 
-/// D1.2, "No anonymous polling": "A poll or a worker tick may not"
+/// "No anonymous polling": "A poll or a worker tick may not"
 /// contact an https remote with no credential. A `Background` host is
 /// the sync worker and the chat poll, so it stays on the transport it
 /// has a credential for, whatever that is worth.
@@ -200,7 +200,7 @@ fn a_background_operation_with_no_token_anywhere_never_grows_a_twin_leg() {
 /// remote with no credential." That is the whole journey of a public
 /// repository whose remote is ssh, on a Windows desktop with no
 /// readable key and nobody signed in: the twin answers and the ssh
-/// chain never could. "Nobody is signed in" is not one of D1.5's four
+/// chain never could. "Nobody is signed in" is not one of the four
 /// refusals.
 #[test]
 fn an_interactive_operation_may_try_the_twin_with_no_token_at_all() {
@@ -217,7 +217,7 @@ fn an_interactive_operation_may_try_the_twin_with_no_token_at_all() {
     assert_eq!(plan.legs[0].url, "https://github.com/acme/widgets.git");
     assert!(
         matches!(plan.legs[0].credential, LegCredential::Machine),
-        "no token, so the machine's own chain rides it (D1.3)"
+        "no token, so the machine's own chain rides it"
     );
     assert!(
         plan.why()
@@ -225,7 +225,7 @@ fn an_interactive_operation_may_try_the_twin_with_no_token_at_all() {
         "and it says why: {}",
         plan.why()
     );
-    // The four refusals of D1.5 still refuse it: a host nobody claims
+    // The four refusals still refuse it: a host nobody claims
     // and no table knows has no twin, signed in or not.
     let unknown = plan_with(
         "git@forge.acme-internal.example:acme/widgets.git",
@@ -238,7 +238,7 @@ fn an_interactive_operation_may_try_the_twin_with_no_token_at_all() {
     assert!(!unknown.uses_twin(), "{unknown:#?}");
 }
 
-// ---- the twin and its refusals (D1.5) --------------------------------
+// ---- the twin and its refusals --------------------------------
 
 #[test]
 fn the_table_knows_three_hosts_and_the_two_ssh_sub_domains() {
@@ -382,7 +382,7 @@ fn a_push_insteadof_rule_that_matches_the_twin_keeps_the_remote_on_ssh() {
     );
 }
 
-// ---- the insteadOf prediction (D1.5) ---------------------------------
+// ---- the insteadOf prediction ---------------------------------
 
 /// A config file with the entries a case needs, read by git2 exactly as
 /// libgit2 reads the person's own.
@@ -450,7 +450,7 @@ fn push_insteadof_is_read_on_a_push_and_not_on_a_fetch() {
     );
 }
 
-// ---- the transport memory (D1.2) -------------------------------------
+// ---- the transport memory -------------------------------------
 
 #[test]
 fn the_memory_is_written_at_0600_and_read_back() {
@@ -484,13 +484,13 @@ fn a_row_older_than_the_ttl_is_not_read() {
         remember("codeberg.org", memory);
         assert!(
             recall("codeberg.org").is_none(),
-            "the 24 hour TTL of D1.2 is read from the row"
+            "the 24 hour TTL is read from the row"
         );
     });
 }
 
 /// The facts a row is written under travel into it and come back out
-/// unchanged, which is what the comparison of D1.2 rule 3a reads.
+/// unchanged, which is what the comparison rule 3a reads.
 ///
 /// The RULE itself - which row is dropped, and when - lives in
 /// `forge::fresh_memory` and is proven there
@@ -518,7 +518,7 @@ fn the_facts_a_row_was_written_under_survive_the_round_trip() {
     });
 }
 
-// ---- the token cache (D1.7) ------------------------------------------
+// ---- the token cache ------------------------------------------
 
 #[test]
 fn the_token_ttl_is_the_smaller_of_the_expiry_and_five_minutes() {
@@ -554,7 +554,7 @@ fn a_connector_user_name_decides_the_shape_and_the_id_is_the_fallback() {
         token_kind("github-enterprise", Some("")),
         Some(ForgeKind::GitHubEnterprise)
     );
-    // Each of the two names is shared by a whole family (D1.6), so a
+    // Each of the two names is shared by a whole family, so a
     // name never overrules an id that already names a family of that
     // shape: the kind travels on into `Auth::ClaimedToken` and into the
     // remembered `shape`, and a Gitea recorded as GitLab is inherited

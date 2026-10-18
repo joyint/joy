@@ -33,8 +33,10 @@ pub fn run(args: RmArgs) -> Result<()> {
 
     let mut to_delete = vec![item.id.clone()];
 
+    // The whole set, read once: the descendants are found in it and the
+    // references to each deleted item are removed from it.
+    let mut all_items = items::load_items(&ctx.root)?;
     if args.recursive {
-        let all_items = items::load_items(&ctx.root)?;
         collect_descendants(&all_items, &item.id, &mut to_delete);
     }
 
@@ -69,7 +71,7 @@ pub fn run(args: RmArgs) -> Result<()> {
     let mut deleted_entries: Vec<DeletedEntry> = Vec::new();
     for id in &to_delete {
         let deleted = items::delete_item(&ctx.root, id)?;
-        let updated = items::remove_references(&ctx.root, id, &log_user)?;
+        let updated = items::remove_references_in(&ctx.root, &mut all_items, id, &log_user)?;
         joy_core::event_log::log_event_as(
             &ctx.root,
             joy_core::event_log::EventType::ItemDeleted,

@@ -10,8 +10,8 @@
 //! * [`opaque_member_id`] derives the at-rest member id (`m-<short>`) from the
 //!   member's Ed25519 verify key. It carries no PII and is recomputable by
 //!   anyone holding the verify key.
-//! * [`email_match`] derives the non-reversible e-mail verifier stored in
-//!   `project.yaml` under `email_match`. The platform computes the same value
+//! * [`email_tag`] derives the non-reversible e-mail verifier stored in
+//!   `project.yaml` under `email_tag`. The platform computes the same value
 //!   over a verified account e-mail to decide project membership, without
 //!   decrypting anything.
 //!
@@ -23,10 +23,11 @@
 
 use sha2::{Digest, Sha256};
 
-/// Fixed HKDF `info` for the e-mail verifier. Domain-separates this use of
+/// Fixed HKDF `info` for the e-mail tag. Domain-separates this use of
 /// HKDF-SHA256 from delegation-seed derivation (`b"joy-delegation:..."`).
-/// MUST NOT change: the platform keys its comparison on the identical value.
-const EMAIL_MATCH_INFO: &[u8] = b"joy-email-match";
+/// MUST NOT change, not even with the field's name (`email_match` before
+/// JOY-02DB-09): every tag in every project was derived with it.
+const EMAIL_TAG_INFO: &[u8] = b"joy-email-match";
 
 /// Length (in base32 chars) of the short part of an opaque member id. 10 chars
 /// of base32 = 50 bits, far beyond collision range for members-per-project.
@@ -76,9 +77,42 @@ pub fn opaque_member_id(verify_key_hex: &str) -> Result<String, hex::FromHexErro
     Ok(format!("m-{}", &b32[..MEMBER_ID_SHORT_LEN]))
 }
 
+/// Domain tag of the file id a member gets when a project from before the
+/// member files is brought over (JI-019D-46). A tag of its own, so the id
+/// is never the one [`opaque_member_id`] derives for the same member.
+const MIGRATED_FILE_ID_INFO: &[u8] = b"joy-member-file:";
+
+fn short_id(digest: &[u8]) -> String {
+    let b32 = base32_lower_nopad(digest);
+    format!("m-{}", &b32[..MEMBER_ID_SHORT_LEN])
+}
+
+/// A fresh id for a new member's file under `.joy/members/`: `m-` and ten
+/// random base32 characters. It derives from nothing, so nothing about
+/// the member can be read off it or computed towards it.
+pub fn new_member_file_id() -> String {
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    short_id(&bytes)
+}
+
+/// The file id of a member that existed before the member files, from
+/// the project and the member's key in the old map. Deterministic on
+/// purpose: two people who bring the same project over on two machines
+/// write the same files.
+pub fn migrated_member_file_id(project_id: &str, member_key: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(MIGRATED_FILE_ID_INFO);
+    hasher.update(project_id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(member_key.as_bytes());
+    short_id(&hasher.finalize())
+}
+
 /// Whether `s` has the shape of an opaque member id: `m-` followed by exactly
 /// [`MEMBER_ID_SHORT_LEN`] base32 (lowercase, no padding) characters. Lets
-/// anonymous-mode ids be accepted wherever an e-mail or `ai:` id is otherwise
+/// anonymous-mode ids be accepted wherever an e-mail or an AI member's name is otherwise
 /// expected (e.g. self-assign resolves to the opaque id).
 pub fn is_opaque_member_id(s: &str) -> bool {
     match s.strip_prefix("m-") {
@@ -89,17 +123,17 @@ pub fn is_opaque_member_id(s: &str) -> bool {
     }
 }
 
-/// Compute the non-reversible `email_match` verifier for `email`, keyed by the
+/// Compute the non-reversible `email_tag` for `email`, keyed by the
 /// member's project-stable `kdf_nonce` (hex). Hex-encoded 32-byte output.
 ///
-/// `email_match = hex( HKDF-SHA256(ikm = normalize(email), salt = kdf_nonce,
+/// `email_tag = hex( HKDF-SHA256(ikm = normalize(email), salt = kdf_nonce,
 /// info = "joy-email-match", len = 32) )`.
 ///
 /// Returns an error if `kdf_nonce_hex` is not valid hex.
-pub fn email_match(email: &str, kdf_nonce_hex: &str) -> Result<String, hex::FromHexError> {
+pub fn email_tag(email: &str, kdf_nonce_hex: &str) -> Result<String, hex::FromHexError> {
     let nonce = hex::decode(kdf_nonce_hex.trim())?;
     let normalized = normalize_email(email);
-    let out = joy_crypt::kdf::derive_hkdf_sha256(normalized.as_bytes(), &nonce, EMAIL_MATCH_INFO);
+    let out = joy_crypt::kdf::derive_hkdf_sha256(normalized.as_bytes(), &nonce, EMAIL_TAG_INFO);
     Ok(hex::encode(out))
 }
 
@@ -136,34 +170,34 @@ mod tests {
     }
 
     #[test]
-    fn email_match_is_deterministic_and_32_bytes() {
-        let a = email_match("horst@joydev.com", NONCE).unwrap();
-        let b = email_match("horst@joydev.com", NONCE).unwrap();
+    fn email_tag_is_deterministic_and_32_bytes() {
+        let a = email_tag("horst@joydev.com", NONCE).unwrap();
+        let b = email_tag("horst@joydev.com", NONCE).unwrap();
         assert_eq!(a, b);
         assert_eq!(a.len(), 64); // 32 bytes hex
     }
 
     #[test]
-    fn email_match_normalizes_case_and_whitespace() {
-        let plain = email_match("horst@joydev.com", NONCE).unwrap();
-        let messy = email_match("  Horst@JoyDev.com  ", NONCE).unwrap();
+    fn email_tag_normalizes_case_and_whitespace() {
+        let plain = email_tag("horst@joydev.com", NONCE).unwrap();
+        let messy = email_tag("  Horst@JoyDev.com  ", NONCE).unwrap();
         assert_eq!(plain, messy);
     }
 
     #[test]
-    fn email_match_differs_by_email() {
+    fn email_tag_differs_by_email() {
         assert_ne!(
-            email_match("a@example.com", NONCE).unwrap(),
-            email_match("b@example.com", NONCE).unwrap()
+            email_tag("a@example.com", NONCE).unwrap(),
+            email_tag("b@example.com", NONCE).unwrap()
         );
     }
 
     #[test]
-    fn email_match_differs_by_nonce() {
+    fn email_tag_differs_by_nonce() {
         let other = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
         assert_ne!(
-            email_match("a@example.com", NONCE).unwrap(),
-            email_match("a@example.com", other).unwrap()
+            email_tag("a@example.com", NONCE).unwrap(),
+            email_tag("a@example.com", other).unwrap()
         );
     }
 

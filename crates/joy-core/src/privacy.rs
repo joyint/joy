@@ -22,23 +22,16 @@ use std::path::Path;
 use joy_crypt::identity::{Keypair, PublicKey};
 
 use crate::error::JoyError;
-use crate::member_id::{email_match, opaque_member_id};
+use crate::member_id::{email_tag, opaque_member_id};
 use crate::members_file::{self, MemberInfo, MembersFile, MEMBERS_ZONE};
 use crate::model::project::{Member, PrivacyMode};
 use crate::model::Project;
 use crate::store;
 use joy_crypt::zone::{unwrap_for_member, wrap_for_member, ZoneKey};
 
-/// A human member is one whose map key is an e-mail (not an `ai:` synthetic id).
-/// Only human members carry PII and get anonymized; AI members keep their
-/// readable synthetic id.
-fn is_human_key(key: &str) -> bool {
-    !key.starts_with("ai:")
-}
-
 /// Resolve the member-map key for a git e-mail, honoring the privacy mode. In
 /// `open` mode the key is the e-mail itself; in `anonymous` mode it is the
-/// opaque id whose stored `email_match` verifies against the e-mail. Returns
+/// opaque id whose stored `email_tag` verifies against the e-mail. Returns
 /// `None` when the e-mail is not a member.
 pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
     project.member_key_for_email(email)
@@ -61,8 +54,8 @@ pub fn member_key_owned_by(
 ) -> Option<String> {
     project
         .members()
+        .filter(|(_, member)| member.kind == crate::model::project::MemberKind::Person)
         .map(|(key, _)| key)
-        .filter(|key| !key.starts_with("ai:"))
         .find(|key| {
             crate::forge_plugins::resolve(spec, key, ctx).is_some_and(|owner| {
                 match (&owner.user_id, &acting.user_id) {
@@ -225,7 +218,7 @@ pub fn email_for(
 /// `operator` is what the delegation token recorded as its `delegated_by`.
 /// That is EITHER a cleartext e-mail, when a person typed one (`joy auth
 /// token add --user`), OR the operator's at-rest member key, which is what
-/// identity resolution answers with since package J11 (D3.9) and what the
+/// identity resolution answers with and what the
 /// app's attested issuance always held. When an AI acts under that
 /// delegation, the operator is recorded as the `delegated-by:` part of the
 /// actor in items (`created_by`/`updated_by`), logs, and the commit
@@ -260,7 +253,7 @@ fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
 
 /// GDPR Art. 17 erasure: remove a member's e-mail and name from the encrypted
 /// `members.yaml` and re-encrypt, severing the id -> PII resolution. The opaque
-/// id, the `email_match` verifier and the whole audit trail in the versioned
+/// id, the `email_tag` verifier and the whole audit trail in the versioned
 /// files are deliberately left intact (Art. 17(3): the audit trail rests on a
 /// legitimate interest). After this, no Joy output can resolve that id to a
 /// person. Anonymous mode only; needs an operator seed with members.yaml access.
@@ -310,8 +303,34 @@ fn rewrite_file(path: &Path, replacements: &[(String, String)]) -> Result<(), Jo
     Ok(())
 }
 
+/// [`rewrite_file`] for a project.yaml that lists member files: the rest
+/// of the file may name people (a crypt zone records who delegated to
+/// which AI member), the list under `members` names files, and a file
+/// keeps its name whichever way the project is switched.
+pub(crate) fn rewrite_project_keeping_the_member_list(
+    path: &Path,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
+    use serde_yaml_ng::Value;
+    let read = || -> Result<Value, JoyError> {
+        let content = std::fs::read_to_string(path).map_err(|e| io_err("read", e))?;
+        Ok(serde_yaml_ng::from_str(&content)?)
+    };
+    let list = read()?.get("members").cloned();
+    rewrite_file(path, replacements)?;
+    let mut value = read()?;
+    if let (Some(map), Some(list)) = (value.as_mapping_mut(), list) {
+        map.insert("members".into(), list);
+    }
+    std::fs::write(path, serde_yaml_ng::to_string(&value)?).map_err(|e| io_err("write", e))
+}
+
 /// Replace each `from -> to` across every `*.<ext>` file in `dir`.
-fn rewrite_dir(dir: &Path, ext: &str, replacements: &[(String, String)]) -> Result<(), JoyError> {
+pub(crate) fn rewrite_dir(
+    dir: &Path,
+    ext: &str,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
     if !dir.exists() {
         return Ok(());
     }
@@ -328,28 +347,44 @@ fn rewrite_dir(dir: &Path, ext: &str, replacements: &[(String, String)]) -> Resu
 /// Used to scrub residual e-mails (attestation `attester` / `signed_fields`,
 /// item `created_by` / `assignees` / comment authors, log actors) on switch in,
 /// and to restore them on switch out.
-fn rewrite_working_tree(root: &Path, replacements: &[(String, String)]) -> Result<(), JoyError> {
+fn rewrite_working_tree(
+    root: &Path,
+    project: &Project,
+    replacements: &[(String, String)],
+) -> Result<(), JoyError> {
     let joy = store::joy_dir(root);
-    rewrite_file(&joy.join(store::PROJECT_FILE), replacements)?;
+    let project_file = joy.join(store::PROJECT_FILE);
+    if project.member_layout() == crate::model::project::MemberLayout::InProject {
+        rewrite_file(&project_file, replacements)?;
+    } else {
+        rewrite_project_keeping_the_member_list(&project_file, replacements)?;
+    }
     rewrite_dir(&joy.join(store::ITEMS_DIR), "yaml", replacements)?;
     rewrite_dir(&joy.join(store::LOG_DIR), "log", replacements)?;
     Ok(())
 }
 
-/// Remove a top-level key from project.yaml. Needed because
-/// `write_yaml_preserve` keeps keys present in the original file but absent from
-/// the serialized struct (so a `privacy` field cleared to `None` would otherwise
-/// linger as the stale `anonymous` value).
-fn prune_yaml_key(path: &Path, key: &str) -> Result<(), JoyError> {
-    use serde_yaml_ng::Value;
-    let raw = std::fs::read_to_string(path).map_err(|e| io_err("read", e))?;
-    let mut value: Value = serde_yaml_ng::from_str(&raw)?;
-    if let Some(map) = value.as_mapping_mut() {
-        map.remove(Value::String(key.to_string()));
+/// Who signed for a member is named by member id, and the ids of people
+/// have just changed: name them by the new one (`renamed` is old to new).
+fn rename_signers(members: &mut BTreeMap<String, Member>, renamed: &[(String, String)]) {
+    let new_id = |old: &str| {
+        renamed
+            .iter()
+            .find(|(from, _)| from == old)
+            .map(|(_, to)| to.as_str().into())
+    };
+    for member in members.values_mut() {
+        if let Some(origin) = &mut member.origin {
+            if let Some(id) = new_id(origin.attester.id()) {
+                origin.attester = id;
+            }
+        }
+        if let Some(granted) = &mut member.granted {
+            if let Some(id) = new_id(granted.by.id()) {
+                granted.by = id;
+            }
+        }
     }
-    let yaml = serde_yaml_ng::to_string(&value)?;
-    std::fs::write(path, yaml).map_err(|e| io_err("write", e))?;
-    Ok(())
 }
 
 /// Switch a project from `open` to `anonymous`.
@@ -372,10 +407,11 @@ pub fn switch_to_anonymous(
     let mut renamed: Vec<(String, String)> = Vec::new();
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
     let mut mf = MembersFile::default();
+    let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
 
     for (key, mut member) in project.take_members() {
-        if !is_human_key(&key) {
-            // AI member: keep synthetic id and entry as-is.
+        if member.kind != crate::model::project::MemberKind::Person {
+            // AI or platform member: keep name and entry as-is.
             new_members.insert(key, member);
             continue;
         }
@@ -390,9 +426,15 @@ pub fn switch_to_anonymous(
             .clone()
             .ok_or_else(|| JoyError::Other(format!("member {email} has no kdf_nonce")))?;
 
-        let id = opaque_member_id(&verify_key)
-            .map_err(|e| JoyError::Other(format!("bad verify_key for {email}: {e}")))?;
-        let verifier = email_match(&email, &kdf_nonce)
+        // With member files the id a person is known by from here on is
+        // the one their file already has: random, derived from nothing
+        // (JI-019D-46). A project from before derives it from the key.
+        let id = match (&member.file_id, in_files) {
+            (Some(file_id), true) => file_id.clone(),
+            _ => opaque_member_id(&verify_key)
+                .map_err(|e| JoyError::Other(format!("bad verify_key for {email}: {e}")))?,
+        };
+        let verifier = email_tag(&email, &kdf_nonce)
             .map_err(|e| JoyError::Other(format!("bad kdf_nonce for {email}: {e}")))?;
 
         let recipient_pk = PublicKey::from_hex(&verify_key)?;
@@ -404,7 +446,7 @@ pub fn switch_to_anonymous(
             &recipient_pk,
         );
 
-        member.email_match = Some(verifier);
+        member.email_tag = Some(verifier);
         member.members_wrap = Some(wrap);
 
         mf.members.insert(
@@ -418,15 +460,15 @@ pub fn switch_to_anonymous(
         new_members.insert(id, member);
     }
 
+    rename_signers(&mut new_members, &renamed);
     project.replace_members(new_members);
     project.set_privacy_mode(Some(PrivacyMode::Anonymous));
 
     // Persist the structural changes, then scrub residual e-mails (attestation
     // fields in project.yaml, item bodies, logs) by textual substitution.
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, project)?;
+    store::save_project(root, project)?;
     members_file::write(root, &zone_key, &mf)?;
-    rewrite_working_tree(root, &renamed)?;
+    rewrite_working_tree(root, project, &renamed)?;
 
     Ok(renamed)
 }
@@ -459,13 +501,15 @@ pub fn switch_to_open(
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
 
     for (key, mut member) in project.take_members() {
-        if !is_human_key(&key) && !mf.members.contains_key(&key) {
+        if member.kind != crate::model::project::MemberKind::Person
+            && !mf.members.contains_key(&key)
+        {
             new_members.insert(key, member);
             continue;
         }
         match mf.email_for(&key) {
             Some(email) => {
-                member.email_match = None;
+                member.email_tag = None;
                 member.members_wrap = None;
                 renamed.push((key.clone(), email.to_string()));
                 new_members.insert(email.to_string(), member);
@@ -477,18 +521,17 @@ pub fn switch_to_open(
         }
     }
 
+    rename_signers(&mut new_members, &renamed);
     project.replace_members(new_members);
     project.set_privacy_mode(None);
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, project)?;
-    prune_yaml_key(&project_path, "privacy")?;
+    store::save_project(root, project)?;
     // Remove the encrypted members file and restore e-mails in the working tree.
     let mp = members_file::members_path(root);
     if mp.exists() {
         std::fs::remove_file(&mp).map_err(|e| io_err("remove members.yaml", e))?;
     }
-    rewrite_working_tree(root, &renamed)?;
+    rewrite_working_tree(root, project, &renamed)?;
 
     Ok(renamed)
 }
@@ -507,12 +550,12 @@ mod tests {
     #[test]
     fn enrolled_member_beats_pending_invitation_regardless_of_order() {
         let mut project = Project::new("Test".into(), Some("T".into()));
-        let mut founder = Member::new(MemberCapabilities::All);
+        let mut founder = Member::person(MemberCapabilities::All);
         founder.verify_key = Some("aa".repeat(32));
         project
             .register_member("777+roland@users.noreply.github.com", founder)
             .unwrap();
-        let mut invited = Member::new(MemberCapabilities::All);
+        let mut invited = Member::person(MemberCapabilities::All);
         invited.enrollment_verifier = Some("salt:hash".into());
         project
             .register_member("roland@example.com", invited)
@@ -546,7 +589,7 @@ mod tests {
         std::fs::create_dir_all(joy.join(store::LOG_DIR)).unwrap();
 
         let vk = Keypair::from_seed(seed).public_key().to_hex();
-        let mut member = Member::new(MemberCapabilities::All);
+        let mut member = Member::person(MemberCapabilities::All);
         member.verify_key = Some(vk);
         member.kdf_nonce = Some(NONCE.to_string());
 
@@ -571,13 +614,11 @@ mod tests {
 
     fn no_email_anywhere(root: &Path) -> bool {
         let joy = store::joy_dir(root);
-        for sub in [store::PROJECT_FILE] {
-            if std::fs::read_to_string(joy.join(sub))
-                .unwrap()
-                .contains(EMAIL)
-            {
-                return false;
-            }
+        if std::fs::read_to_string(joy.join(store::PROJECT_FILE))
+            .unwrap()
+            .contains(EMAIL)
+        {
+            return false;
         }
         for dir in [store::ITEMS_DIR, store::LOG_DIR] {
             for entry in std::fs::read_dir(joy.join(dir)).unwrap() {
@@ -616,12 +657,12 @@ mod tests {
         assert!(members_file::exists(root));
         let raw = std::fs::read(members_file::members_path(root)).unwrap();
         assert!(looks_like_blob(&raw));
-        // project.yaml now keyed by opaque id, carries email_match.
+        // project.yaml now keyed by opaque id, carries email_tag.
         let pj: Project =
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
         assert!(pj.has_member_key(&id));
         assert_eq!(pj.privacy_mode(), PrivacyMode::Anonymous);
-        assert!(pj.member_by_key(&id).unwrap().email_match.is_some());
+        assert!(pj.member_by_key(&id).unwrap().email_tag.is_some());
 
         // Switch back: e-mails restored, members.yaml gone.
         switch_to_open(root, &mut project, &seed).unwrap();
@@ -631,15 +672,15 @@ mod tests {
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
         assert!(pj2.has_member_key(EMAIL));
         assert_eq!(pj2.privacy_mode(), PrivacyMode::Open);
-        assert!(pj2.member_by_key(EMAIL).unwrap().email_match.is_none());
+        assert!(pj2.member_by_key(EMAIL).unwrap().email_tag.is_none());
     }
 
     /// The delegating operator of a token is written down as a member
     /// KEY, whichever of the two forms the token recorded.
     ///
     /// The key form is the one an anonymous project hands in since
-    /// identity resolution stopped reading git config (D3.9, package
-    /// J11), and it used to resolve to nothing: the address matcher
+    /// identity resolution stopped reading git config,
+    /// and it used to resolve to nothing: the address matcher
     /// cannot match an opaque id against itself, anonymous mode answers
     /// `None` rather than leak a fallback, and the session minted from
     /// the token therefore named no operator at all. The F2 check then

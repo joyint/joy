@@ -1,0 +1,8 @@
+email: philipp@joyint.com
+capabilities: all
+origin:
+  attester: horst.schwarz@joydev.com
+  signed_at: 2026-08-23T16:48:48.723664035Z
+  commit: 9969a7290c71e9c26850076b0dc88202aa3e0465
+enrollment_verifier: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
+updated: 2026-10-16T19:01:32.380388629Z

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The ssh credential chain (design D1.4).
+//! The ssh credential chain.
 //!
 //! libgit2 offers ssh credentials one after another and re-enters the
 //! credentials callback while the answer is `GIT_EAUTH`, so several
@@ -330,8 +330,7 @@ pub fn chain_for(
     // reaches both through its own win32 backend, which takes no
     // socket path at all. Leaving the agent out there would empty the
     // whole chain on the very machines where the key file step is
-    // empty too, because WinCNG reads no openssh-key-v1 file
-    // (design D1.2 rule 5, D1.4).
+    // empty too, because WinCNG reads no openssh-key-v1 file.
     let mut agent_blind = false;
     if agent.usable() {
         candidates.push(SshCandidate::Agent);
@@ -355,7 +354,7 @@ pub fn chain_for(
     for path in identity_files {
         if !path.is_file() {
             if named {
-                // D1.4: reported by name, not silently. A typo in the
+                // Reported by name, not silently. A typo in the
                 // config would otherwise produce "no usable credential
                 // for <host>" with no mention of the key that was asked
                 // for.
@@ -422,7 +421,7 @@ pub fn candidate_for(key: &KeyFile, kind: HostKind, windows: bool) -> Result<Ssh
     if key.encrypted {
         match ask_passphrase(&key.path, kind) {
             Some(secret) => passphrase = Some(secret),
-            // The exact words of D1.4 for a host that cannot ask.
+            // The exact words for a host that cannot ask.
             None => return Err(format!("key {path}: passphrase needed, skipped")),
         }
     }
@@ -448,7 +447,7 @@ pub fn candidate_for(key: &KeyFile, kind: HostKind, windows: bool) -> Result<Ssh
 /// The key files joy would consider for a host: the ones the config
 /// NAMES, or ssh's own defaults when it names none. This is the list
 /// [`chain_for`] walks, and the list the transport memory of design
-/// D1.2 watches: a `no-ssh-credential` entry is dropped as soon as one
+/// The rule watches: a `no-ssh-credential` entry is dropped as soon as one
 /// of these files changes, which needs their names before any of them
 /// is a candidate.
 pub fn identity_files(settings: &HostSettings) -> Vec<PathBuf> {

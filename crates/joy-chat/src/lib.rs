@@ -15,6 +15,11 @@
 #![deny(clippy::all)]
 #![forbid(unsafe_code)]
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 pub mod chat_events;
 pub mod chat_seal;
 pub mod chat_wrap;

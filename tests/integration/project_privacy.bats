@@ -14,7 +14,7 @@ load setup
 
 @test "a fresh project.yaml carries no privacy line (none is the implicit default)" {
     joy init --name "T" >/dev/null
-    run grep -q "privacy" .joy/project.yaml
+    run members_grep -q "privacy"
     [ "$status" -ne 0 ]
 }
 
@@ -35,7 +35,7 @@ load setup
     run joy project get privacy
     [ "$output" = "open" ]
 
-    run grep -q "^privacy: open" .joy/project.yaml
+    run members_grep -q "^privacy: open"
     [ "$status" -eq 0 ]
 }
 
@@ -50,7 +50,7 @@ load setup
     [ "$output" = "none" ]
 
     # The explicit line is removed again; absent == none == open behaviour.
-    run grep -q "privacy" .joy/project.yaml
+    run members_grep -q "privacy"
     [ "$status" -ne 0 ]
 }
 
@@ -102,7 +102,7 @@ load setup
     # setup_ai_session registers the AI member with default capabilities, which
     # exclude manage. An authenticated non-manage member must be denied.
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     run joy project set privacy open
     [ "$status" -ne 0 ]
     [[ "$output" == *"cannot perform manage"* ]]

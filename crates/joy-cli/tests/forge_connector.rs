@@ -2,13 +2,17 @@
 // SPDX-License-Identifier: LicenseRef-Commercial
 
 //! The real `joy-forge` binary, driven the way joy drives it
-//! (JOY-0298-E4, design D2.1, D2.2a, D2.5 and D2.8).
+//! (JOY-0298-E4).
 //!
 //! Everything here runs the shipped connector as a process, through
 //! joy-core's own runner, against an in process fake forge API. No real
 //! network and no forge CLI is involved, and the PATH is emptied for
 //! the duration so that a curl or a gh on the developer's machine
 //! cannot answer for the connector by accident.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::path::{Path, PathBuf};
 use std::sync::Once;
@@ -37,7 +41,7 @@ fn setup() -> PathBuf {
     SETUP.call_once(|| {
         let dir = std::env::temp_dir().join(format!("joy-forge-connector-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("config/joy")).expect("the config directory");
-        // A machine without curl and without gh: the acceptance of J2.
+        // A machine without curl and without gh.
         std::env::set_var("PATH", "");
         std::env::set_var("HOME", &dir);
         std::env::set_var("XDG_CONFIG_HOME", dir.join("config"));
@@ -58,7 +62,7 @@ fn connector_dir() -> &'static Path {
 }
 
 /// Point one host at the fake, the way an operator's workstation image
-/// does (D2.5).
+/// does.
 ///
 /// The cases run in parallel and share one environment, so the entry is
 /// APPENDED under a lock and written by rename: a case never sees half
@@ -80,7 +84,7 @@ fn spec(id: &str) -> &'static forge_plugins::ForgePluginSpec {
     forge_plugins::by_id(id).expect("the registry row")
 }
 
-/// The handshake of D2.2a: the shipped binary answers protocol 2 and
+/// The handshake: the shipped binary answers protocol 2 and
 /// names every forge it carries, and joy finds it beside itself.
 #[test]
 fn the_connector_answers_the_handshake_with_protocol_2() {
@@ -98,7 +102,7 @@ fn the_connector_answers_the_handshake_with_protocol_2() {
     );
 }
 
-/// J2's acceptance: `joy-forge github identity --remote <url>` answers
+/// `joy-forge github identity --remote <url>` answers
 /// on a machine without curl. The PATH is empty here, so there is none.
 #[test]
 fn identity_answers_on_a_machine_without_curl() {
@@ -128,8 +132,8 @@ fn identity_answers_on_a_machine_without_curl() {
     assert!(fake.saw("GET", "/user/emails"));
 }
 
-/// J2's acceptance: an internal host listed in `forges.yaml` is claimed
-/// with no forge CLI installed (D2.5). The PATH is empty, so gh, glab
+/// An internal host listed in `forges.yaml` is claimed
+/// with no forge CLI installed. The PATH is empty, so gh, glab
 /// and tea do not exist at all.
 #[test]
 fn an_internal_host_in_forges_yaml_is_claimed_without_any_forge_cli() {
@@ -156,7 +160,7 @@ fn an_internal_host_in_forges_yaml_is_claimed_without_any_forge_cli() {
     .expect("answers"));
 }
 
-/// The store verb over REST, with the size normalised to bytes (D2.4).
+/// The store verb over REST, with the size normalised to bytes.
 #[test]
 fn store_answers_over_rest_and_carries_the_size_in_bytes() {
     let dir = setup();
@@ -190,7 +194,7 @@ fn store_answers_over_rest_and_carries_the_size_in_bytes() {
     );
 }
 
-/// J2's acceptance, end to end: the release verb publishes over REST
+/// The release verb publishes over REST
 /// through the real binary, on a machine without curl, with the token
 /// handed in the way `joy release publish` hands it in.
 #[test]
@@ -236,12 +240,12 @@ fn a_release_is_published_end_to_end_over_rest() {
     assert!(body["body"].as_str().unwrap().contains("Fixed the thing"));
 }
 
-/// J2's acceptance in full: `joy release publish` succeeds on a machine
+/// `joy release publish` succeeds on a machine
 /// without curl **with `GH_TOKEN` set**. The caller names no variable
 /// (joy-core has no forge knowledge and therefore no variable name to
 /// pass), the PATH is empty so there is no gh to spawn either, and the
 /// token still reaches the forge in a header: the connector reads the
-/// forge's own variable (D2.4's `env` source).
+/// forge's own variable (the `env` source).
 #[test]
 fn a_release_is_published_with_only_the_forges_own_variable_set() {
     let dir = setup();
@@ -288,15 +292,14 @@ fn a_release_is_published_with_only_the_forges_own_variable_set() {
     std::env::remove_var("GH_TOKEN");
 }
 
-/// J3's acceptance: `joy release publish` succeeds on a machine with
-/// **neither gh nor curl**, which is the one J2 could not carry because
-/// the connector had no credential of its own in wave 1.
+/// `joy release publish` succeeds on a machine with
+/// **neither gh nor curl**, which needs the connector's own credential.
 ///
 /// Nothing is in the environment either: the host is an Enterprise
 /// Server, whose variables (`GH_ENTERPRISE_TOKEN`,
 /// `GITHUB_ENTERPRISE_TOKEN`) nothing sets, the PATH is empty, and the
 /// caller names no variable. The only credential on the machine is the
-/// connector's own entry, in the 0600 file of D2.6.
+/// connector's own entry, in the 0600 file.
 #[test]
 fn a_release_is_published_from_the_connectors_own_credential_alone() {
     let dir = setup();
@@ -341,7 +344,7 @@ fn a_release_is_published_from_the_connectors_own_credential_alone() {
 }
 
 /// The `token` verb answers from that same entry, with the login it
-/// belongs to and the step that chose it (D2.4, D4.1c).
+/// belongs to and the step that chose it.
 #[test]
 fn the_token_verb_answers_from_the_connectors_own_entry() {
     let dir = setup();
@@ -367,7 +370,7 @@ fn the_token_verb_answers_from_the_connectors_own_entry() {
     assert_eq!(answer.username.as_deref(), Some("x-access-token"));
     assert_eq!(answer.scopes.as_deref(), Some("repo user:email"));
 
-    // The same verb with a direction (D4.1c's step 4). One login holds
+    // The same verb with a direction (the step 4). One login holds
     // the host, so no probe runs and the answer is the same one; what
     // this proves is that the shipped binary takes the flag, because a
     // flag it did not know would be a usage error and no answer at all.
@@ -427,7 +430,7 @@ fn a_pasted_token_at_an_unreachable_forge_is_not_a_refused_token() {
     assert_eq!(noted.note, None, "{:?}", noted.note);
 }
 
-/// The connector's own credential file (D2.6), written the way a
+/// The connector's own credential file, written the way a
 /// finished `login` would have written it. The cases share one config
 /// directory, so the entry is merged under a lock.
 fn write_own_credential(dir: &Path, host: &str, login: &str, token: &str) {
@@ -468,7 +471,7 @@ fn a_forge_without_a_release_backend_says_so() {
     assert!(outcome.unsupported);
 }
 
-/// J2's acceptance: `ps` during any call shows no token. The token is
+/// `ps` during any call shows no token. The token is
 /// handed to the connector in an environment variable it is told the
 /// NAME of, and it reaches the forge in a header.
 #[cfg(unix)]
@@ -485,7 +488,7 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
     });
     write_forges_yaml(&dir, "ghe-argv.test", "github", &fake.base());
     const TOKEN: &str = "gho_this-must-never-be-in-argv";
-    let mut child = joy_process::command(CONNECTOR)
+    let mut child = joy_test_env::command(CONNECTOR)
         .args([
             "github",
             "identity",
@@ -508,11 +511,14 @@ fn no_call_ever_carries_a_token_in_its_argument_list() {
     // Right after the fork the process list still holds the parent's
     // argv, and a moment later a half written one, so "not empty" is not
     // the signal: the last argument joy passes is, and it is read last.
+    // The FIRST word has to be the connector's too: in the middle of the
+    // exec the list can already end in the new arguments while it still
+    // begins with the test binary's own path (seen in CI on 2026-10-02).
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut seen = String::new();
     while Instant::now() < deadline {
         if let Some(text) = argv_of(child.id()) {
-            if text.contains("--host-kind background") {
+            if text.contains(CONNECTOR) && text.contains("--host-kind background") {
                 seen = text;
                 break;
             }

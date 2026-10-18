@@ -395,8 +395,8 @@ pub fn readd_mentioned_humans(
     let project = joy_core::store::load_project(root)?;
     let humans: Vec<String> = project
         .members()
+        .filter(|(_, member)| member.kind == joy_core::model::project::MemberKind::Person)
         .map(|(key, _)| key.clone())
-        .filter(|key| !key.starts_with("ai:"))
         .collect();
     let mentioned: Vec<String> = joy_chat::mentions::mentions(text, &humans)
         .into_iter()
@@ -593,7 +593,7 @@ fn collect_if_everyone_deleted(root: &Path, chat: &Chat) {
     };
     let humans: Vec<_> = members
         .iter()
-        .filter(|p| !p.id().starts_with("ai:"))
+        .filter(|p| !joy_core::model::project::is_ai_member(p.id()))
         .collect();
     let everyone_done = !humans.is_empty()
         && humans
@@ -699,12 +699,22 @@ mod tests {
         );
         for (member, other_seed) in [
             ("geordi@example.org", [6u8; 32]),
-            ("ai:claude@joy", [7u8; 32]),
+            ("claude", [7u8; 32]),
             ("a@x", [8u8; 32]),
             ("x@y.z", [9u8; 32]),
         ] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+            let capabilities = if joy_core::model::project::is_ai_member(member) {
+                joy_core::model::project::MemberCapabilities::all_for_ai()
+            } else {
+                joy_core::model::project::MemberCapabilities::All
+            };
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                capabilities,
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&other_seed)
@@ -727,7 +737,7 @@ mod tests {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
-        let claude = MemberRef::new("ai:claude@joy");
+        let claude = MemberRef::new("claude");
 
         let mut chat = open_chat(
             dir.path(),
@@ -756,10 +766,7 @@ mod tests {
         assert_eq!(loaded.messages.len(), 2);
         assert_eq!(loaded.messages[0].text, "moin");
         assert_eq!(loaded.messages[1].author, geordi);
-        assert_eq!(
-            loaded.ai_sessions.get("ai:claude@joy").unwrap(),
-            "acp-session-42"
-        );
+        assert_eq!(loaded.ai_sessions.get("claude").unwrap(), "acp-session-42");
 
         let all = load_chats(dir.path()).unwrap();
         assert_eq!(all.len(), 1);
@@ -820,10 +827,19 @@ mod tests {
         for (member, seed_byte) in [
             ("horst@example.com", 5u8),
             ("geordi@example.org", 6u8),
-            ("ai:claude@joy", 7u8),
+            ("claude", 7u8),
         ] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
@@ -876,8 +892,17 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for (member, seed_byte) in [("horst@example.com", 5u8), ("geordi@example.org", 6u8)] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
@@ -961,7 +986,7 @@ mod tests {
     fn set_interaction_level_is_silent_persistent_and_idempotent() {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
-        let claude = MemberRef::new("ai:claude@joy");
+        let claude = MemberRef::new("claude");
         let mut chat =
             open_chat(dir.path(), vec![horst.clone(), claude.clone()], None, ts(0)).unwrap();
 
@@ -974,7 +999,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            chat.interaction_level_override("claude", "horst@example.com"),
             Some(InteractionLevel::Confirmed)
         );
         // A private preference: NO notice, no message, no updated bump
@@ -1020,7 +1045,7 @@ mod tests {
         let dir = repo();
         let horst = MemberRef::new("horst@example.com");
         let geordi = MemberRef::new("geordi@example.org");
-        let claude = MemberRef::new("ai:claude@joy");
+        let claude = MemberRef::new("claude");
         let mut chat = open_chat(
             dir.path(),
             vec![horst.clone(), geordi.clone(), claude.clone()],
@@ -1048,11 +1073,11 @@ mod tests {
         // clearing one delegator's override leaves the other's intact
         set_interaction_level(dir.path(), &mut chat, &claude, &horst, None).unwrap();
         assert_eq!(
-            chat.interaction_level_override("ai:claude@joy", "horst@example.com"),
+            chat.interaction_level_override("claude", "horst@example.com"),
             None
         );
         assert_eq!(
-            chat.interaction_level_override("ai:claude@joy", "geordi@example.org"),
+            chat.interaction_level_override("claude", "geordi@example.org"),
             Some(InteractionLevel::Proposing)
         );
 
@@ -1118,12 +1143,21 @@ mod channel_tests {
         );
         for (member, other_seed) in [
             ("geordi@example.org", [6u8; 32]),
-            ("ai:claude@joy", [7u8; 32]),
+            ("claude", [7u8; 32]),
             ("a@x", [8u8; 32]),
             ("x@y.z", [9u8; 32]),
         ] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberCapabilities::all_for_ai()
+                } else {
+                    joy_core::model::project::MemberCapabilities::All
+                },
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&other_seed)

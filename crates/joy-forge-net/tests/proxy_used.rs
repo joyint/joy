@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! A configured proxy really carries the connector's contacts, and
-//! `NO_PROXY` really takes a host out again (D1.11, D2.8).
+//! `NO_PROXY` really takes a host out again.
 //!
 //! Its own test binary, because it sets environment variables and a
 //! process has only one environment.
@@ -13,6 +13,10 @@
 //! look at: an HTTP proxy always gets `CONNECT` here, exactly as
 //! libgit2 does it for the engine (it "always speaks HTTP CONNECT",
 //! httpclient.c:686-700), so both halves of joy behave alike.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use joy_forge_net::fake::{FakeForge, Reply};
 use joy_forge_net::gitconfig::GitConfig;
@@ -36,7 +40,7 @@ fn a_configured_proxy_carries_the_contact_and_no_proxy_takes_a_host_out() {
 
     // A host NO_PROXY names is contacted directly, so the proxy sees
     // nothing more. The entries are trimmed, which is the correction
-    // D1.11 makes against libgit2: without it `b.com` in
+    // The rule makes against libgit2: without it `b.com` in
     // "a.com, b.com" is silently lost and would go through the proxy.
     let direct = http.get("http://direct.example/api/v3/user").call();
     assert!(direct.is_err(), "the contact went direct and found nothing");

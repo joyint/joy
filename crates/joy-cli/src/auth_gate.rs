@@ -142,7 +142,7 @@ pub fn unlock(root: &Path, project: &Project, member_key: &str) -> Result<Unlock
 
 /// The seed cached in this terminal's session, if that session is the
 /// acting member's and valid.
-fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
+pub(crate) fn session_seed(root: &Path, project: &Project, member_key: &str) -> Option<[u8; 32]> {
     let identity = joy_core::identity::resolve_identity(root).ok()?;
     if !identity.authenticated || identity.member.id() != member_key {
         return None;

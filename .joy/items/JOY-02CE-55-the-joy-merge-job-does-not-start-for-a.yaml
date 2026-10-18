@@ -1,0 +1,44 @@
+id: JOY-02CE-55
+title: The joy merge job does not start for a pull request that already conflicts
+type: bug
+status: closed
+priority: high
+parent: JOY-02AC-53
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T05:59:27.013397381Z
+updated: 2026-10-13T13:32:46.057420646Z
+updated_by: horst.schwarz@joydev.com
+description: |-
+  GitHub starts no pull_request workflow while a pull request has a merge conflict, and the conflict the forge sees in the Joy files is the one this job is there to merge: plain git on the forge stops at .joy/logs/<day>.log as soon as the branch and the target both logged that day. So the job runs only for a pull request that is still conflict free when it is opened. Seen on 2026-10-12: joyint/app#88 and joyint/website#43 had no workflow run at all and stayed at CONFLICTING until main was merged into the branch by hand.
+
+  Tried on joyint/website on 2026-10-13 (website#44): with the trigger pull_request_target the job starts for website#43 although it conflicts, merges main into the branch, pushes, and the pull request turns MERGEABLE/CLEAN. No run is created for the commit the job pushes.
+
+  To do: the GitHub and the Gitea file listen on pull_request_target. Under that trigger a pull request from a fork gets a token that may write, so the job no longer checks out a fork's code and the step that asks the contributor names the repository it comments in. A test holds both. Gitea is changed in the same way and is not tried on a Gitea yet: that trial is still owed.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T05:59:45.050464888Z
+  text: |-
+    Plan:
+    1. crates/joy-core/data/ci/github.yml and gitea.yml listen on pull_request_target instead of pull_request; the head comment says in one sentence that the job starts for a pull request that conflicts.
+    2. Under that trigger a fork's pull request gets a token that may write. The checkout step and the install step run only for a branch of this repository; the step that asks a fork's contributor names the repository it comments in (GH_REPO), since it no longer stands in a checkout.
+    3. A unit test beside the templates in joy-core holds for both files: the trigger, no pull_request trigger left, the checkout bound to the same repository.
+    4. gitlab.yml stays as it is: JOY-02D0-A1.
+    5. just check before the push. A deployed file is refreshed by joy update, as for every change of these templates.
+    Not tried: a pull request from a fork, and any Gitea.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T06:10:54.134901768Z
+  text: |-
+    Result:
+    [x] crates/joy-core/data/ci/github.yml and gitea.yml listen on pull_request_target; the head comment says why.
+    [x] Checkout and install are bound to a branch of this repository; the step that asks a fork's contributor sets GH_REPO, since it stands in no checkout.
+    [x] Tests in joy-core init.rs, ci_template_tests: the_job_starts_for_a_pull_request_that_already_conflicts and a_fork_is_asked_and_never_checked_out. Both failed before the change.
+    [x] This repository's own .github/workflows/joy-merge.yml written by 'joy init ci' from this branch; it equals the template.
+    [x] just check green (1581 Rust tests, the bats smoke cases). No bats file names the CI file.
+    Tried before the change, by hand, on joyint/website (website#44, website#43): with this trigger the job started for a pull request that conflicted and left it MERGEABLE/CLEAN.
+    Not tried: a pull request from a fork; any Gitea. gitlab.yml is unchanged: JOY-02D0-A1.
+    A deployed file changes only where a joy with this template runs joy update: until a release carries it, the released joy writes the old trigger back, joyint/website included, where the trigger was changed by hand for the trial.

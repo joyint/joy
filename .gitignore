@@ -27,6 +27,15 @@ Thumbs.db
 .qwen/
 .vibe/
 AGENTS.md
+.agents/skills/joy/SKILL.md
+.agents/skills/joy/setup.md
+.agents/agents/joy-conceiver/agent.md
+.agents/agents/joy-planner/agent.md
+.agents/agents/joy-designer/agent.md
+.agents/agents/joy-implementer/agent.md
+.agents/agents/joy-tester/agent.md
+.agents/agents/joy-reviewer/agent.md
+.agents/agents/joy-documenter/agent.md
 .github/copilot-instructions.md
 .github/copilot/
 .github/agents/

@@ -14,11 +14,73 @@ if [ ! -x "$JOY_BIN" ]; then
 fi
 export PATH="$(dirname "$JOY_BIN"):$PATH"
 
+# A case sees what CI sees: no terminal behind it. Started from one, joy
+# asks that terminal for its width and cuts its tables to it, so a title a
+# case looks for is gone in a narrow window, and it asks there for a
+# passphrase where a case expects a refusal, and waits. So `joy` on the
+# path of a case is a few lines that start the binary in a session of its
+# own, which has no terminal. A case that wants one says so (pty_run).
+# Where there is no setsid (macOS), nothing changes.
+if command -v setsid >/dev/null 2>&1; then
+    JOY_NO_TERMINAL_DIR="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/joy-test-no-terminal"
+    mkdir -p "$JOY_NO_TERMINAL_DIR"
+    if [ ! -x "$JOY_NO_TERMINAL_DIR/joy" ]; then
+        {
+            printf '#!/bin/sh\n'
+            printf 'if [ -n "${TEST_WANTS_TERMINAL:-}" ]; then exec "%s" "$@"; fi\n' "$JOY_BIN"
+            # Its input neither: a terminal as standard input is taken as
+            # someone who can be asked.
+            printf 'if [ -t 0 ]; then exec setsid -w "%s" "$@" < /dev/null; fi\n' "$JOY_BIN"
+            printf 'exec setsid -w "%s" "$@"\n' "$JOY_BIN"
+        } > "$JOY_NO_TERMINAL_DIR/joy.$$"
+        chmod 755 "$JOY_NO_TERMINAL_DIR/joy.$$"
+        mv -f "$JOY_NO_TERMINAL_DIR/joy.$$" "$JOY_NO_TERMINAL_DIR/joy"
+    fi
+    export PATH="$JOY_NO_TERMINAL_DIR:$PATH"
+fi
+
+# A test inherits nothing of the developer's shell and session
+# (JOY-02BB-C7), the same rule crates/joy-test-env holds for the Rust
+# tests: no JOY_ variable (JOY_BIN is the suite's own, which binary to
+# test, and stays), no git identity variable, no token or config
+# directory of a forge CLI, and no session bus. A stale JOY_SESSION
+# answered for the developer instead of the person a case builds, and
+# with the session bus in reach the connector asked the developer's own
+# keychain.
+for name in $(compgen -e); do
+    case "$name" in
+        JOY_BIN) ;;
+        JOY_*|GIT_AUTHOR_EMAIL|GIT_COMMITTER_EMAIL|EMAIL) unset "$name" ;;
+        GH_TOKEN|GITHUB_TOKEN|GH_ENTERPRISE_TOKEN|GITHUB_ENTERPRISE_TOKEN) unset "$name" ;;
+        GITLAB_TOKEN|GITEA_TOKEN|GH_CONFIG_DIR|GLAB_CONFIG_DIR|TEA_CONFIG_DIR) unset "$name" ;;
+    esac
+done
+unset name
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/joy-test-no-bus"
+
+# Nor the developer's forge CLI. joy asks gh, glab and tea for the token
+# they hold, and with the developer's PATH it asks the developer's own gh
+# and is handed their real token. A test finds stand-ins first: the
+# three programs, installed and signed in nowhere, the same on every
+# machine. One directory per run, outside every test project; a case
+# that needs a gh that answers puts its own before it.
+FORGE_CLI_STAND_INS="${BATS_RUN_TMPDIR:-${TMPDIR:-/tmp}}/joy-test-forge-clis"
+mkdir -p "$FORGE_CLI_STAND_INS"
+for name in gh glab tea; do
+    if [ ! -x "$FORGE_CLI_STAND_INS/$name" ]; then
+        printf '#!/bin/sh\nexit 1\n' > "$FORGE_CLI_STAND_INS/$name.$$"
+        chmod 755 "$FORGE_CLI_STAND_INS/$name.$$"
+        mv -f "$FORGE_CLI_STAND_INS/$name.$$" "$FORGE_CLI_STAND_INS/$name"
+    fi
+done
+unset name
+export PATH="$FORGE_CLI_STAND_INS:$PATH"
+
 TEST_PASSPHRASE="correct horse battery staple extra words"
 
 # The address every project here is founded by. `setup` writes it into
-# the sandbox git config, which is where `joy init` OFFERS it (D3.9 keeps
-# git config as a prefill and nothing more), and `act_as_founder` names
+# the sandbox git config, which is where `joy init` OFFERS it (git config
+# is a prefill and nothing more), and `act_as_founder` names
 # it when a test has to come back from acting as somebody else.
 FOUNDER_EMAIL="test@example.com"
 
@@ -63,7 +125,7 @@ setup_human_auth() {
 # After this, joy commands run as the AI member.
 # Sets JOY_SESSION (SSH-agent pattern) and saves AI_TOKEN for re-auth.
 setup_ai_session() {
-    local ai_member="${1:-ai:test@joy}"
+    local ai_member="${1:-testai}"
     # Add member if not already registered (idempotent)
     joy project member add "$ai_member" --passphrase "$TEST_PASSPHRASE" 2>/dev/null || true
     # joy auth token add wraps the token in double quotes; strip them
@@ -86,7 +148,7 @@ extract_otp() {
 # them AND authenticate as them, which opens their session.
 #
 # This is how a test says who is working now. Since the operator's
-# 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) `resolve_identity`
+# 2026-09-19 correction (JOY-02AE-1A) `resolve_identity`
 # reads `git config user.email` again (repository over global, over the
 # forge account), and the device pin it used to read instead is gone: a
 # bare `joy` command after this acts as `member` because THIS repository's
@@ -161,10 +223,48 @@ sed_inplace() {
 # Run a shell command inside a real PTY, portably across BSD (macOS)
 # and util-linux `script` flavours.
 pty_run() {
-    local cmd="$1"
+    local cmd="export TEST_WANTS_TERMINAL=1; $1"
     if script --version 2>&1 | grep -q util-linux; then
         script -qc "$cmd" /dev/null
     else
         script -q /dev/null sh -c "$cmd"
     fi
+}
+
+# Everything joy keeps about the project and its members, as one text:
+# project.yaml and the member files under .joy/members (JI-019D-46). A
+# test that asks "is this recorded for a member" greps this and does not
+# have to know which file holds it.
+members_text() {
+    cat .joy/project.yaml .joy/members/*.yaml 2>/dev/null
+}
+
+# grep over members_text, with grep's own arguments: `members_grep -q X`.
+members_grep() {
+    members_text | grep "$@"
+}
+
+# The name of the first AI member the project has, or nothing.
+first_ai_member() {
+    for f in .joy/members/*.yaml; do
+        grep -q '^type: ai$' "$f" 2>/dev/null || continue
+        identity_of "$f"
+        return
+    done
+}
+
+# The name a member file's member goes by: the one key under `identity`.
+identity_of() {
+    sed -n '/^identity:/{n;s/^  \([^:]*\):.*/\1/p;q}' "$1"
+}
+
+# The file of one member, by address or by an AI member's name.
+member_file() {
+    for f in .joy/members/*.yaml; do
+        if [ "$(identity_of "$f" 2>/dev/null)" = "$1" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 0
 }

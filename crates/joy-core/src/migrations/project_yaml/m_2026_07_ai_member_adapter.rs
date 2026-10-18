@@ -9,8 +9,8 @@
 //! surface that reads the pin with nothing: the app rendered an empty
 //! adapter badge next to the member name, and a host had to guess.
 //!
-//! The canonical member id determines the adapter unambiguously
-//! (`ai:<tool>@joy`), so the value is derivable and no one has to retype
+//! The member named after a tool determines the adapter unambiguously,
+//! so the value is derivable and no one has to retype
 //! it. Members that already carry a pin are left exactly as they are.
 //!
 //! The tool -> adapter table is inlined ON PURPOSE. A migration is a
@@ -32,9 +32,10 @@ fn adapter_for_tool(tool: &str) -> Option<&'static str> {
     }
 }
 
-/// The tool id inside a canonical AI member key (`ai:vibe@joy` -> `vibe`).
+/// The tool an AI member is named after. The keys are names here: the
+/// migration before this one read them.
 fn tool_of(member_key: &str) -> Option<&str> {
-    member_key.strip_prefix("ai:")?.split('@').next()
+    joy_model::is_ai_member(member_key).then_some(member_key)
 }
 
 pub fn migrate(mut value: Value) -> (Value, bool) {
@@ -85,24 +86,20 @@ mod tests {
 members:
   horst@example.com:
     capabilities: all
-  ai:claude@joy:
+  claude:
     capabilities: all
-  ai:vibe@joy:
+  vibe:
     capabilities: all
 "#,
         ));
         assert!(changed);
         let members = out.get("members").unwrap();
         assert_eq!(
-            members
-                .get("ai:claude@joy")
-                .unwrap()
-                .get("adapter")
-                .unwrap(),
+            members.get("claude").unwrap().get("adapter").unwrap(),
             &Value::String("claude-code".into())
         );
         assert_eq!(
-            members.get("ai:vibe@joy").unwrap().get("adapter").unwrap(),
+            members.get("vibe").unwrap().get("adapter").unwrap(),
             &Value::String("mistral-vibe".into())
         );
         // a human member is untouched
@@ -117,25 +114,21 @@ members:
     fn never_overwrites_a_recorded_pin_and_is_idempotent() {
         let source = r#"
 members:
-  ai:claude@joy:
+  claude:
     adapter: something-custom
-  ai:qwen@joy:
+  qwen:
     adapter: ""
 "#;
         let (out, changed) = migrate(yaml(source));
         assert!(changed, "the blank pin is filled");
         let members = out.get("members").unwrap();
         assert_eq!(
-            members
-                .get("ai:claude@joy")
-                .unwrap()
-                .get("adapter")
-                .unwrap(),
+            members.get("claude").unwrap().get("adapter").unwrap(),
             &Value::String("something-custom".into()),
             "a recorded pin is authoritative"
         );
         assert_eq!(
-            members.get("ai:qwen@joy").unwrap().get("adapter").unwrap(),
+            members.get("qwen").unwrap().get("adapter").unwrap(),
             &Value::String("qwen-code".into())
         );
         // running it again changes nothing
@@ -148,7 +141,7 @@ members:
         let (out, changed) = migrate(yaml(
             r#"
 members:
-  ai:mock@joy:
+  mock:
     capabilities: all
   not-a-member: 7
 "#,
@@ -157,7 +150,7 @@ members:
         assert!(out
             .get("members")
             .unwrap()
-            .get("ai:mock@joy")
+            .get("mock")
             .unwrap()
             .get("adapter")
             .is_none());

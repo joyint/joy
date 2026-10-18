@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 //! The forge CLIs joy reads a fact from: where their configuration
-//! lives, and how a token is obtained from them (D2.4, decision 19).
+//! lives, and how a token is obtained from them.
 //!
-//! Two rules from the design hold here:
+//! Two rules hold here:
 //!
 //! - **The configuration discovery is per operating system.** Until now
 //!   joy looked in `~/.config/<cli>` and nowhere else, so a Windows
 //!   install of gh, a glab with `GLAB_CONFIG_DIR` set and every macOS
 //!   install that follows XDG were invisible.
 //! - **A foreign credential is obtained by spawning the CLI**, never by
-//!   reading its store. That is decision 19, and it is also the only
+//!   reading its store. That is the rule, and it is also the only
 //!   way the CLI's own refresh runs. In this wave the one source is
-//!   `gh auth token`; D2.4 names `glab auth credential-helper` and
-//!   `tea login helper get` for the `token` verb J3 builds.
+//!   `gh auth token`; the rule names `glab auth credential-helper` and
+//!   `tea login helper get` for the `token` verb.
 
 use std::path::PathBuf;
 use std::process::Stdio;
@@ -30,7 +30,7 @@ pub fn gh_config_files() -> Vec<PathBuf> {
         .collect()
 }
 
-/// gh's configuration directories (D2.4): `GH_CONFIG_DIR`,
+/// gh's configuration directories: `GH_CONFIG_DIR`,
 /// `XDG_CONFIG_HOME/gh`, `%AppData%\GitHub CLI`, `~/.config/gh`.
 pub fn gh_config_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -59,7 +59,7 @@ pub fn glab_config_files() -> Vec<PathBuf> {
         .collect()
 }
 
-/// glab's configuration directories (D2.4): `GLAB_CONFIG_DIR`,
+/// glab's configuration directories: `GLAB_CONFIG_DIR`,
 /// `~/.config/glab-cli`, then XDG per platform including
 /// `%LOCALAPPDATA%\glab-cli`.
 pub fn glab_config_dirs() -> Vec<PathBuf> {
@@ -84,8 +84,8 @@ pub fn glab_config_dirs() -> Vec<PathBuf> {
     dedup(dirs)
 }
 
-/// The files that may hold tea's configuration, most specific first
-/// (D2.4): XDG per platform, then the legacy `~/.tea/tea.yml`.
+/// The files that may hold tea's configuration, most specific first:
+/// XDG per platform, then the legacy `~/.tea/tea.yml`.
 pub fn tea_config_files() -> Vec<PathBuf> {
     let mut files = Vec::new();
     if let Some(dir) = env_dir("TEA_CONFIG_DIR") {
@@ -121,12 +121,12 @@ pub fn first_readable(files: &[PathBuf]) -> Option<(PathBuf, String)> {
     })
 }
 
-/// How long a foreign CLI has to answer. D2.3 gives `token` 30 s, "gh
+/// How long a foreign CLI has to answer. The rule gives `token` 30 s, "gh
 /// alone allows 60 s per keyring read", and this call sits inside a
 /// verb whose own deadline is already running.
 const CLI_TIMEOUT: Duration = Duration::from_secs(20);
 
-/// The token gh holds for a host, by spawning gh (decision 19).
+/// The token gh holds for a host, by spawning gh.
 ///
 /// `gh auth token` prints the token on stdout and nothing else. It is
 /// never an argument to anything, so no process list can carry it.
@@ -140,7 +140,7 @@ pub fn gh_token(host: &str, login: Option<&str>) -> Option<String> {
 }
 
 /// The token glab holds for a host. `glab auth token` does not exist;
-/// the credential helper does, and it is the command D2.4 names. It is
+/// the credential helper does, and it is the command the rule names. It is
 /// a hidden cobra command and may change without notice, which is why
 /// the failure here is simply "no token".
 pub fn glab_token(host: &str) -> Option<String> {
@@ -151,7 +151,7 @@ pub fn glab_token(host: &str) -> Option<String> {
 
 /// The token tea holds for a host. `tea logins list` prints no token;
 /// `tea login helper get` does, and it refreshes an OAuth token on the
-/// way, which is the second reason decision 19 spawns the CLI instead
+/// way, which is the second reason joy spawns the CLI instead
 /// of reading its store.
 pub fn tea_token(host: &str) -> Option<String> {
     let mut command = joy_process::command("tea");
@@ -238,7 +238,7 @@ fn wait_bounded(mut child: std::process::Child) -> Option<Vec<u8>> {
 mod tests {
     use super::*;
 
-    /// The discovery order is the one D2.4 names, and the explicit
+    /// The discovery order is the one the rule names, and the explicit
     /// variable always wins so a test and a workstation image can point
     /// at their own file.
     #[test]

@@ -34,7 +34,7 @@ pub fn ask_yn(question: &str, default: bool) -> io::Result<bool> {
 /// The yes/no loop, over any reader and any writer.
 ///
 /// It exists in this shape for the questions that interrupt a command
-/// whose stdout is an answer: the host key question of D1.4a asks in
+/// whose stdout is an answer: the host key question asks in
 /// the middle of a fetch, so it asks on STDERR, and the fetch keeps
 /// stdout. And it exists in this shape so that a question a person
 /// answers can be proved without a terminal: the wording, the yes, the
@@ -101,7 +101,7 @@ mod tests {
 
     /// Every answer a person can give, including the two that are not
     /// answers: an empty line and a closed stdin both take the default,
-    /// which for the host key question of D1.4a is NO.
+    /// which for the host key question is NO.
     #[test]
     fn a_yes_no_question_takes_every_answer_a_person_gives() {
         assert!(answered("y\n", false).0);

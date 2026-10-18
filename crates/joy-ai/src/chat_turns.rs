@@ -16,7 +16,7 @@ pub use joy_chat::turns::*;
 
 /// Same question as the pure rules ask, one line, no import dance.
 fn is_ai(id: &str) -> bool {
-    id.starts_with("ai:")
+    joy_core::model::project::is_ai_member(id)
 }
 
 /// A human's LEADING @mention of a PROJECT AI that is not a participant
@@ -85,9 +85,26 @@ mod tests {
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         // chats are always sealed now, so the members carry identities and
         // the writer's seed is installed for this thread
-        for (member, seed_byte) in [("ai:claude@joy", 7u8), ("horst@example.com", 5u8)] {
-            let mut m = joy_core::model::project::Member::new(
-                joy_core::model::project::MemberCapabilities::All,
+        for (member, seed_byte) in [("claude", 7u8), ("horst@example.com", 5u8)] {
+            // an AI member never holds manage, so never `all`
+            let capabilities = if joy_core::model::project::is_ai_member(member) {
+                joy_core::model::project::MemberCapabilities::Specific(
+                    [(
+                        joy_core::model::item::Capability::Implement,
+                        Default::default(),
+                    )]
+                    .into(),
+                )
+            } else {
+                joy_core::model::project::MemberCapabilities::All
+            };
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                capabilities,
             );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
@@ -120,9 +137,9 @@ mod tests {
         .unwrap();
         let added = add_mentioned_ais(dir.path(), &mut chat, &msg, now).unwrap();
         assert!(added);
-        assert!(chat.participants.iter().any(|p| p.id() == "ai:claude@joy"));
+        assert!(chat.participants.iter().any(|p| p.id() == "claude"));
         assert_eq!(
-            decide(&chat, &msg, "ai:claude@joy"),
+            decide(&chat, &msg, "claude"),
             TurnDecision::Respond,
             "the added AI answers the very message that added it"
         );

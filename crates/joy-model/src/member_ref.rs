@@ -37,7 +37,7 @@ pub const AUTH_REQUIRED: &str = "<authenticate to view>";
 /// Outcome of resolving a member id for display.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolved {
-    /// A concrete display value (name or e-mail, or a non-PII id like `ai:..`).
+    /// A concrete display value (name or e-mail, or an AI member's name).
     Value(String),
     /// Anonymous mode, members.yaml not unlocked: request authentication.
     AuthRequired,
@@ -123,9 +123,11 @@ pub struct MemberRef(String);
 
 impl MemberRef {
     /// Wrap a raw at-rest member key (e-mail in open mode, opaque id in
-    /// anonymous mode).
+    /// anonymous mode, an AI member's name). An AI member's legacy form is
+    /// cut down to its name here, so no `MemberRef` ever holds one
+    /// ([`crate::ai_member_name`]).
     pub fn new(raw: impl Into<String>) -> Self {
-        Self(raw.into())
+        Self(crate::migrations::ai_member_name::read_owned(raw.into()))
     }
 
     /// The raw at-rest id. Use only on internal paths (map lookup, verifier
@@ -160,13 +162,13 @@ impl fmt::Display for MemberRef {
 
 impl From<String> for MemberRef {
     fn from(s: String) -> Self {
-        Self(s)
+        Self::new(s)
     }
 }
 
 impl From<&str> for MemberRef {
     fn from(s: &str) -> Self {
-        Self(s.to_string())
+        Self::new(s)
     }
 }
 
@@ -247,7 +249,7 @@ impl Serialize for MemberRef {
 
 impl<'de> Deserialize<'de> for MemberRef {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Ok(Self(String::deserialize(deserializer)?))
+        Ok(Self::new(String::deserialize(deserializer)?))
     }
 }
 
@@ -289,11 +291,11 @@ mod tests {
     #[test]
     fn the_compound_delegated_by_form_resolves_both_sides() {
         install(table(&[
-            ("ai:claude@joy", "ai:claude@joy"),
+            ("claude", "claude"),
             ("m-human", "human@joydev.com"),
         ]));
-        let m = MemberRef::new("ai:claude@joy delegated-by:m-human");
-        assert_eq!(m.to_string(), "ai:claude@joy delegated-by:human@joydev.com");
+        let m = MemberRef::new("claude delegated-by:m-human");
+        assert_eq!(m.to_string(), "claude delegated-by:human@joydev.com");
         uninstall();
     }
 

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 //! Two different questions that both live in `identity.rs`, and how the
-//! operator's 2026-09-19 correction (JOY-02AE-1A, correcting D3.9 of the
-//! forge connection NG design, JOY-0297-1A) settled them the same way in
+//! operator's 2026-09-19 correction (JOY-02AE-1A,
+//! JOY-0297-1A) settled them the same way in
 //! the end:
 //!
 //! - [`resolve_identity`] answers "who is acting right now": the
@@ -39,6 +39,10 @@
 //! case only means something when the test moves them step by step.
 
 #![cfg(unix)]
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -118,7 +122,7 @@ fn add_member(root: &Path, address: &str) {
     let path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project = joy_core::store::load_project(root).unwrap();
     project
-        .register_member(address, Member::new(MemberCapabilities::All))
+        .register_member(address, Member::person(MemberCapabilities::All))
         .unwrap();
     joy_core::store::write_yaml(&path, &project).unwrap();
 }

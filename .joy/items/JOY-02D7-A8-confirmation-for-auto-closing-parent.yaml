@@ -1,0 +1,20 @@
+id: JOY-02D7-A8
+title: Confirmation for auto-closing parent items
+type: rework
+status: new
+priority: high
+milestone: JOY-MS-02
+tags:
+- ux
+capabilities:
+- implement
+- review
+created_by: horst.schwarz@joydev.com
+created: 2026-10-16T12:53:59.714680295Z
+updated: 2026-10-16T12:54:30.819596362Z
+updated_by: horst.schwarz@joydev.com
+description: Currently joy closes parent items together with the last remaining item. This is not always wanted, if the parent like an epic or a story itself isn't finished yet. Therefore, if a last item is closed the user shall be asked if the parent should be closed too.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-10-16T12:54:30.819595363Z
+  text: It must also be reworked in the Joyint App.

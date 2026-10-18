@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Who is behind this process (D1.1 of the forge connection NG design).
+//! Who is behind this process.
 //!
 //! Every joy host decides ONCE, at its entry point, whether a person can
 //! answer a question: the CLI in `cli_main`, the desktop for a foreground
@@ -60,9 +60,9 @@ impl HostKind {
         matches!(self, HostKind::Interactive)
     }
 
-    /// Whether joy may raise a question a person has to answer
-    /// (design D1.10). The prompt rule of the engine is this one line,
-    /// and it is [`HostKind::may_ask`] under the name D1.10 uses: joy's
+    /// Whether joy may raise a question a person has to answer.
+    /// The prompt rule of the engine is this one line,
+    /// and it is [`HostKind::may_ask`] under the name the rule uses: joy's
     /// own passphrase question, its host key question and the helper
     /// runner's interactive bound all hang off it.
     pub fn may_prompt(self) -> bool {
@@ -101,7 +101,7 @@ impl std::fmt::Display for HostKind {
 static PROCESS_HOST: std::sync::OnceLock<HostKind> = std::sync::OnceLock::new();
 
 /// Record the host kind of this process. Called exactly once, by the
-/// entry point of each host (D1.1): joy-cli in `cli_main`, the desktop
+/// entry point of each host: joy-cli in `cli_main`, the desktop
 /// when it starts an action, the platform never (it stays
 /// [`HostKind::Background`]). A second call is ignored, so no library
 /// code can talk a process into believing a person is present.
@@ -156,7 +156,7 @@ mod tests {
         assert!(!HostKind::Delegated.may_ask());
     }
 
-    /// The engine's name for the same rule (D1.10). One type, one
+    /// The engine's name for the same rule. One type, one
     /// answer, whichever of the two words a caller uses.
     #[test]
     fn only_an_interactive_host_may_be_asked() {

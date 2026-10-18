@@ -67,7 +67,7 @@ A user's identity in Joy is their **e-mail address**. This is the stable identif
 
 Locally, the e-mail is read from `git config user.email` - no separate login required for CLI usage. On the server, users authenticate via OAuth (GitHub, GitLab, Gitea, or other supported providers). The server matches the OAuth-provided e-mail against the project's role definitions.
 
-AI members use a synthetic identity with the `ai:` prefix (e.g. `ai:claude@joy`). This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
+AI members are known by their name (e.g. `claude`), which is never an e-mail address. This distinguishes AI actions from human actions in the change log and enables `allow_ai` rules in status transitions.
 
 ### Items
 
@@ -81,7 +81,7 @@ type: story           # epic | story | task | bug | rework | decision | idea
 status: new           # new | open | in-progress | review | closed | deferred
 priority: high        # low | medium | high | critical | extreme
 parent: JOY-0001       # parent item (null for top-level items)
-assignee: null        # e-mail address or ai:tool@joy
+assignee: null        # e-mail address or the name of an AI member
 capabilities: [plan, implement, review]   # from type defaults, editable per item
 deps:
   - JOY-0017           # must be completed before this item
@@ -370,7 +370,7 @@ joy clone [url]                         # Clone project from remote
 joy app                                 # TUI (default)
 ```
 
-The server (`joyint-server`) is a separate binary in the [platform](https://github.com/joyint/platform) repository. See [ADR-002](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-002-single-binary.md) for the rationale.
+The server (`joyint-server`) is a separate binary in the platform repository. See `JOY-01CB-3C - ADR: Single CLI binary, separate server binary` for the rationale.
 
 ### Shell Completions and Help
 
@@ -417,6 +417,7 @@ Supported tools for tool mode:
 | GitHub Copilot (GitHub) | `github-copilot` | `.github/copilot-instructions.md` |
 | Mistral Vibe (Mistral) | `mistral-vibe` | Project instructions |
 | Qwen Code (Alibaba) | `qwen-code` | Project instructions |
+| Google Antigravity (Google) | `agy` | Shared `AGENTS.md` + `.agents/skills/joy/` |
 
 No own agent runtime, no API calls, no cost tracking needed. The AI tool handles everything - Joy just provides the product management interface.
 
@@ -432,7 +433,7 @@ Files managed by Joy fall into two lifecycle groups:
 **AI-bound** - created by `joy ai init`, removed when the last AI tool is reset via `joy ai reset`:
 - `.joy/ai/` (instructions, skills, setup guides)
 - `.joy/capabilities/` (capability definition files)
-- Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.github/copilot*`)
+- Tool-specific directories (`.claude/`, `.qwen/`, `.vibe/`, `.agents/skills/joy/`, `.agents/agents/joy-*/`, `.github/copilot*`)
 
 When adding new AI-related files, decide which group they belong to. If the file is only useful when at least one AI tool is configured, it belongs to the AI-bound group. The `.gitignore` block is also updated dynamically - only configured tools get gitignore entries.
 
@@ -440,7 +441,7 @@ When adding new AI-related files, decide which group they belong to. If the file
 
 Joy ships embedded capability files deployed to `.joy/ai/capabilities/` via `joy ai init`. Each file describes one of Joy's seven fixed capabilities (conceive, plan, design, implement, test, review, document) with human-readable descriptions, a constraints table, and a machine-parseable YAML block defining permissions and applicable tools.
 
-For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See [ADR-018](https://github.com/joyint/project/blob/main/docs/dev/adr/ADR-018-capabilities-over-roles.md) for the full rationale.
+For AI tools that support agent definitions (Claude Code, GitHub Copilot, Mistral Vibe, Google Antigravity), `joy ai init` generates tool-specific agent files from the capability YAML blocks. Agent files use the actor-form of the capability name (review -> reviewer, implement -> implementer). They are generated artifacts, not manually maintained. See `JOY-01D4-42 - ADR: Capabilities over roles for AI agent abstraction` for the full rationale.
 
 ### Interaction levels
 
@@ -466,7 +467,7 @@ members:
   horst.schwarz@joydev.com:
     capabilities: all
 
-  ai:claude@joy:
+  claude:
     interaction-level: confirmed
     capabilities:
       conceive:
@@ -587,7 +588,7 @@ sequenceDiagram
 ```
 
 - **Human dispatch:** Joy status gates create Jyn tasks for reviewers, testers, or approvers.
-- **AI dispatch:** Joy creates Jyn tasks for AI members (`ai:implementer@joy`). The AI picks up todos via `jyn ls --mine`, executes work, and marks them done.
+- **AI dispatch:** Joy creates Jyn tasks for AI members (`implementer`). The AI picks up todos via `jyn ls --mine`, executes work, and marks them done.
 - **Callback:** When a dispatched Jyn task is completed, joyint.com signals back to the Joy project that the gate is satisfied.
 
 This keeps Joy focused on orchestration and Jyn focused on execution. The `source` field and the dispatch service on joyint.com are the only coupling points.
@@ -699,4 +700,4 @@ Joy dispatches work to AI APIs and tracks results:
 
 ## Related
 
-For roadmap, milestones, and timeline see the [umbrella repository](https://github.com/joyint/project). For business context (pricing, licensing, competitive landscape) see [BusinessModel.md](https://github.com/joyint/project/blob/main/docs/biz/BusinessModel.md) and [Competition.md](https://github.com/joyint/project/blob/main/docs/biz/Competition.md). These documents are part of the internal planning for the Joyint product ecosystem at Joydev GmbH.
+Roadmap, milestones and timeline, and the business context (pricing, licensing, competitive landscape), are part of the internal planning for the Joyint product ecosystem at Joydev GmbH and are not part of this repository.

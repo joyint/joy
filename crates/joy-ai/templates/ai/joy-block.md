@@ -2,15 +2,16 @@
 
 This project uses [Joy](https://github.com/joyint/joy) for product management.
 
-Your Joy member ID: `{{ member_id }}`
+Your Joy identity is `data.member` from `joy auth --token <TOKEN> --json`. Never infer it from the AI tool or these instructions. Use `data.session_env` as `--session` on every Joy write. Before redeeming a token, only use read-only Joy commands.
 
-End every commit with these trailers:
+For delegated commits, end the message with:
 
 ```
-Co-Authored-By: {{ coauthor_line }}
 Delegated-By: <operator email from data.delegated_by of your token redemption>
 ```
 
-Brand names (e.g. `Claude`, `Copilot`) are allowed in the `Co-Authored-By:` trailer above but nowhere else. In commit body prose, code comments, documentation, and Joy item content, refer to yourself by your Joy member ID.
+The AI tool may add its own `Co-Authored-By:` attribution; Joy does not require one. In commit body prose, code comments, documentation, and Joy item content, refer to yourself by `data.member`.
+
+After authentication, use `joy project member show <data.member>` to read your capabilities and interaction levels. Follow the effective levels and project gates; do not infer them from another tool's settings.
 
 {% if has_skill %}Use the `/joy` skill for backlog work.{% else %}Use Joy CLI commands for backlog work.{% endif %} Never edit files under `.joy/` directly.

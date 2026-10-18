@@ -18,9 +18,9 @@ TEST_EMAIL="test@example.com"
     [ "$status" -ne 0 ]
 
     # The member map is keyed by an opaque id and the mode is anonymous.
-    run grep -qE '^  m-[a-z2-7]{10}:' .joy/project.yaml
+    run bash -c "ls .joy/members | grep -qE '^m-[a-z2-7]{10}\.yaml$'"
     [ "$status" -eq 0 ]
-    run grep -q "privacy: anonymous" .joy/project.yaml
+    run members_grep -q "privacy: anonymous"
     [ "$status" -eq 0 ]
 
     # members.yaml exists and is an encrypted JOYCRYPT blob.
@@ -59,7 +59,7 @@ TEST_EMAIL="test@example.com"
     [[ "$output" == *"anonymous"* ]]
 
     # The e-mail never reached project.yaml.
-    run grep -c "dev@example.com" .joy/project.yaml
+    run members_grep -c "dev@example.com"
     [ "$output" = "0" ]
 }
 
@@ -75,7 +75,7 @@ TEST_EMAIL="test@example.com"
     [[ "$out" == *"$TEST_EMAIL"* ]]
 
     # On disk the id stays raw: anonymous at rest, resolved only on output.
-    run grep -cE '^  m-[a-z2-7]{10}:' .joy/project.yaml
+    run bash -c "ls .joy/members | grep -cE '^m-[a-z2-7]{10}\.yaml$'"
     [ "$output" -ge 1 ]
 }
 

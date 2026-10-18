@@ -1,22 +1,27 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The shared half of the Joy forge connectors (JOY-0298-E4, design
-//! `docs/design/forge-connection-ng.md`, package J2).
+//! The shared half of the Joy forge connectors (JOY-0298-E4, the forge
+//! connection design).
 //!
-//! One binary, `joy-forge`, carries every forge (D2.1); the forge
+//! One binary, `joy-forge`, carries every forge; the forge
 //! knowledge stays in the per forge crates and everything they share
-//! lives here: the command line and the protocol (D2.2, D2.2a), the in
-//! process HTTP client with the proxy sources of D1.11 and the trust
-//! store of D1.12 (D2.8), the instance configuration of D2.5, the
-//! foreign CLI discovery of D2.4 and the scope sets of D2.7a and D2.7c.
+//! lives here: the command line and the protocol, the in
+//! process HTTP client with the proxy sources and the trust
+//! store, the instance configuration, the
+//! foreign CLI discovery and the scope sets.
 //!
-//! Since JOY-029B-B0 (package J3) the sign in half lives here too:
-//! [`auth`] is the connector's own credential entry, the refresh lock
-//! of D2.6a, the two OAuth doors of D2.7 and the login order of D4.1c.
+//! Since JOY-029B-B0 the sign in half lives here too:
+//! [`auth`] is the connector's own credential entry, the refresh lock,
+//! the two OAuth doors and the login order.
 //!
 //! Nothing here knows a forge. A forge is a [`forge::Forge`]
 //! implementation the binary hands to [`cli::run`].
+
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
 
 pub mod auth;
 pub mod cli;

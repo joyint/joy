@@ -1,0 +1,14 @@
+version: v0.23.1
+date: 2026-10-14
+previous: v0.23.0
+contributors:
+- id: claude delegated-by:horst.schwarz@joydev.com
+  events: 5
+  items: 1
+- id: horst.schwarz@joydev.com
+  events: 1
+  items: 1
+items:
+  bugs:
+  - id: JOY-02D5-55
+    title: joy update brings a project over only when somebody signed in before

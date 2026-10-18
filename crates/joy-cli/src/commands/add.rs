@@ -91,6 +91,10 @@ pub struct AddArgs {
     /// Skip the duplicate-title check (rare; allows two items with the same title).
     #[arg(long)]
     allow_duplicate: bool,
+
+    /// The level an AI assignee works a job at: proposing or autonomous. Default: proposing.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
 }
 
 pub fn run(args: AddArgs) -> Result<()> {
@@ -218,6 +222,19 @@ pub fn run(args: AddArgs) -> Result<()> {
             base_branch: None,
             result_branch: None,
         });
+    }
+
+    if let Some(level) = args.level.as_deref() {
+        if item_type != ItemType::Job {
+            bail!("--level is for a job");
+        }
+        // a job runs at proposing or at autonomous (joy-core's rule)
+        let level = level
+            .trim()
+            .parse()
+            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        item.interaction_level =
+            Some(joy_core::auth::grants::job_level(level).map_err(|why| anyhow::anyhow!(why))?);
     }
 
     item.priority = priority;

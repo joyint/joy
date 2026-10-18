@@ -48,7 +48,7 @@ pub struct Project {
     /// Member-PII privacy mode (ADR-042). Absent means `Open` (today's
     /// behaviour: cleartext e-mail in the member entry). `Anonymous` moves
     /// member e-mail into an encrypted members.yaml and keys members by an
-    /// opaque id plus an `email_match` verifier. Read via `privacy_mode()`;
+    /// opaque id plus an `email_tag` verifier. Read via `privacy_mode()`;
     /// changed only by the dedicated mode-transition command, never by a
     /// bare field write (the switch is an atomic migration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -58,7 +58,8 @@ pub struct Project {
     #[serde(
         default,
         skip_serializing_if = "BTreeMap::is_empty",
-        serialize_with = "serialize_members"
+        serialize_with = "serialize_members",
+        deserialize_with = "de_members"
     )]
     members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
@@ -68,6 +69,44 @@ pub struct Project {
     #[serde(default, skip_serializing_if = "CryptConfig::is_empty")]
     pub crypt: CryptConfig,
     pub created: DateTime<Utc>,
+    /// How this project's members are kept on disk. Not part of the
+    /// file: [`crate::store`] reads it off what it finds and writes back
+    /// in the same shape.
+    #[serde(skip)]
+    layout: MemberLayout,
+    /// The shape the member files have on disk, when the members are in
+    /// files. Not part of the file either: the store reads it off the
+    /// format project.yaml says.
+    #[serde(skip)]
+    file_shape: MemberFileShape,
+}
+
+/// Where a project keeps its members.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemberLayout {
+    /// The whole member map inside project.yaml: every project written
+    /// before the member files (JI-019D-46), until a person brings it
+    /// over.
+    #[default]
+    InProject,
+    /// One file per member under `.joy/members/`; project.yaml lists
+    /// their ids.
+    Files,
+}
+
+/// The shape of the member files (JOY-02DB-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemberFileShape {
+    /// `type`, and the name a member goes by as the one key under
+    /// `identity` (format 4). What every project is written in from the
+    /// moment its members go into files.
+    #[default]
+    Identity,
+    /// The shape joy 0.23 writes (formats 2 and 3): a person's address
+    /// under `email`, an AI member's name under `name`, no `type`. Read
+    /// and written as it is until a person says yes to the update
+    /// ([`crate::migrations::m_2026_10_member_identity`]).
+    Flat,
 }
 
 /// Per-project member-PII privacy mode (ADR-042). Stored in project.yaml
@@ -81,7 +120,7 @@ pub enum PrivacyMode {
     #[default]
     Open,
     /// Member e-mail lives in an encrypted members.yaml; project.yaml
-    /// carries an opaque member id and an `email_match` verifier.
+    /// carries an opaque member id and an `email_tag` verifier.
     Anonymous,
 }
 
@@ -123,8 +162,8 @@ pub struct CryptZone {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub paths: Vec<String>,
     /// Per-(operator, AI) zone-key wraps for AI Tool delegations
-    /// (ADR-041 §3-4). Outer key is the AI member id (e.g.
-    /// `ai:claude@joy`); inner key is the operator email; value is the
+    /// (ADR-041 §3-4). Outer key is the AI member (`claude`); inner key
+    /// is the operator email; value is the
     /// hex-encoded X25519 wrap of the zone key against the operator's
     /// stable delegation public key.
     ///
@@ -132,7 +171,11 @@ pub struct CryptZone {
     /// the operator has issued. Token issuance writes nothing here; the
     /// embedded delegation private key in `--crypt` tokens is what the
     /// AI uses to unwrap (ADR-041 §5).
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
+    )]
     pub delegations: BTreeMap<String, BTreeMap<String, String>>,
 }
 
@@ -178,13 +221,69 @@ impl Docs {
     }
 }
 
+/// What a member is (JOY-02DB-09). Said by `type` in its member file
+/// and the one thing joy decides by where the project is loaded; the
+/// shape of a key ([`is_ai_member`]) is only the fallback where nothing
+/// but a key is at hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberKind {
+    /// Acts on its own, with an address and a passphrase: a human or a
+    /// shared account, joy cannot tell and does not ask.
+    Person,
+    /// Acts on behalf of a person who delegated to it.
+    Ai,
+    /// A platform instance that runs jobs. Read and written, not used
+    /// yet: nothing is assigned or delegated to one.
+    Platform,
+}
+
+/// The members map of a project.yaml of format 1, with every member's
+/// kind set from its key: that file has no word for the kind, and its
+/// keys were written by the one rule there was
+/// ([`crate::migrations::m_2026_10_member_identity::kind_of_key`]).
+fn de_members<'de, D>(deserializer: D) -> Result<BTreeMap<String, Member>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut members: BTreeMap<String, Member> = ai_member_name::de_map(deserializer)?;
+    for (key, member) in members.iter_mut() {
+        member.kind = crate::migrations::m_2026_10_member_identity::kind_of_key(key);
+    }
+    Ok(members)
+}
+
+impl MemberKind {
+    /// What a member read on its own says until the map it stands in
+    /// sets its kind ([`de_members`]). Never seen outside serde.
+    fn unread() -> Self {
+        MemberKind::Person
+    }
+
+    /// The word in a member file and in what joy says.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemberKind::Person => "person",
+            MemberKind::Ai => "ai",
+            MemberKind::Platform => "platform",
+        }
+    }
+}
+
+/// A member as joy holds it. Its serde form is the member entry of a
+/// project.yaml of format 1, the only file it is still written to that
+/// way; a member file has its own shape ([`crate::member_files`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
+    /// What this member is. A project.yaml of format 1 has no word for
+    /// it: its members map sets it from the key ([`de_members`]).
+    #[serde(skip, default = "MemberKind::unread")]
+    pub kind: MemberKind,
     pub capabilities: MemberCapabilities,
-    /// Member default interaction level (JI-0166-D8): this member's fallback
-    /// level before per-capability overrides, for human and AI members alike.
-    /// `None` falls back to the project/Joy defaults in the resolution chain
-    /// (see [`resolve_interaction_level`]).
+    /// An AI member's ONE interaction level: the most the project allows
+    /// it to do on its own, part of what a manager signs for it
+    /// (JI-019D-46, [`Granted`]). A person has none. In a project from
+    /// before the member files this was the member's default level.
     #[serde(
         default,
         rename = "interaction-level",
@@ -194,7 +293,7 @@ pub struct Member {
     /// The ACP adapter that runs an AI member. Since JOY-0231-74 the id is
     /// the tool name itself (claude | vibe | qwen | mock); first-generation
     /// pins (claude-code, mistral-vibe, qwen-code) are rewritten by the
-    /// silent migration. Only meaningful on `ai:*` members. Set when the AI
+    /// silent migration. Only meaningful on AI members. Set when the AI
     /// member is added; the rest of its key-bound ACP config (key, model,
     /// budget, guardrail) lives in the platform DB, not the repo (JI-0164 as
     /// revised by JI-0166-D8: no agent mode is stored anywhere). None on human
@@ -207,9 +306,14 @@ pub struct Member {
     pub kdf_nonce: Option<String>,
     /// AES-256-GCM ciphertext of the member's identity seed, encrypted
     /// under a KEK derived from passphrase + kdf_nonce via Argon2id
-    /// (ADR-039). Hex-encoded `nonce || ciphertext || tag`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_wrap_passphrase: Option<String>,
+    /// (ADR-039). Hex-encoded `nonce || ciphertext || tag`. A
+    /// project.yaml of format 1 calls it `seed_wrap_passphrase`.
+    #[serde(
+        default,
+        rename = "seed_wrap_passphrase",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub seed_wrap: Option<String>,
     /// AES-256-GCM ciphertext of the same seed, encrypted under a KEK
     /// derived from a recovery key via Argon2id (ADR-039). The recovery
     /// key itself is generated at `joy auth init`, displayed once, and
@@ -218,7 +322,11 @@ pub struct Member {
     pub seed_wrap_recovery: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enrollment_verifier: Option<String>,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(
+        default,
+        skip_serializing_if = "BTreeMap::is_empty",
+        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
+    )]
     pub ai_delegations: BTreeMap<String, AiDelegationEntry>,
     /// Per-member Crypt zone-key wraps. Map from zone name to the
     /// hex-encoded `nonce || ciphertext || tag` produced by
@@ -227,13 +335,18 @@ pub struct Member {
     /// "crypt-member-kek" tag.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub crypt_wraps: BTreeMap<String, String>,
-    /// Non-reversible e-mail verifier (ADR-042 anonymous mode). Hex of
+    /// Non-reversible e-mail tag (ADR-042 anonymous mode). Hex of
     /// HKDF-SHA256 over normalize(email) keyed by `kdf_nonce`. Present only in
-    /// anonymous mode, where it replaces the cleartext e-mail map key. The
-    /// platform compares this against verified account e-mails to decide
-    /// membership without decrypting anything.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email_match: Option<String>,
+    /// anonymous mode, where it replaces the cleartext e-mail map key. joy-core,
+    /// which the CLI, the app and the platform share, compares it against a
+    /// known address to find the member. A project.yaml of format 1 calls it
+    /// `email_match`.
+    #[serde(
+        default,
+        rename = "email_match",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub email_tag: Option<String>,
     /// Wrap of the members.yaml zone key for this member (ADR-042 anonymous
     /// mode). Pairwise X25519 wrap (`crypt::wrap_for_member`), unwrappable with
     /// the member's identity seed. Present only in anonymous mode.
@@ -241,6 +354,92 @@ pub struct Member {
     pub members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attestation: Option<Attestation>,
+    /// The model an AI member runs on for everybody, as its adapter
+    /// names it, picked by a manager. None leaves the choice to each
+    /// person (`AiDelegationEntry::model`). Member files only
+    /// (JI-019D-46).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// The signature a manager put under an AI member's capabilities and
+    /// level: the project maximum. Member files only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub granted: Option<Granted>,
+    /// Who brought a person into the project. Member files only; the
+    /// attestation above is what older projects carry instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Origin>,
+    /// The name of this member's file under `.joy/members/`, without the
+    /// extension. Never written into a file: the file name says it.
+    #[serde(skip)]
+    pub file_id: Option<String>,
+}
+
+/// The signature under an AI member's project maximum (JI-019D-46): a
+/// person with the manage capability signed the member's capabilities
+/// and level.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Granted {
+    pub by: crate::member_ref::MemberRef,
+    pub at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`grant_text`].
+    pub signature: String,
+}
+
+/// Who brought a person into the project and when (JI-019D-46). It is
+/// made once, when the invitation is issued, and never touched again:
+/// what the person may do is not part of it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Origin {
+    pub attester: crate::member_ref::MemberRef,
+    pub signed_at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`origin_text`]. Absent on a
+    /// member that was in the project before the member files; `commit`
+    /// then names where the attestation of that time can be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    /// The hash of the invitation's one-time password the signature
+    /// covers. Kept here because the member's own copy is cleared once
+    /// the invitation is redeemed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invitation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
+}
+
+/// What a person allows an AI member that acts for them: at most the
+/// project maximum, signed with the person's own key.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DelegationGrant {
+    pub capabilities: Vec<Capability>,
+    pub level: InteractionLevel,
+    pub signed_at: chrono::DateTime<chrono::Utc>,
+    /// Hex-encoded Ed25519 signature over [`grant_text`].
+    pub signature: String,
+}
+
+/// The text a grant signature covers: the AI member's name, its
+/// capabilities in their fixed order, the level, whose grant it is
+/// (`project` for the maximum, else the delegating member's id) and the
+/// project. A text, and not the YAML, so that no change to the file
+/// format ever touches a signature.
+pub fn grant_text(
+    name: &str,
+    capabilities: &[Capability],
+    level: InteractionLevel,
+    scope: &str,
+    project_id: &str,
+) -> String {
+    let mut caps: Vec<Capability> = capabilities.to_vec();
+    caps.sort();
+    caps.dedup();
+    let caps: Vec<String> = caps.iter().map(|c| c.to_string()).collect();
+    format!("{name}|{}|{level}|{scope}|{project_id}", caps.join(","))
+}
+
+/// The text an origin signature covers: the project, the member and the
+/// hash of the invitation's one-time password.
+pub fn origin_text(project_id: &str, member: &str, otp_hash: &str) -> String {
+    format!("{project_id}|{member}|{otp_hash}")
 }
 
 /// Per-member attestation: a signature by a manage member over a stable
@@ -320,6 +519,15 @@ pub struct AiDelegationEntry {
     /// When this delegation was last rotated, if ever.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rotated: Option<chrono::DateTime<chrono::Utc>>,
+    /// What the delegating person allows this AI member (JI-019D-46).
+    /// None means the project maximum applies as it stands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<DelegationGrant>,
+    /// The model this person runs the AI member on, where the project
+    /// leaves the choice to them: the member itself names none. None is
+    /// what the tool takes by itself. See `auth::grants::model_for`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -328,10 +536,28 @@ pub enum MemberCapabilities {
     Specific(BTreeMap<Capability, CapabilityConfig>),
 }
 
+impl MemberCapabilities {
+    /// Every capability an AI member can hold: all of them but manage,
+    /// which an AI member never holds.
+    pub fn all_for_ai() -> Self {
+        MemberCapabilities::Specific(
+            Capability::ALL
+                .iter()
+                .filter(|cap| **cap != Capability::Manage)
+                .map(|cap| (*cap, CapabilityConfig::default()))
+                .collect(),
+        )
+    }
+}
+
+/// What hung on a single capability of a member in a project from before
+/// the member files. Nothing hangs on a capability any more (JI-019D-46):
+/// a member holds it or not. The two fields are read from such a project
+/// and from nowhere else: the migration takes the most careful floor as
+/// the AI member's one level and then empties them.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CapabilityConfig {
-    /// Per-capability member default level (expert view, JI-0166-D8). Beats
-    /// the member's global `interaction-level` for this capability.
+    /// The per-capability default level of the older layout.
     #[serde(
         rename = "interaction-level",
         default,
@@ -346,12 +572,6 @@ pub struct CapabilityConfig {
         skip_serializing_if = "Option::is_none"
     )]
     pub max_interaction_level: Option<InteractionLevel>,
-    #[serde(
-        rename = "max-cost-per-job",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub max_cost_per_job: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -376,103 +596,6 @@ pub struct InteractionLevelDefaults {
 pub struct AiDefaults {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
-}
-
-/// Source of a resolved interaction level.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InteractionLevelSource {
-    /// From project.defaults.yaml (Joy's recommendation).
-    Default,
-    /// From project.yaml interaction-level section override.
-    Project,
-    /// From the member entry in project.yaml (global or per-capability default).
-    Member,
-    /// From config.yaml personal preference.
-    Personal,
-    /// From item-level override (future).
-    Item,
-    /// Clamped by max-interaction-level from project.yaml member config.
-    ProjectMax,
-}
-
-impl std::fmt::Display for InteractionLevelSource {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Default => write!(f, "default"),
-            Self::Project => write!(f, "project"),
-            Self::Member => write!(f, "member"),
-            Self::Personal => write!(f, "personal"),
-            Self::Item => write!(f, "item"),
-            Self::ProjectMax => write!(f, "project max"),
-        }
-    }
-}
-
-/// Resolve the effective interaction level for a given capability.
-///
-/// Resolution order (later wins):
-/// 1. Effective defaults global level (project.defaults.yaml merged with project.yaml)
-/// 2. Effective defaults per-capability level
-/// 3. Member default level from the member entry (global, then per-capability)
-/// 4. Personal config preference
-///
-/// All clamped by max-interaction-level from the member's CapabilityConfig
-/// (a floor on human oversight, never a relaxation).
-pub fn resolve_interaction_level(
-    capability: &Capability,
-    raw_defaults: &InteractionLevelDefaults,
-    effective_defaults: &InteractionLevelDefaults,
-    member_level: Option<InteractionLevel>,
-    personal_level: Option<InteractionLevel>,
-    member_cap_config: Option<&CapabilityConfig>,
-) -> (InteractionLevel, InteractionLevelSource) {
-    // 1. Global fallback from effective defaults
-    let mut level = effective_defaults.default;
-    let mut source = if effective_defaults.default != raw_defaults.default {
-        InteractionLevelSource::Project
-    } else {
-        InteractionLevelSource::Default
-    };
-
-    // 2. Per-capability default
-    if let Some(&cap_level) = effective_defaults.capabilities.get(capability) {
-        level = cap_level;
-        let from_raw = raw_defaults.capabilities.get(capability) == Some(&cap_level);
-        source = if from_raw {
-            InteractionLevelSource::Default
-        } else {
-            InteractionLevelSource::Project
-        };
-    }
-
-    // 3. Member default from the member entry: global first, then the
-    //    per-capability override next to the capability grant.
-    if let Some(member) = member_level {
-        level = member;
-        source = InteractionLevelSource::Member;
-    }
-    if let Some(cap_level) = member_cap_config.and_then(|c| c.interaction_level) {
-        level = cap_level;
-        source = InteractionLevelSource::Member;
-    }
-
-    // 4. Personal preference
-    if let Some(personal) = personal_level {
-        level = personal;
-        source = InteractionLevelSource::Personal;
-    }
-
-    // 5. Clamp by max-interaction-level (minimum oversight required)
-    if let Some(cap_config) = member_cap_config {
-        if let Some(max) = cap_config.max_interaction_level {
-            if level < max {
-                level = max;
-                source = InteractionLevelSource::ProjectMax;
-            }
-        }
-    }
-
-    (level, source)
 }
 
 // Custom serde for MemberCapabilities: "all" string or map of capabilities
@@ -511,27 +634,76 @@ impl Member {
     /// member and offers Delegate, which rewrites the entry properly.
     /// THE one predicate for every surface; hosts never re-derive it.
     pub fn delegation_usable(&self, ai: &str) -> bool {
-        self.ai_delegations
-            .get(ai)
+        self.delegation_to(ai)
             .is_some_and(|entry| entry.delegation_salt.is_some())
     }
 
-    /// Create a member with the given capabilities and no auth fields.
-    pub fn new(capabilities: MemberCapabilities) -> Self {
+    /// This member's delegation to the AI member `ai`.
+    pub fn delegation_to(&self, ai: &str) -> Option<&AiDelegationEntry> {
+        self.ai_delegations.get(ai_member_name::read(ai).as_ref())
+    }
+
+    /// [`Member::delegation_to`], to change the entry.
+    pub fn delegation_to_mut(&mut self, ai: &str) -> Option<&mut AiDelegationEntry> {
+        self.ai_delegations
+            .get_mut(ai_member_name::read(ai).as_ref())
+    }
+
+    /// Record this member's delegation to `ai`, in place of the one they
+    /// had.
+    ///
+    /// The model the person picked stays with them across a new
+    /// delegation: it hangs on no key, so delegating again is no reason
+    /// to lose it.
+    pub fn put_delegation(
+        &mut self,
+        ai: impl Into<String>,
+        mut entry: AiDelegationEntry,
+    ) -> Option<AiDelegationEntry> {
+        let key = ai_member_name::read_owned(ai.into());
+        if entry.model.is_none() {
+            entry.model = self.ai_delegations.get(&key).and_then(|d| d.model.clone());
+        }
+        self.ai_delegations.insert(key, entry)
+    }
+
+    /// Take this member's delegation to `ai` away.
+    pub fn drop_delegation(&mut self, ai: &str) -> Option<AiDelegationEntry> {
+        self.ai_delegations
+            .remove(ai_member_name::read(ai).as_ref())
+    }
+
+    /// A person with the given capabilities and no auth fields.
+    pub fn person(capabilities: MemberCapabilities) -> Self {
+        Self::of_kind(MemberKind::Person, capabilities)
+    }
+
+    /// An AI member with the given capabilities and no auth fields.
+    pub fn ai(capabilities: MemberCapabilities) -> Self {
+        Self::of_kind(MemberKind::Ai, capabilities)
+    }
+
+    /// A member of `kind` with the given capabilities and no auth fields.
+    pub fn of_kind(kind: MemberKind, capabilities: MemberCapabilities) -> Self {
         Self {
+            kind,
             capabilities,
             interaction_level: None,
             adapter: None,
             verify_key: None,
             kdf_nonce: None,
-            seed_wrap_passphrase: None,
+            seed_wrap: None,
             seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
             crypt_wraps: BTreeMap::new(),
-            email_match: None,
+            email_tag: None,
             members_wrap: None,
             attestation: None,
+            model: None,
+            granted: None,
+            origin: None,
+            file_id: None,
         }
     }
 
@@ -565,68 +737,10 @@ impl Member {
             (_, other) => other,
         };
     }
-
-    /// Set (`Some`) or clear (`None`) the per-capability max-interaction-level
-    /// floor for `cap`. The floor clamps the resolved interaction level upward
-    /// (see [`resolve_interaction_level`]). Errors if the member does not
-    /// currently hold `cap`, or holds [`MemberCapabilities::All`] (which has
-    /// no per-capability slots to attach a floor to).
-    ///
-    /// Editing a floor invalidates any stored attestation; callers must
-    /// re-sign.
-    pub fn set_capability_max_interaction_level(
-        &mut self,
-        cap: Capability,
-        max_interaction_level: Option<InteractionLevel>,
-    ) -> Result<(), crate::error::JoyError> {
-        match &mut self.capabilities {
-            MemberCapabilities::All => Err(crate::error::JoyError::Other(format!(
-                "member has 'capabilities: all'; grant an explicit capability set before \
-                 setting a per-capability max-interaction-level for '{cap}'"
-            ))),
-            MemberCapabilities::Specific(map) => match map.get_mut(&cap) {
-                Some(cfg) => {
-                    cfg.max_interaction_level = max_interaction_level;
-                    Ok(())
-                }
-                None => Err(crate::error::JoyError::Other(format!(
-                    "member does not have capability '{cap}'"
-                ))),
-            },
-        }
-    }
-
-    /// Set (`Some`) or clear (`None`) the per-capability member default level
-    /// for `cap` (the expert view of JI-0166-D8). Same holding rules as
-    /// [`Self::set_capability_max_interaction_level`]; editing invalidates any
-    /// stored attestation, callers must re-sign.
-    pub fn set_capability_interaction_level(
-        &mut self,
-        cap: Capability,
-        interaction_level: Option<InteractionLevel>,
-    ) -> Result<(), crate::error::JoyError> {
-        match &mut self.capabilities {
-            MemberCapabilities::All => Err(crate::error::JoyError::Other(format!(
-                "member has 'capabilities: all'; grant an explicit capability set before \
-                 setting a per-capability interaction-level for '{cap}'"
-            ))),
-            MemberCapabilities::Specific(map) => match map.get_mut(&cap) {
-                Some(cfg) => {
-                    cfg.interaction_level = interaction_level;
-                    Ok(())
-                }
-                None => Err(crate::error::JoyError::Other(format!(
-                    "member does not have capability '{cap}'"
-                ))),
-            },
-        }
-    }
 }
 
-/// Check whether a member ID represents an AI member.
-pub fn is_ai_member(id: &str) -> bool {
-    id.starts_with("ai:")
-}
+use crate::migrations::ai_member_name;
+pub use joy_model::is_ai_member;
 
 /// One-line description for a `joy project get` key. Returned by
 /// `--describe` so the CLI is the single source of truth for what
@@ -673,7 +787,31 @@ impl Project {
             members: BTreeMap::new(),
             crypt: CryptConfig::default(),
             created: Utc::now(),
+            layout: MemberLayout::default(),
+            file_shape: MemberFileShape::default(),
         }
+    }
+
+    /// How the members are kept on disk.
+    pub fn member_layout(&self) -> MemberLayout {
+        self.layout
+    }
+
+    /// Privileged: only the store (reading what is on disk) and the
+    /// migration that moves a project over say how members are kept.
+    pub(crate) fn set_member_layout(&mut self, layout: MemberLayout) {
+        self.layout = layout;
+    }
+
+    /// The shape of the member files on disk.
+    pub fn member_file_shape(&self) -> MemberFileShape {
+        self.file_shape
+    }
+
+    /// Privileged: only the store (reading what is on disk) and the
+    /// update that rewrites the member files say their shape.
+    pub(crate) fn set_member_file_shape(&mut self, shape: MemberFileShape) {
+        self.file_shape = shape;
     }
 
     /// The effective privacy mode: `Open` when unset (ADR-042).
@@ -723,15 +861,15 @@ impl Project {
 
     /// Resolve the member-map key for a git e-mail, honoring the privacy mode.
     /// `open`: the key is the e-mail itself; `anonymous`: the opaque id whose
-    /// stored `email_match` verifies against the e-mail. `None` when the e-mail
+    /// stored `email_tag` verifies against the e-mail. `None` when the e-mail
     /// is not a member.
     pub fn member_key_for_email(&self, email: &str) -> Option<String> {
         if self.privacy_mode() != PrivacyMode::Anonymous {
             return self.members.contains_key(email).then(|| email.to_string());
         }
         for (id, member) in &self.members {
-            if let (Some(verifier), Some(nonce)) = (&member.email_match, &member.kdf_nonce) {
-                if crate::member_id::email_match(email, nonce).ok().as_deref()
+            if let (Some(verifier), Some(nonce)) = (&member.email_tag, &member.kdf_nonce) {
+                if crate::member_id::email_tag(email, nonce).ok().as_deref()
                     == Some(verifier.as_str())
                 {
                     return Some(id.clone());
@@ -753,21 +891,85 @@ impl Project {
         self.members.get_mut(&key)
     }
 
-    /// Look up a member by their at-rest map key (an `ai:` id, or an already
-    /// resolved key). Use [`Self::member_by_email`] when you only have an
-    /// e-mail.
+    /// The member work is assigned to when a person names `member`, in
+    /// as this project keeps them, or in words why work cannot be
+    /// assigned to them. A person is named by an address (or, in an
+    /// anonymous project, by their id) and need not be a member yet; an
+    /// AI member is named by its name and has to be one of this
+    /// project's.
+    pub fn assignee(&self, member: &str) -> Result<String, String> {
+        if let Some(key) = self.member_key(member) {
+            return match self.kind_of(&key) {
+                MemberKind::Platform => Err(format!(
+                    "{key} is a platform member: no work is assigned to one yet"
+                )),
+                MemberKind::Person | MemberKind::Ai => Ok(key),
+            };
+        }
+        if !is_ai_member(member) {
+            if member.contains('@') || crate::member_id::is_opaque_member_id(member) {
+                return Ok(member.to_string());
+            }
+            return Err(format!(
+                "{member} is neither an address nor the name of an AI member"
+            ));
+        }
+        Err(format!(
+            "this project has no AI member named {}",
+            ai_member_name::read(member)
+        ))
+    }
+
+    /// The assignee an assignment is taken away from: the member as the
+    /// project keeps them, and as they were named where the project does
+    /// not know them any more. Taking away asks nothing.
+    pub fn former_assignee(&self, member: &str) -> String {
+        self.member_key(member)
+            .unwrap_or_else(|| member.to_string())
+    }
+
+    /// The key a member is stored under, for a key as anybody may write
+    /// it: a person's as it is, an AI member's name.
+    pub fn member_key(&self, key: &str) -> Option<String> {
+        let key = ai_member_name::read(key);
+        self.members
+            .contains_key(key.as_ref())
+            .then(|| key.into_owned())
+    }
+
+    /// Look up a member by their at-rest map key (an AI member's name, or
+    /// an already resolved key). Use [`Self::member_by_email`] when you
+    /// only have an e-mail.
     pub fn member_by_key(&self, key: &str) -> Option<&Member> {
-        self.members.get(key)
+        let key = self.member_key(key)?;
+        self.members.get(&key)
     }
 
     /// Mutable lookup by at-rest map key.
     pub fn member_by_key_mut(&mut self, key: &str) -> Option<&mut Member> {
-        self.members.get_mut(key)
+        let key = self.member_key(key)?;
+        self.members.get_mut(&key)
+    }
+
+    /// What the member under `key` is: its kind where the project knows
+    /// it, and where it does not (a former member, a name in an old
+    /// item) what the key's shape says ([`is_ai_member`]).
+    pub fn kind_of(&self, key: &str) -> MemberKind {
+        match self.member_by_key(key) {
+            Some(member) => member.kind,
+            None if is_ai_member(key) => MemberKind::Ai,
+            None => MemberKind::Person,
+        }
+    }
+
+    /// Whether the member under `key` is an AI member: [`Project::kind_of`].
+    pub fn is_ai(&self, key: &str) -> bool {
+        self.kind_of(key) == MemberKind::Ai
     }
 
     /// Whether a member with this at-rest map key exists.
     pub fn has_member_key(&self, key: &str) -> bool {
-        self.members.contains_key(key)
+        self.member_key(key).is_some()
     }
 
     /// Iterate `(key, member)` pairs. Keys are raw at-rest ids; wrap them in a
@@ -798,28 +1000,53 @@ impl Project {
 
     /// Register a brand-new member, placing it correctly for the privacy mode.
     ///
-    /// `id` is the caller-facing identity: an `ai:` synthetic id (no PII,
+    /// `id` is the caller-facing identity: an AI member's name (no PII,
     /// identical in both modes) or a cleartext e-mail for a human. AI members
-    /// are inserted under their synthetic id in either mode; human members under
+    /// are inserted under their name in either mode; human members under
     /// their e-mail in `open` mode. Adding a *human* to an `anonymous` project is
     /// refused: the opaque id derives from a verify_key the new member does not
     /// have yet, and a naive e-mail insert would leak cleartext PII into the
     /// committed project.yaml. That onboarding flow is tracked separately
     /// (JOY-01C3-A7). The caller owns any duplicate-key policy.
     pub fn register_member(&mut self, id: &str, member: Member) -> Result<(), JoyError> {
-        if !is_ai_member(id) && self.privacy_mode() == PrivacyMode::Anonymous {
+        if member.kind == MemberKind::Person && self.privacy_mode() == PrivacyMode::Anonymous {
             return Err(JoyError::Other(format!(
                 "cannot register human member {id} in an anonymous project: \
                  anonymous human onboarding is not yet supported (JOY-01C3-A7)"
             )));
         }
-        self.members.insert(id.to_string(), member);
+        // An AI member never holds manage, whichever host adds it and
+        // however its capabilities were named (`all` included): the guard
+        // refuses it every manage action anyway, and a capability that
+        // can never be used must not stand in the project.
+        if member.kind == MemberKind::Ai && member.has_capability(&Capability::Manage) {
+            return Err(JoyError::Other(
+                "an AI member never holds the manage capability: name what it may do".into(),
+            ));
+        }
+        let mut member = member;
+        if self.layout == MemberLayout::Files && member.file_id.is_none() {
+            member.file_id = Some(crate::member_id::new_member_file_id());
+        }
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
         Ok(())
+    }
+
+    /// Put a member into the project as a file read from disk would:
+    /// no rule of [`Project::register_member`] is asked. For tests of
+    /// what joy does with a project written before a rule existed (an AI
+    /// member that holds manage, say).
+    #[cfg(test)]
+    pub(crate) fn insert_as_read(&mut self, id: &str, member: Member) {
+        self.members
+            .insert(ai_member_name::read(id).into_owned(), member);
     }
 
     /// Remove a member by at-rest map key, returning the removed entry.
     pub fn remove_member(&mut self, key: &str) -> Option<Member> {
-        self.members.remove(key)
+        let key = self.member_key(key)?;
+        self.members.remove(&key)
     }
 
     /// Privileged: take the whole member map out, leaving it empty. Only the
@@ -827,6 +1054,11 @@ impl Project {
     /// every other caller uses the typed accessors above.
     pub(crate) fn take_members(&mut self) -> BTreeMap<String, Member> {
         std::mem::take(&mut self.members)
+    }
+
+    /// Privileged: the member map as it is, for the store that writes it.
+    pub(crate) fn member_map(&self) -> &BTreeMap<String, Member> {
+        &self.members
     }
 
     /// Privileged: replace the whole member map. See [`Self::take_members`].
@@ -913,24 +1145,26 @@ mod tests {
         // Operator rule 2026-08-02: an entry whose key cannot re-derive
         // is a broken artifact, not a delegation — every surface greys it
         // and offers Delegate. THE one predicate lives here.
-        let mut member = Member::new(MemberCapabilities::All);
-        assert!(!member.delegation_usable("ai:claude@joy"));
+        let mut member = Member::person(MemberCapabilities::All);
+        assert!(!member.delegation_usable("claude"));
         member.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "ab".repeat(32),
                 delegation_salt: None,
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
+                model: None,
             },
         );
-        assert!(!member.delegation_usable("ai:claude@joy"));
+        assert!(!member.delegation_usable("claude"));
         member
             .ai_delegations
-            .get_mut("ai:claude@joy")
+            .get_mut("claude")
             .expect("entry")
             .delegation_salt = Some("cd".repeat(32));
-        assert!(member.delegation_usable("ai:claude@joy"));
+        assert!(member.delegation_usable("claude"));
     }
 
     #[test]
@@ -1024,7 +1258,7 @@ mod tests {
 
     #[test]
     fn ai_delegations_omitted_when_empty() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         assert!(m.ai_delegations.is_empty());
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(
@@ -1040,11 +1274,11 @@ mod tests {
 
     #[test]
     fn ai_delegations_yaml_roundtrip() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.verify_key = Some("aa".repeat(32));
         m.kdf_nonce = Some("bb".repeat(32));
         m.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "cc".repeat(32),
                 delegation_salt: None,
@@ -1052,11 +1286,13 @@ mod tests {
                     .unwrap()
                     .with_timezone(&chrono::Utc),
                 rotated: None,
+                grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("ai_delegations:"));
-        assert!(yaml.contains("ai:claude@joy:"));
+        assert!(yaml.contains("claude:"));
         assert!(yaml.contains("delegation_verifier:"));
         assert!(
             !yaml.contains("delegation_salt:"),
@@ -1073,7 +1309,7 @@ mod tests {
 
     #[test]
     fn ai_delegations_with_rotated_roundtrips() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         let created = chrono::DateTime::parse_from_rfc3339("2026-04-01T10:00:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -1081,18 +1317,20 @@ mod tests {
             .unwrap()
             .with_timezone(&chrono::Utc);
         m.ai_delegations.insert(
-            "ai:claude@joy".into(),
+            "claude".into(),
             AiDelegationEntry {
                 delegation_verifier: "dd".repeat(32),
                 delegation_salt: None,
                 created,
                 rotated: Some(rotated),
+                grant: None,
+                model: None,
             },
         );
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("rotated:"));
         let parsed: Member = serde_yaml_ng::from_str(&yaml).unwrap();
-        assert_eq!(m.ai_delegations["ai:claude@joy"].rotated, Some(rotated));
+        assert_eq!(m.ai_delegations["claude"].rotated, Some(rotated));
         assert_eq!(parsed, m);
     }
 
@@ -1102,14 +1340,14 @@ mod tests {
 
     #[test]
     fn attestation_omitted_when_none() {
-        let m = Member::new(MemberCapabilities::All);
+        let m = Member::person(MemberCapabilities::All);
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(!yaml.contains("attestation:"));
     }
 
     #[test]
     fn attestation_yaml_roundtrips() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.attestation = Some(Attestation {
             attester: "horst@example.com".into(),
             signed_fields: AttestationSignedFields {
@@ -1167,17 +1405,17 @@ capabilities: all
 public_key: aa
 salt: bb
 ai_tokens:
-  ai:claude@joy:
+  claude:
     token_key: oldkey
     created: "2026-03-28T22:00:00Z"
 ai_delegations:
-  ai:claude@joy:
+  claude:
     delegation_verifier: newkey
     created: "2026-04-15T10:00:00Z"
 "#;
         let parsed: Member = serde_yaml_ng::from_str(yaml).unwrap();
         assert_eq!(
-            parsed.ai_delegations["ai:claude@joy"].delegation_verifier,
+            parsed.ai_delegations["claude"].delegation_verifier,
             "newkey"
         );
     }
@@ -1376,222 +1614,9 @@ capabilities:
         assert_eq!(parsed.capabilities[0], Capability::Implement);
     }
 
-    // -----------------------------------------------------------------------
-    // resolve_interaction_level tests
-    // -----------------------------------------------------------------------
-
-    fn defaults_with_level(level: InteractionLevel) -> InteractionLevelDefaults {
-        InteractionLevelDefaults {
-            default: level,
-            ..Default::default()
-        }
-    }
-
-    fn defaults_with_cap_level(
-        cap: Capability,
-        level: InteractionLevel,
-    ) -> InteractionLevelDefaults {
-        let mut d = InteractionLevelDefaults::default();
-        d.capabilities.insert(cap, level);
-        d
-    }
-
-    #[test]
-    fn resolve_level_uses_global_default() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let (level, source) =
-            resolve_interaction_level(&Capability::Implement, &raw, &effective, None, None, None);
-        assert_eq!(level, InteractionLevel::Proposing);
-        assert_eq!(source, InteractionLevelSource::Default);
-    }
-
-    #[test]
-    fn resolve_level_uses_per_capability_default() {
-        let raw = defaults_with_cap_level(Capability::Test, InteractionLevel::Autonomous);
-        let effective = raw.clone();
-        let (level, source) =
-            resolve_interaction_level(&Capability::Test, &raw, &effective, None, None, None);
-        assert_eq!(level, InteractionLevel::Autonomous);
-        assert_eq!(source, InteractionLevelSource::Default);
-    }
-
-    #[test]
-    fn resolve_level_project_override_detected() {
-        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
-        let effective = defaults_with_cap_level(Capability::Implement, InteractionLevel::Proposing);
-        let (level, source) =
-            resolve_interaction_level(&Capability::Implement, &raw, &effective, None, None, None);
-        assert_eq!(level, InteractionLevel::Proposing);
-        assert_eq!(source, InteractionLevelSource::Project);
-    }
-
-    #[test]
-    fn resolve_level_member_default_overrides_project() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            Some(InteractionLevel::Confirmed),
-            None,
-            None,
-        );
-        assert_eq!(level, InteractionLevel::Confirmed);
-        assert_eq!(source, InteractionLevelSource::Member);
-    }
-
-    #[test]
-    fn resolve_level_member_cap_default_beats_member_global() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let cap_config = CapabilityConfig {
-            interaction_level: Some(InteractionLevel::Autonomous),
-            ..Default::default()
-        };
-        let (level, source) = resolve_interaction_level(
-            &Capability::Test,
-            &raw,
-            &effective,
-            Some(InteractionLevel::Confirmed),
-            None,
-            Some(&cap_config),
-        );
-        assert_eq!(level, InteractionLevel::Autonomous);
-        assert_eq!(source, InteractionLevelSource::Member);
-    }
-
-    #[test]
-    fn resolve_level_personal_overrides_member() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            Some(InteractionLevel::Autonomous),
-            Some(InteractionLevel::Proposing),
-            None,
-        );
-        assert_eq!(level, InteractionLevel::Proposing);
-        assert_eq!(source, InteractionLevelSource::Personal);
-    }
-
-    #[test]
-    fn resolve_level_max_clamps_upward() {
-        let raw = defaults_with_level(InteractionLevel::Autonomous);
-        let effective = raw.clone();
-        let cap_config = CapabilityConfig {
-            max_interaction_level: Some(InteractionLevel::Confirmed),
-            ..Default::default()
-        };
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            None,
-            None,
-            Some(&cap_config),
-        );
-        assert_eq!(level, InteractionLevel::Confirmed);
-        assert_eq!(source, InteractionLevelSource::ProjectMax);
-    }
-
-    #[test]
-    fn resolve_level_max_does_not_lower() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let cap_config = CapabilityConfig {
-            max_interaction_level: Some(InteractionLevel::Confirmed),
-            ..Default::default()
-        };
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            None,
-            None,
-            Some(&cap_config),
-        );
-        // Proposing > Confirmed, so no clamping
-        assert_eq!(level, InteractionLevel::Proposing);
-        assert_eq!(source, InteractionLevelSource::Default);
-    }
-
-    #[test]
-    fn set_capability_max_interaction_level_sets_and_clears_on_held_capability() {
-        let mut m = Member::new(MemberCapabilities::Specific(
-            [(Capability::Implement, CapabilityConfig::default())].into(),
-        ));
-        m.set_capability_max_interaction_level(
-            Capability::Implement,
-            Some(InteractionLevel::Confirmed),
-        )
-        .unwrap();
-        let held = |m: &Member, cap| match &m.capabilities {
-            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.max_interaction_level),
-            _ => None,
-        };
-        assert_eq!(
-            held(&m, &Capability::Implement),
-            Some(InteractionLevel::Confirmed)
-        );
-        m.set_capability_max_interaction_level(Capability::Implement, None)
-            .unwrap();
-        assert_eq!(held(&m, &Capability::Implement), None);
-    }
-
-    #[test]
-    fn set_capability_max_interaction_level_errors_when_capability_absent_or_all() {
-        let mut specific = Member::new(MemberCapabilities::Specific(
-            [(Capability::Implement, CapabilityConfig::default())].into(),
-        ));
-        assert!(specific
-            .set_capability_max_interaction_level(
-                Capability::Review,
-                Some(InteractionLevel::Proposing)
-            )
-            .is_err());
-
-        let mut all = Member::new(MemberCapabilities::All);
-        assert!(all
-            .set_capability_max_interaction_level(
-                Capability::Implement,
-                Some(InteractionLevel::Proposing)
-            )
-            .is_err());
-    }
-
-    #[test]
-    fn set_capability_interaction_level_sets_clears_and_errors() {
-        let mut m = Member::new(MemberCapabilities::Specific(
-            [(Capability::Implement, CapabilityConfig::default())].into(),
-        ));
-        m.set_capability_interaction_level(
-            Capability::Implement,
-            Some(InteractionLevel::Autonomous),
-        )
-        .unwrap();
-        let held = |m: &Member, cap| match &m.capabilities {
-            MemberCapabilities::Specific(map) => map.get(cap).and_then(|c| c.interaction_level),
-            _ => None,
-        };
-        assert_eq!(
-            held(&m, &Capability::Implement),
-            Some(InteractionLevel::Autonomous)
-        );
-        m.set_capability_interaction_level(Capability::Implement, None)
-            .unwrap();
-        assert_eq!(held(&m, &Capability::Implement), None);
-        assert!(m
-            .set_capability_interaction_level(Capability::Review, Some(InteractionLevel::Confirmed))
-            .is_err());
-    }
-
     #[test]
     fn member_interaction_level_yaml_roundtrip() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.interaction_level = Some(InteractionLevel::Confirmed);
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("interaction-level: confirmed"));
@@ -1599,14 +1624,14 @@ capabilities:
         assert_eq!(parsed.interaction_level, Some(InteractionLevel::Confirmed));
 
         // Absent when unset.
-        let bare = Member::new(MemberCapabilities::All);
+        let bare = Member::person(MemberCapabilities::All);
         let yaml = serde_yaml_ng::to_string(&bare).unwrap();
         assert!(!yaml.contains("interaction-level"));
     }
 
     #[test]
     fn set_capabilities_carries_over_surviving_configs() {
-        let mut m = Member::new(MemberCapabilities::Specific(
+        let mut m = Member::person(MemberCapabilities::Specific(
             [
                 (
                     Capability::Implement,
@@ -1645,32 +1670,11 @@ capabilities:
 
     #[test]
     fn set_capabilities_to_all_replaces_wholesale() {
-        let mut m = Member::new(MemberCapabilities::Specific(
+        let mut m = Member::person(MemberCapabilities::Specific(
             [(Capability::Implement, CapabilityConfig::default())].into(),
         ));
         m.set_capabilities(MemberCapabilities::All);
         assert!(matches!(m.capabilities, MemberCapabilities::All));
-    }
-
-    #[test]
-    fn resolve_level_personal_clamped_by_max() {
-        let raw = defaults_with_level(InteractionLevel::Proposing);
-        let effective = raw.clone();
-        let cap_config = CapabilityConfig {
-            max_interaction_level: Some(InteractionLevel::Confirmed),
-            ..Default::default()
-        };
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            None,
-            Some(InteractionLevel::Autonomous),
-            Some(&cap_config),
-        );
-        // Personal is Autonomous but max is Confirmed, clamp up
-        assert_eq!(level, InteractionLevel::Confirmed);
-        assert_eq!(source, InteractionLevelSource::ProjectMax);
     }
 
     // -----------------------------------------------------------------------
@@ -1739,61 +1743,4 @@ updated: "2026-01-01T00:00:00+00:00"
     // -----------------------------------------------------------------------
     // Full resolution scenario
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn resolve_level_full_scenario() {
-        // Joy default: implement = confirmed
-        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
-        // Project override: implement = autonomous
-        let effective =
-            defaults_with_cap_level(Capability::Implement, InteractionLevel::Autonomous);
-        // Member default: autonomous; personal preference: autonomous
-        let member = Some(InteractionLevel::Autonomous);
-        let personal = Some(InteractionLevel::Autonomous);
-        // Project max-interaction-level: confirmed (minimum oversight)
-        let cap_config = CapabilityConfig {
-            max_interaction_level: Some(InteractionLevel::Confirmed),
-            ..Default::default()
-        };
-
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            member,
-            personal,
-            Some(&cap_config),
-        );
-
-        // Personal (autonomous) < max (confirmed), so clamped up to confirmed
-        assert_eq!(level, InteractionLevel::Confirmed);
-        assert_eq!(source, InteractionLevelSource::ProjectMax);
-    }
-
-    #[test]
-    fn resolve_level_all_layers_no_clamping() {
-        // Joy default: implement = confirmed
-        let raw = defaults_with_cap_level(Capability::Implement, InteractionLevel::Confirmed);
-        // Project override: implement = autonomous
-        let effective =
-            defaults_with_cap_level(Capability::Implement, InteractionLevel::Autonomous);
-        // Member default: confirmed; personal preference: proposing (most oversight)
-        let member = Some(InteractionLevel::Confirmed);
-        let personal = Some(InteractionLevel::Proposing);
-        // No max-interaction-level
-        let cap_config = CapabilityConfig::default();
-
-        let (level, source) = resolve_interaction_level(
-            &Capability::Implement,
-            &raw,
-            &effective,
-            member,
-            personal,
-            Some(&cap_config),
-        );
-
-        // Personal wins, no clamping
-        assert_eq!(level, InteractionLevel::Proposing);
-        assert_eq!(source, InteractionLevelSource::Personal);
-    }
 }

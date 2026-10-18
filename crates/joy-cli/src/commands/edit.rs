@@ -91,11 +91,15 @@ pub struct EditArgs {
 
     /// Job window: latest acceptable end (YYYY-MM-DD or RFC3339)
     #[arg(long)]
-    deadline: Option<String>,
+    until: Option<String>,
 
     /// Job dialog state: awaited|received (use "none" to remove)
     #[arg(long)]
     feedback: Option<String>,
+
+    /// Job level: proposing or autonomous.
+    #[arg(long, value_name = "LEVEL")]
+    level: Option<String>,
 }
 
 pub fn run(args: EditArgs) -> Result<()> {
@@ -247,12 +251,34 @@ pub fn run(args: EditArgs) -> Result<()> {
         || args.max_cost.is_some()
         || args.max_tokens.is_some()
         || args.not_before.is_some()
-        || args.deadline.is_some()
-        || args.feedback.is_some();
+        || args.until.is_some()
+        || args.feedback.is_some()
+        || args.level.is_some();
     if job_flags && !matches!(item.item_type, ItemType::Job) {
         anyhow::bail!(
-            "--scope, --max-cost, --max-tokens, --not-before, --deadline and --feedback are only valid for job items"
+            "--scope, --max-cost, --max-tokens, --not-before, --until, --feedback and --level are only valid for job items"
         );
+    }
+
+    // The level of a job, changed by a person: also after its approval,
+    // which is how a job that proposed goes on to do the work.
+    if let Some(ref level) = args.level {
+        let level = level
+            .trim()
+            .parse()
+            .map_err(|e: String| anyhow::anyhow!("{}", e))?;
+        let project = joy_core::store::load_project(&ctx.root)?;
+        let granted = joy_core::auth::grants::job_level_change(
+            &project,
+            &item,
+            level,
+            ctx.identity.person().id(),
+        )
+        .map_err(|why| anyhow::anyhow!(why))?;
+        if item.interaction_level != Some(granted) {
+            item.interaction_level = Some(granted);
+            changed = true;
+        }
     }
 
     if let Some(ref spec) = args.scope {
@@ -283,8 +309,8 @@ pub fn run(args: EditArgs) -> Result<()> {
         changed = true;
     }
 
-    if let Some(ref when) = args.deadline {
-        job_window(&mut item).deadline = Some(parse_when(when, "--deadline")?);
+    if let Some(ref when) = args.until {
+        job_window(&mut item).until = Some(parse_when(when, "--until")?);
         changed = true;
     }
 
@@ -396,7 +422,7 @@ fn job_window(item: &mut Item) -> &mut JobWindow {
         .window
         .get_or_insert(JobWindow {
             not_before: None,
-            deadline: None,
+            until: None,
         })
 }
 

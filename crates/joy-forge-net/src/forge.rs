@@ -3,7 +3,7 @@
 
 //! What every forge connector is, and what every call carries.
 //!
-//! One binary carries all three forges (D2.1), so the forge is data the
+//! One binary carries all three forges, so the forge is data the
 //! dispatcher picks, adapter registry style (JI-017A-85): the binary
 //! owns the protocol, the implementation owns the forge knowledge, and
 //! neither knows the other's business.
@@ -19,7 +19,7 @@ use crate::gitconfig::GitConfig;
 use crate::http::{Http, HttpError};
 use crate::trust;
 
-/// Who is behind the process that asked (D1.10). The word arrives as
+/// Who is behind the process that asked. The word arrives as
 /// `--host-kind` on every protocol 2 call.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum HostKind {
@@ -64,7 +64,7 @@ impl std::str::FromStr for HostKind {
 }
 
 /// What a verb is asked about: a remote URL, or a bare host for the
-/// calls that have no repository (D2.3).
+/// calls that have no repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Target {
     Remote(String),
@@ -100,7 +100,7 @@ impl Target {
     }
 }
 
-/// What a `repositories` call asks for (D2.4).
+/// What a `repositories` call asks for.
 #[derive(Debug, Clone, Default)]
 pub struct Listing {
     pub query: Option<String>,
@@ -108,11 +108,11 @@ pub struct Listing {
     pub page: Option<String>,
 }
 
-/// The default of D2.4: 200 repositories, paginated so one answer stays
+/// The default: 200 repositories, paginated so one answer stays
 /// well under the 64 KiB a pipe buffer holds.
 pub const DEFAULT_LIMIT: usize = 200;
 
-/// What a `create-repository` call asks for (D2.4).
+/// What a `create-repository` call asks for.
 #[derive(Debug, Clone, Default)]
 pub struct NewRepository {
     pub name: String,
@@ -130,7 +130,7 @@ pub struct ReleaseRequest {
 
 /// Who a token speaks for, asked of the instance's own API. This is
 /// what `token-store` validates a pasted token with before it stores
-/// it (D2.4), and what a finished `login` reports.
+/// it, and what a finished `login` reports.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Account {
     pub login: String,
@@ -138,7 +138,7 @@ pub struct Account {
     pub emails: Vec<String>,
     /// The granted set the forge reported, space separated. `None`
     /// means "not known", and an unknown set is never reported as a
-    /// missing one (D2.7c).
+    /// missing one.
     pub scopes: Option<String>,
 }
 
@@ -175,14 +175,14 @@ impl AccountAnswer {
     }
 }
 
-/// What one probe of D4.1c found: whether this login sees the
+/// What one probe found: whether this login sees the
 /// repository at all, and whether it may push to it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Reach {
     pub read: bool,
     pub push: bool,
     /// The forge refused this login for an ORGANISATION's reason and
-    /// not for this login's (D2.7c): the OAuth application is not
+    /// not for this login's: the OAuth application is not
     /// approved for the owner organisation. No other login of this
     /// machine will do better, so "sign in with the login that can" is
     /// the wrong sentence and an approval page is the right one
@@ -237,13 +237,13 @@ pub trait Forge: Sync {
         ctx: &Ctx,
     ) -> anyhow::Result<Value>;
 
-    // -- the sign in half (D2.4, D2.7, package J3) ---------------------
+    // -- the sign in half ---------------------
 
-    /// The scope set this forge asks for at this level (D2.7a). The
+    /// The scope set this forge asks for at this level. The
     /// `--for` flag picks the level; the forge owns the words.
     fn scopes(&self, purpose: crate::auth::Purpose) -> &'static str;
 
-    /// The OAuth application and endpoints for this host (D2.7), or
+    /// The OAuth application and endpoints for this host, or
     /// `None` where no door exists: a self hosted instance whose
     /// operator registered no client and put none in `forges.yaml`.
     fn oauth(
@@ -256,16 +256,16 @@ pub trait Forge: Sync {
     /// Who this token speaks for, asked of the instance's own API.
     /// `Refused` is what makes `token-store` a validation and not a
     /// paste; `Unreachable` is the answer that must never be reported
-    /// as a refusal (D2.4, JOY-02A8-F4).
+    /// as a refusal (JOY-02A8-F4).
     fn account(&self, host: &str, token: &str, ctx: &Ctx) -> AccountAnswer;
 
-    /// Whether this token reaches `owner/repo` (the probe of D4.1c).
+    /// Whether this token reaches `owner/repo` (the probe).
     /// One request per candidate, never per contact. `None` means the
     /// forge did not answer at all.
     fn reaches(&self, host: &str, repo_path: &str, token: &str, ctx: &Ctx) -> Option<Reach>;
 
-    /// Where an owner approves this application for an organisation
-    /// (D2.7c), for the forges that have such a page. It is forge
+    /// Where an owner approves this application for an organisation,
+    /// for the forges that have such a page. It is forge
     /// knowledge: only the forge knows its own web base, which on a
     /// self hosted instance is not the API base.
     ///
@@ -277,10 +277,10 @@ pub trait Forge: Sync {
 
     /// Whether the OWNER organisation walls this application out of
     /// `owner/repo`, asked with one login's token and only where no
-    /// login reached the repository at all (D2.7c).
+    /// login reached the repository at all.
     ///
     /// It is a second question and not part of [`Forge::reaches`]
-    /// because it costs a request: the probe of D4.1c spends one per
+    /// because it costs a request: the probe spends one per
     /// candidate, and a refusal that is simply the wrong login must not
     /// double that bill. `false` is the answer of every forge that has
     /// no such wall.
@@ -288,13 +288,13 @@ pub trait Forge: Sync {
         false
     }
 
-    /// The https twin of a remote (D1.5, the `web-url` verb). Answered
+    /// The https twin of a remote (the `web-url` verb). Answered
     /// from the address and the instance configuration alone: only the
     /// forge knows the web base of a self hosted instance, which may
     /// sit under a nested sub path or behind a different SSH domain.
     fn web_url(&self, target: &Target, ctx: &Ctx) -> Value;
 
-    /// Revoke a token at the forge, where the forge offers it (D2.4).
+    /// Revoke a token at the forge, where the forge offers it.
     /// `false` is the honest answer of a forge that offers nothing, and
     /// the local entry is removed either way.
     fn revoke(&self, _host: &str, _record: &crate::auth::store::Record, _ctx: &Ctx) -> bool {
@@ -302,14 +302,14 @@ pub trait Forge: Sync {
     }
 
     /// The user name the https twin presents beside the token in basic
-    /// authentication (the `username` field of D2.4's `token` answer).
+    /// authentication (the `username` field of the `token` answer).
     /// It is forge knowledge: GitHub takes `x-access-token`, GitLab
     /// takes `oauth2`, the Gitea family takes the login.
     fn https_username(&self) -> &'static str;
 
     /// The forge CLI a credential may also come from: `gh`, `glab` or
     /// `tea`. joy reads it by spawning that CLI and never writes,
-    /// refreshes or revokes it (D2.6, decision 19).
+    /// refreshes or revokes it.
     fn foreign_cli(&self) -> &'static str;
 
     /// The command a person runs to remove the FOREIGN credential,
@@ -317,7 +317,7 @@ pub trait Forge: Sync {
     fn foreign_logout_command(&self, host: &str) -> String;
 
     /// The logins that CLI is signed in as on this host, for the probe
-    /// candidate order of D4.1c.
+    /// candidate order.
     fn foreign_logins(&self, _host: &str) -> Vec<String> {
         Vec::new()
     }
@@ -331,31 +331,31 @@ pub struct Ctx {
     pub token_env: Option<String>,
     pub instances: Instances,
     /// The project the call runs in, when there is one. A connector
-    /// call needs no project root (D2.3).
+    /// call needs no project root.
     pub root: PathBuf,
-    /// The `forge:` override of that project (D2.5).
+    /// The `forge:` override of that project.
     pub project_forge: Option<String>,
     /// The remote this call is about, when the target is one. The login
-    /// order of D4.1c is per remote, so every `token` lookup inside a
+    /// order is per remote, so every `token` lookup inside a
     /// verb needs it without every verb having to pass it along.
     pub remote: Option<String>,
     git: GitConfig,
-    /// Where this call keeps credentials (D2.6). A library caller gets
+    /// Where this call keeps credentials. A library caller gets
     /// [`crate::auth::store::Vault::none`], so nothing touches a
     /// person's credential store by accident.
     vault: crate::auth::store::Vault,
-    /// Where the refresh locks of D2.6a and the login memory of D4.1c
+    /// Where the refresh locks and the login memory
     /// live. `None` is the person's own app state directory; a test
     /// names a temporary one so it takes no lock a person shares.
     state_dir: Option<PathBuf>,
     /// The forge this call runs for, where the dispatcher named one.
     /// It is what lets [`Ctx::token`] run the WHOLE login order of
-    /// D4.1c and not only the three steps that spend no request: the
+    /// The rule and not only the three steps that spend no request: the
     /// candidate list and the reach call are forge knowledge.
     forge: Option<&'static dyn Forge>,
     clients: Mutex<HashMap<String, Arc<Http>>>,
     tokens: Mutex<HashMap<String, Option<crate::auth::Resolved>>>,
-    /// The remotes this call has already probed. D4.1c allows one
+    /// The remotes this call has already probed. The rule allows one
     /// request per candidate per remote and never one per contact, and
     /// several verbs ask for the same token.
     probed: Mutex<std::collections::HashSet<String>>,
@@ -382,19 +382,19 @@ impl Ctx {
             root,
             project_forge,
             remote: None,
-            // Mechanism 5 of D1.10: every plugin call carries the host
+            // Mechanism 5: every plugin call carries the host
             // kind, and the plugin uses it to skip a step that can
             // raise an operating system dialog.
             //
             // A DELEGATED session gets the same vault READ ONLY. G2 and
-            // D3.8 say the agent inherits everything through the joy
+            // The rule say the agent inherits everything through the joy
             // CLI, and it runs on the person's own machine, so denying
             // it the store would deny it every contact the person can
             // make; `--token-env` is the caller's hand over and not the
             // only way in. What it may never do is change what it
             // inherited: no write, no `logout`, and no refresh, because
             // a refresh where the forge rotates refresh tokens retires
-            // the one the person holds. D1.10 adds that it never
+            // the one the person holds. The rule adds that it never
             // prompts, and a read is the one access that cannot raise
             // joy's own question.
             vault: match host_kind {
@@ -433,8 +433,8 @@ impl Ctx {
     }
 
     /// Name the forge this call runs for, so that every verb reaches a
-    /// credential through the whole login order of D4.1c and not only
-    /// through the steps that spend no request (D4.1c, and the
+    /// credential through the whole login order and not only
+    /// through the steps that spend no request (and the
     /// `store`, `files`, `release`, `repositories` and
     /// `create-repository` verbs that all ask [`Ctx::token`]).
     ///
@@ -458,13 +458,13 @@ impl Ctx {
         self
     }
 
-    /// Pin the login this call speaks for (D4.1c).
+    /// Pin the login this call speaks for.
     pub fn with_login(mut self, login: impl Into<String>) -> Self {
         self.login = Some(login.into());
         self
     }
 
-    /// Name the remote this call is about, so the login order of D4.1c
+    /// Name the remote this call is about, so the login order
     /// has its key.
     pub fn with_remote(mut self, remote: impl Into<String>) -> Self {
         self.remote = Some(remote.into());
@@ -497,7 +497,7 @@ impl Ctx {
     }
 
     /// Whether this call may probe this remote, and record that it did.
-    /// `false` means the probe already ran in this process: D4.1c's
+    /// `false` means the probe already ran in this process: the
     /// budget is one request per candidate per remote, and the `token`
     /// verb and [`Ctx::token`] ask the same question.
     pub(crate) fn first_probe(&self, host: &str, repo_path: &str) -> bool {
@@ -512,13 +512,13 @@ impl Ctx {
         &self.root
     }
 
-    /// The instance an operator configured for this host (D2.5).
+    /// The instance an operator configured for this host.
     pub fn instance(&self, host: &str) -> Option<&Instance> {
         self.instances.for_host(host)
     }
 
     /// The HTTP client for this host: one per host, because the trust
-    /// of D1.12 is per instance.
+    /// is per instance.
     pub fn http(&self, host: &str) -> Result<Arc<Http>, HttpError> {
         let mut clients = self.clients.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(client) = clients.get(host) {
@@ -536,21 +536,21 @@ impl Ctx {
         Ok(client)
     }
 
-    /// The token for this host: the whole source order of D2.4, cached
+    /// The token for this host: the whole source order, cached
     /// per host for this process because the answer may cost a spawn.
     pub fn token(&self, forge: &str, host: &str) -> Option<String> {
         self.resolved_token(forge, host)
             .map(|resolved| resolved.token)
     }
 
-    /// [`Ctx::token`] with everything D2.4's answer needs beside the
+    /// [`Ctx::token`] with everything the answer needs beside the
     /// secret: which login it belongs to, which source held it, the
     /// granted set and the lifetime.
     pub fn resolved_token(&self, forge: &str, host: &str) -> Option<crate::auth::Resolved> {
         let key = format!("{forge}@{host}");
         // The lock is NOT held across the lookup. The lookup may spawn
-        // a forge CLI and may ask the forge itself (the probe of
-        // D4.1c), and neither of those may end up waiting for a mutex
+        // a forge CLI and may ask the forge itself (the probe),
+        // and neither of those may end up waiting for a mutex
         // this same call is holding. Two calls racing cost one extra
         // lookup and nothing else.
         if let Some(resolved) = self
@@ -569,9 +569,9 @@ impl Ctx {
         resolved
     }
 
-    /// The source order of D2.4: the connector's own entry, then the
+    /// The source order: the connector's own entry, then the
     /// forge CLI, spawned. Two sources sit outside that list and before
-    /// it, for reasons the design names:
+    /// it, for these reasons:
     ///
     /// - the variable the CALLER named (`--token-env`) is the
     ///   platform's per call hand over and the whole answer when it is
@@ -594,12 +594,12 @@ impl Ctx {
                 chose_by: None,
             });
         }
-        // The connector's own entry, refreshed under the lock of D2.6a
+        // The connector's own entry, refreshed under the lock
         // where it is past its lifetime.
         if let Some(resolved) = crate::auth::verbs::own_token(self, host) {
             return Some(resolved);
         }
-        // Step 4 of D4.1c, for every verb and not only for `token`: a
+        // Step 4, for every verb and not only for `token`: a
         // host with several logins, no pin and no memory is decided by
         // one probe per candidate, or `joy release publish` publishes
         // under whichever account the forge CLI last switched to.
@@ -644,8 +644,8 @@ impl Ctx {
     }
 
     /// The granted scope set of the credential this call will use,
-    /// where the source knows it. Since J3 the connector's own entry
-    /// carries it beside the token (D2.7c), so the local pre check
+    /// where the source knows it. The connector's own entry
+    /// carries it beside the token, so the local pre check
     /// costs nothing: no request is spent to learn a set joy already
     /// wrote down. `None` means "not known", and an unknown set is
     /// never reported as a missing one.
@@ -657,7 +657,7 @@ impl Ctx {
     }
 
     /// The git configuration this call reads (the proxy sources of
-    /// D1.11 and the Linux CA keys of D1.12).
+    /// The rule and the Linux CA keys).
     pub fn git_config(&self) -> &GitConfig {
         &self.git
     }
@@ -716,7 +716,7 @@ mod tests {
         assert_eq!(host.repo_path(), None);
     }
 
-    /// The `env` source of D2.4, split by host the way gh splits it: a
+    /// The `env` source, split by host the way gh splits it: a
     /// github.com token never travels to an Enterprise Server.
     #[test]
     fn the_forges_own_token_variables_are_read_per_host() {
@@ -734,7 +734,7 @@ mod tests {
     }
 
     /// Two rules in one case: the forge's own variable answers a call
-    /// that named none (J2's `GH_TOKEN` acceptance), and a call that
+    /// that named none (the `GH_TOKEN` case), and a call that
     /// DID name one gets that variable and nothing else, even when it
     /// holds nothing.
     #[test]
@@ -755,9 +755,9 @@ mod tests {
         std::env::remove_var("JOY_TEST_EMPTY_TOKEN");
     }
 
-    /// G2 and D3.8: the agent inherits everything through the joy CLI,
+    /// G2 and the rule: the agent inherits everything through the joy CLI,
     /// so a `Delegated` call reads the person's credential store and
-    /// their 0600 file, and D1.10's "never prompts" is kept by never
+    /// their 0600 file, and the "never prompts" is kept by never
     /// writing, never renewing and never asking. Every other host kind
     /// gets the same vault with the writes.
     #[test]

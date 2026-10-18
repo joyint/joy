@@ -3,11 +3,16 @@
 
 //! `joy-github`: the legacy name of the GitHub connector.
 //!
-//! One binary carries every forge now (D2.1). This name stays as a PATH
+//! One binary carries every forge now. This name stays as a PATH
 //! fallback for people who ran `cargo install joy-github`, for the one
-//! deprecation window of D2.2a, and it is the same code: the protocol
+//! deprecation window, and it is the same code: the protocol
 //! and every verb come from `joy_forge_net::cli`, with a list of one
 //! forge instead of three.
+
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
 
 use joy_forge_net::cli::{self, Manifest};
 use joy_forge_net::forge::Forge;

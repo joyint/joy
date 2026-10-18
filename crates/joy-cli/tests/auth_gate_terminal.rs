@@ -11,6 +11,10 @@
 
 #![cfg(unix)]
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
 use std::path::Path;
@@ -60,7 +64,7 @@ impl Terminal {
 }
 
 fn base_command(root: &Path, home: &Path, args: &[&str]) -> std::process::Command {
-    let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+    let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
     command
         .args(args)
         .current_dir(root)
@@ -68,11 +72,7 @@ fn base_command(root: &Path, home: &Path, args: &[&str]) -> std::process::Comman
         .env("USERPROFILE", home)
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
-        .env_remove("JOY_PASSPHRASE")
-        .env_remove("JOY_PASSPHRASE_STDIN")
-        .env_remove("JOY_USER");
+        .env("GIT_CONFIG_NOSYSTEM", "1");
     command
 }
 
@@ -187,7 +187,7 @@ fn a_guarded_write_on_a_terminal_asks_once_and_signs_in() {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--capabilities",
             "implement",
             "--passphrase",
@@ -227,4 +227,85 @@ fn a_guarded_write_on_a_terminal_asks_once_and_signs_in() {
     assert!(files[0].contains("\"member\": \"a@b.c\""), "{}", files[0]);
     assert!(files[0].contains("\"project_id\": \"LG\""), "{}", files[0]);
     assert!(files[0].contains("\"tty\": \"/dev/"), "{}", files[0]);
+}
+
+/// `joy auth` on a machine that names nobody, on a terminal: the person
+/// is asked for the address and then for the passphrase. Before, the
+/// answer was "run `joy auth`", the command that had just refused.
+#[test]
+fn joy_auth_asks_who_you_are_when_nothing_names_you() {
+    let (_dir, root, home) = machine();
+    let (ok, seen) = joy(
+        &root,
+        &home,
+        &[
+            "init",
+            "--name",
+            "Ledger",
+            "--acronym",
+            "LG",
+            "--user",
+            "a@b.c",
+        ],
+    );
+    assert!(ok, "{seen}");
+    let (ok, seen) = joy(
+        &root,
+        &home,
+        &[
+            "auth",
+            "init",
+            "--user",
+            "a@b.c",
+            "--passphrase",
+            PASSPHRASE,
+        ],
+    );
+    assert!(ok, "{seen}");
+    // Another machine: no session, and no git config ever named anybody.
+    let _ = std::fs::remove_dir_all(home.join(".state"));
+
+    // where nobody can be asked, the one way left is named, and it is
+    // not the command that refused
+    let (ok, seen) = joy(&root, &home, &["auth"]);
+    assert!(!ok, "{seen}");
+    assert!(
+        seen.contains("not signed in: pass `--user <address>`"),
+        "{seen}"
+    );
+    assert!(!seen.contains("run `joy auth`"), "{seen}");
+
+    let (ok, seen) = joy_on_a_terminal(&root, &home, &["auth"], &format!("a@b.c\n{PASSPHRASE}\n"));
+    assert!(ok, "{seen}");
+    assert!(seen.contains("Your member address:"), "{seen}");
+    assert!(seen.contains("Authenticated"), "{seen}");
+}
+
+/// `joy chat ls` in a project that holds no chat, signed out, on a
+/// terminal: it says so and asks for nothing. Before, the passphrase was
+/// asked at the door, ahead of knowing whether there was anything to
+/// open.
+#[test]
+fn a_chat_listing_with_nothing_to_open_asks_nothing() {
+    let (_dir, root, home) = machine();
+    std::fs::write(
+        home.join(".gitconfig"),
+        "[user]\n\temail = a@b.c\n\tname = Somebody\n",
+    )
+    .unwrap();
+    let (ok, seen) = joy(
+        &root,
+        &home,
+        &["init", "--name", "Ledger", "--acronym", "LG"],
+    );
+    assert!(ok, "{seen}");
+    let (ok, seen) = joy(&root, &home, &["auth", "init", "--passphrase", PASSPHRASE]);
+    assert!(ok, "{seen}");
+    let _ = std::fs::remove_dir_all(home.join(".state"));
+
+    // no answer is scripted: a prompt would hang and fail the case
+    let (ok, seen) = joy_on_a_terminal(&root, &home, &["chat", "ls"], "");
+    assert!(ok, "{seen}");
+    assert!(seen.contains("No chats."), "{seen}");
+    assert!(!seen.contains("Passphrase"), "{seen}");
 }

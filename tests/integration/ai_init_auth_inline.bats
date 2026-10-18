@@ -25,7 +25,7 @@ load setup
     # (identity::check_session) and would not match the non-TTY
     # context we just used to drive the init through its [Y/n]
     # prompts. The auth-bootstrap claim is fully tied to verify_key.
-    grep -q "^    verify_key:" .joy/project.yaml
+    members_grep -q "^    verify_key:"
 }
 
 @test "joy ai init skips auth section when caller is already authenticated" {
@@ -64,16 +64,16 @@ load setup
     # section must be skipped.
     [[ "$output" != *"Setting up authentication"* ]]
     # The detected AI member was registered despite the anonymous keying.
-    [[ "$output" == *"ai:copilot@joy"* ]]
+    [[ "$output" == *"copilot"* ]]
     # The cleartext e-mail must never appear in the committed project.yaml.
-    ! grep -q "test@example.com" .joy/project.yaml
+    ! members_grep -q "test@example.com"
 }
 
 @test "joy ai init fails clearly when nobody on this machine has said who acts" {
     joy init --name "Test Project" 2>/dev/null
     # `joy init` registered the founder under this repository's own git
     # config (set by setup() to $FOUNDER_EMAIL); `forget_this_device`
-    # clears that too now (JOY-02AE-1A, correcting D3.9), or it would
+    # clears that too now (JOY-02AE-1A), or it would
     # still answer for who acts. What is left is the machine that
     # answers nobody, which is a fresh clone or a second one. Nobody is
     # named on this call either (`--user` is how one would be), so it
@@ -86,5 +86,5 @@ load setup
     [[ "$output" == *"--user <address>"* ]]
     # And it refused BEFORE registering anything: no AI member was
     # written by a command that could not name its attester.
-    ! grep -q "ai:" .joy/project.yaml
+    [ -z "$(first_ai_member)" ]
 }

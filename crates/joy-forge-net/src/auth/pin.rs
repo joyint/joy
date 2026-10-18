@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The device local pin and the login memory of D4.1c.
+//! The device local pin and the login memory.
 //!
 //! **Where the pin lives, and why not in `project.yaml`.** That file is
 //! the project's shared, committed file and joy syncs it to the forge,
@@ -23,7 +23,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-/// The key of the pin inside the per project app state file (D4.1c).
+/// The key of the pin inside the per project app state file.
 pub const FORGE_LOGIN_KEY: &str = "forgeLogin";
 
 /// The device state file the login memory lives in.
@@ -79,7 +79,7 @@ pub fn remember(state_dir: Option<&Path>, remote: &str, login: &str) {
     write_memory(&path, &memory);
 }
 
-/// Throw the memory of this remote away. D4.1c names the moments: a
+/// Throw the memory of this remote away. The rule names the moments: a
 /// 401, a 403 or a 404 from that remote, and logout.
 pub fn forget_remote(state_dir: Option<&Path>, remote: &str) {
     let (Some(key), Some(path)) = (remote_key(remote), memory_file(state_dir)) else {

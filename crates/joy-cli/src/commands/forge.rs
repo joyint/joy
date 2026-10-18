@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! `joy forge`: the CLI's door to a forge (design D3.10, package J10).
+//! `joy forge`: the CLI's door to a forge.
 //!
 //! Until now a person at a terminal had no way to sign joy in to a
 //! forge: every sentence that said "sign in" pointed at a foreign CLI
@@ -101,7 +101,7 @@ struct LogoutArgs {
     login: Option<String>,
 }
 
-/// The word list of `--for`, which is the connector's own (D2.7a).
+/// The word list of `--for`, which is the connector's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum AccessArg {
     Read,
@@ -131,7 +131,7 @@ pub fn run(args: ForgeArgs) -> Result<()> {
 }
 
 // ---------------------------------------------------------------------
-// The sentences that point at this door (D3.10)
+// The sentences that point at this door
 // ---------------------------------------------------------------------
 
 /// The one sentence every "sign in to the forge" text in this CLI ends
@@ -147,8 +147,8 @@ pub fn sign_in_line(host: &str) -> String {
 }
 
 /// What to do about a failed contact, in the CLI's own words: the state
-/// decides, and the three states this door answers name this door
-/// (D3.10, D3.8). Every other state keeps the classifier's own next
+/// decides, and the three states this door answers name this door.
+/// Every other state keeps the classifier's own next
 /// step, so the vocabulary stays the classifier's and not a second one.
 pub fn action_line(failure: Failure, host: &str) -> Option<String> {
     match failure {
@@ -159,7 +159,7 @@ pub fn action_line(failure: Failure, host: &str) -> Option<String> {
             Some("run `joy forge plugins` to see which binary answered".to_string())
         }
         // `Failure::next_step` is deliberately NOT read here: it is the
-        // BUTTON of D4.7 and says "retry" or "show the fingerprint",
+        // BUTTON and says "retry" or "show the fingerprint",
         // which is a label on a surface that has buttons and nonsense
         // after "= help:". The prose seam is `guidance`, and a state
         // that has none gets no help line rather than a wrong one.
@@ -201,7 +201,7 @@ struct Door {
 
 /// The project this command runs in, when it runs in one. A forge
 /// command needs no project: `--host` works on a bare machine, which is
-/// the rootless invocation of D2.3.
+/// the rootless invocation.
 fn project_root() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
     joy_core::store::find_project_root(&cwd)
@@ -222,7 +222,7 @@ fn context(login: Option<&str>) -> CallContext {
 }
 
 /// A forge command that could not do what it was asked, in the ONE
-/// vocabulary of D3.8: a state word an agent reads, a sentence a person
+/// vocabulary: a state word an agent reads, a sentence a person
 /// reads, and the host both of them are about.
 struct Refusal {
     host: String,
@@ -300,20 +300,24 @@ fn responsible(
 }
 
 /// The remotes of this project, the one joy really CONTACTS first:
-/// `origin`, or the first configured one, which is the selection D1.1
+/// `origin`, or the first configured one, which is the selection the rule
 /// fixes for the whole engine (`origin_or_first`). A checkout whose
 /// first configured remote is not `origin` was told to sign in to a
 /// host it never pushes to, while the throttle key, the twin source and
 /// the contact itself used the other one.
 fn remote_urls(root: &Path) -> Vec<String> {
     let mut urls: Vec<String> = Vec::new();
-    if let Some(url) = joy_core::vcs::forge::remote_url(root) {
+    // As joy dials them: an ssh config alias is a name on this machine,
+    // and the host a person signs in to is the one behind it.
+    let dialled = |url: String| joy_core::vcs::ssh_config::dialled_url(&url);
+    if let Some(url) = joy_core::vcs::forge::remote_url(root).map(dialled) {
         urls.push(url);
     }
     for (_, url) in joy_core::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default()
     {
+        let url = dialled(url);
         if !urls.contains(&url) {
             urls.push(url);
         }
@@ -346,8 +350,8 @@ fn door(host: Option<&str>, login: Option<&str>) -> Result<Door, Refusal> {
                      = help: pass --host <host>",
                 ));
             }
-            // The plugin's `claims` decides whose remote this is
-            // (D3.10): joy never parses a forge URL itself.
+            // The plugin's `claims` decides whose remote this is:
+            // joy never parses a forge URL itself.
             let claimed = remotes.iter().find(|url| {
                 forge_plugins::FORGE_PLUGINS
                     .iter()
@@ -384,7 +388,7 @@ fn door(host: Option<&str>, login: Option<&str>) -> Result<Door, Refusal> {
 // login
 // ---------------------------------------------------------------------
 
-/// The answer of a finished `joy forge login` (D3.10).
+/// The answer of a finished `joy forge login`.
 #[derive(Serialize)]
 struct LoginPayload {
     host: String,
@@ -420,14 +424,14 @@ fn login(args: LoginArgs) -> Result<()> {
         Ok(resolved) => resolved,
         Err(error) => return refused(Refusal::of(&door.host, error)),
     };
-    // The token paste is the HEADLESS door (D2.4): a CI runner, a
+    // The token paste is the HEADLESS door: a CI runner, a
     // Linux server and a Windows host with no browser are exactly the
     // machines it was written for, so it is not what the refusal below
     // is about. It reads one line from stdin and asks nobody anything.
     if args.token_stdin {
         return login_with_token(&door, &resolved);
     }
-    // Layer 3 of D3.11, after the claims call that named the connector
+    // Layer 3, after the claims call that named the connector
     // and before the `login` verb is started: a host with nobody at it
     // cannot type a verification code, and the refusal is instant
     // rather than a fifteen minute wait for one. joy-core refuses the
@@ -489,7 +493,7 @@ fn login(args: LoginArgs) -> Result<()> {
             },
         ),
         // A `result` event that says `known: false` is an answer, not a
-        // failure of the call (D2.3).
+        // failure of the call.
         Ok(_) => refused(Refusal::new(
             &door.host,
             "needs_sign_in",
@@ -503,7 +507,7 @@ fn login(args: LoginArgs) -> Result<()> {
                 Some((code, message)) => (state_of_code(&code).to_string(), message),
                 // Nothing was refused: joy itself stopped the call, so
                 // the sentence says which sign in it stopped and how
-                // much of the code was left (D3.10: one sentence, one
+                // much of the code was left (one sentence, one
                 // next step).
                 None if error.state() == "plugin_timed_out" => {
                     ("expired".to_string(), progress.stopped_sentence(&door.host))
@@ -515,7 +519,7 @@ fn login(args: LoginArgs) -> Result<()> {
     }
 }
 
-/// The token paste of D3.10: one line from stdin, never an argument.
+/// The token paste: one line from stdin, never an argument.
 fn login_with_token(door: &Door, resolved: &ResolvedPlugin) -> Result<()> {
     let token = match read_token_line(&door.host) {
         Ok(token) => token,
@@ -566,7 +570,7 @@ fn login_with_token(door: &Door, resolved: &ResolvedPlugin) -> Result<()> {
 }
 
 /// What the connector said while it answered, on stderr, under the
-/// answer it belongs to (D3.10: diagnostics go to stderr, in both
+/// answer it belongs to (diagnostics go to stderr, in both
 /// output modes, so one JSON envelope stays one JSON envelope).
 fn print_note(note: Option<&str>) {
     let Some(note) = note else {
@@ -583,7 +587,7 @@ fn print_note(note: Option<&str>) {
 ///
 /// Every way out of here is a [`Refusal`], because every answer of this
 /// command is exactly one envelope and a caller in `--json` mode reads
-/// a `state` (D3.10). An `anyhow` error would leave stdout empty.
+/// a `state`. An `anyhow` error would leave stdout empty.
 fn read_token_line(host: &str) -> Result<String, Refusal> {
     use std::io::BufRead;
     let line = if std::io::stdin().is_terminal() {
@@ -626,7 +630,7 @@ fn token_refusal(host: &str, message: impl Into<String>) -> Refusal {
     .speaks_for_itself()
 }
 
-/// The states of D3.10, from the `code` of the connector's `error`
+/// The states, from the `code` of the connector's `error`
 /// event and from the `reason` of a `token` answer.
 fn state_of_code(code: &str) -> &'static str {
     match code {
@@ -638,7 +642,7 @@ fn state_of_code(code: &str) -> &'static str {
         "network" | "offline" => "offline",
         "rate_limited" => "rate_limited",
         "no-login" | "no-keychain" | "no-login-for-repo" | "needs_sign_in" => "needs_sign_in",
-        // The organisation's own wall (D2.7c): nobody signs their way
+        // The organisation's own wall: nobody signs their way
         // through it, so it is never `needs_sign_in`.
         "needs_org_approval" => "needs_org_approval",
         "busy" => "busy",
@@ -665,8 +669,8 @@ fn signed_in(host: &str, payload: LoginPayload) -> Result<()> {
     Ok(())
 }
 
-/// Every state other than `signed-in` ends the command with exit 1
-/// (D3.10). In `--json` mode the envelope is printed first and the
+/// Every state other than `signed-in` ends the command with exit 1.
+/// In `--json` mode the envelope is printed first and the
 /// process then exits with the code, exactly as `joy auth status` does.
 fn refused(refusal: Refusal) -> Result<()> {
     let Refusal {
@@ -693,7 +697,7 @@ fn refused(refusal: Refusal) -> Result<()> {
 }
 
 /// What the person sees while the connector polls the forge: the two
-/// lines of D3.10 on stderr, and the countdown the CONNECTOR reports.
+/// lines on stderr, and the countdown the CONNECTOR reports.
 /// The CLI never opens a browser and never counts the time itself: the
 /// seconds it prints are the `seconds_left` of the event it just read,
 /// so the countdown, the connector's own deadline and the runner's
@@ -801,7 +805,7 @@ impl forge_plugins::EventSink for LoginProgress {
                     );
                 }
                 // The forge's own `expires_in` sets the rest of the
-                // call's deadline, capped by the runner (D2.3).
+                // call's deadline, capped by the runner.
                 seconds.map(std::time::Duration::from_secs)
             }
             // A wait AFTER the connector's last word is not a wait: the
@@ -810,7 +814,7 @@ impl forge_plugins::EventSink for LoginProgress {
             "waiting" if !self.finished => {
                 if let Some(left) = event.get("seconds_left").and_then(|s| s.as_u64()) {
                     self.seconds_left = Some((left, std::time::Instant::now()));
-                    // The reason of D2.4, where the connector named
+                    // The reason, where the connector named
                     // one: a poll that is waiting out a name that does
                     // not resolve says so instead of counting silently.
                     let line = match event.get("reason").and_then(|r| r.as_str()) {
@@ -870,7 +874,7 @@ struct StatusPayload {
     /// What the whole answer says: `signed-in` when one host is,
     /// `expired` when a credential is there but past its date, `none`
     /// when this machine holds none - which is also what an empty
-    /// `hosts` means (D3.10). Without it a `--json` caller read
+    /// `hosts` means. Without it a `--json` caller read
     /// `{"hosts":[]}` and exit 1 and had nothing to act on
     /// (JOY-02A7-A2 finding 8).
     state: &'static str,
@@ -929,7 +933,7 @@ fn status(args: StatusArgs) -> Result<()> {
     };
     if output::is_json() {
         // The notes are diagnostics and go to stderr in this mode too,
-        // so stdout stays exactly one envelope (D3.10).
+        // so stdout stays exactly one envelope.
         for (_, note) in &rows {
             print_note(note.as_deref());
         }
@@ -983,12 +987,12 @@ fn status(args: StatusArgs) -> Result<()> {
 /// The sentence for a host no connector claims. `joy forge login` is
 /// not it: there is no door to knock on until the instance is
 /// configured, and sending somebody to a command that will refuse them
-/// for the same reason is the wrong next step (JOY-02A8-F4, D2.5).
+/// for the same reason is the wrong next step (JOY-02A8-F4).
 const NOTHING_CLAIMS_ANY_HOST: &str =
     "add the instance to forges.yaml, or name a host a connector knows";
 
 /// The ONE next step under a `joy forge status` where nothing is signed
-/// in (D3.8: one next step, never a list).
+/// in (one next step, never a list).
 ///
 /// Three cases, because one help line for all of them was wrong in two
 /// of them: it named `rows[0].host` whatever that row was, so a machine
@@ -1106,10 +1110,10 @@ fn is_past(instant: &str) -> bool {
     }
 }
 
-/// The host set of D3.10: the hosts of `forges.yaml`, the hosts of this
+/// The host set: the hosts of `forges.yaml`, the hosts of this
 /// project's remotes, and the hosts joy's own credential file holds. A
 /// credential that lives in the operating system's keychain alone
-/// cannot be enumerated (`Entry::new` has no listing, D2.6), so such a
+/// cannot be enumerated (`Entry::new` has no listing), so such a
 /// host appears here through `forges.yaml`, through a remote or through
 /// `--host`.
 fn host_set(explicit: Option<&str>, ctx: &CallContext) -> Vec<String> {
@@ -1131,7 +1135,7 @@ fn host_set(explicit: Option<&str>, ctx: &CallContext) -> Vec<String> {
             .all_remotes(root)
             .unwrap_or_default()
         {
-            add(host_of(&url));
+            add(host_of(&joy_core::vcs::ssh_config::dialled_url(&url)));
         }
     }
     for host in stored_credential_hosts() {
@@ -1141,7 +1145,7 @@ fn host_set(explicit: Option<&str>, ctx: &CallContext) -> Vec<String> {
 }
 
 /// joy's own configuration directory, the one `forges.yaml` and the
-/// fallback credential file live in (D2.5, D2.6).
+/// fallback credential file live in.
 fn joy_config_dir() -> Option<PathBuf> {
     joy_core::store::global_config_path()
         .parent()
@@ -1149,7 +1153,7 @@ fn joy_config_dir() -> Option<PathBuf> {
 }
 
 /// The hosts an operator configured. Only the `host` key is read here;
-/// every other key of D2.5 belongs to the connector.
+/// every other key belongs to the connector.
 fn forges_yaml_hosts() -> Vec<String> {
     #[derive(serde::Deserialize)]
     struct Entry {
@@ -1179,7 +1183,7 @@ fn forges_yaml_hosts() -> Vec<String> {
     }
 }
 
-/// The hosts joy's own fallback credential file holds (D2.6). The host
+/// The hosts joy's own fallback credential file holds. The host
 /// NAMES are read and nothing else: the tokens beside them are the
 /// connector's business and are never read here.
 fn stored_credential_hosts() -> Vec<String> {
@@ -1210,7 +1214,7 @@ struct LogoutPayload {
     revoked: bool,
     source: Option<String>,
     /// The foreign command that removes a foreign credential, because
-    /// joy removes none itself (D2.6).
+    /// joy removes none itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     command: Option<String>,
 }
@@ -1224,7 +1228,7 @@ fn logout(args: LogoutArgs) -> Result<()> {
     if !args.all && args.host.is_none() {
         // A refusal and not a `bail!`: in `--json` mode stdout carries
         // exactly one envelope with a `state` an agent reads, and an
-        // `anyhow` error would leave it empty (D3.10).
+        // `anyhow` error would leave it empty.
         return refused(
             Refusal::new(
                 "",
@@ -1287,7 +1291,7 @@ fn logout_one(door: &Door) -> Result<LogoutPayload, Refusal> {
     if outcome.removed {
         // The credential is gone, so what it achieved on this host goes
         // with it: a 404 after this is a 404 again and not "your
-        // organisation must approve Joy" (D1.8b, JOY-02A9-48).
+        // organisation must approve Joy" (JOY-02A9-48).
         joy_core::vcs::contact::forget_token_worked(&door.host);
     }
     let command = outcome
@@ -1304,7 +1308,7 @@ fn logout_one(door: &Door) -> Result<LogoutPayload, Refusal> {
 }
 
 /// A `logout` that removed nothing and said WHY is a refusal, not an
-/// answer (D3.8). Under a delegation session the connector answers
+/// answer. Under a delegation session the connector answers
 /// `removed: false, revoked: false` with the sentence of G2: a
 /// delegated process may use the credential this machine holds and may
 /// never sign it out. `removed: false` alone drops that sentence, so
@@ -1339,7 +1343,7 @@ fn refused_removal(door: &Door, outcome: &interactive::LogoutOutcome) -> Option<
     Some(Refusal::new(&door.host, state, message).speaks_for_itself())
 }
 
-/// The foreign command that removes a foreign credential (D3.10), when
+/// The foreign command that removes a foreign credential, when
 /// the connector named none itself.
 fn foreign_removal(source: Option<&str>, host: &str) -> Option<String> {
     match source? {
@@ -1393,7 +1397,7 @@ struct PluginRow {
     version: Option<String>,
     problem: Option<String>,
     /// The `rm` line for a stale binary that shadows nothing but sits
-    /// beside the one that answers (D2.2a). joy never removes a binary
+    /// beside the one that answers. joy never removes a binary
     /// it did not install, so this is a line to read, not an action.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     shadowed: Vec<String>,
@@ -1467,16 +1471,66 @@ fn plugins() -> Result<()> {
         if let Some(problem) = row.problem.as_deref() {
             println!("  problem: {problem}");
         }
-        for line in &row.shadowed {
-            println!("  another binary for this forge is installed and unused; {line}");
-        }
+    }
+    if let Some(block) = unused_block(&rows) {
+        println!();
+        print!("{block}");
     }
     Ok(())
+}
+
+/// The closing lines about stale connector files: every file named once,
+/// in full, in ONE command. One line per forge used to repeat the same
+/// sentence three times with three paths that differ in a suffix, which
+/// invites shortening them to a pattern, and `joy-*` matches `joy-forge`,
+/// the connector itself (operator, 2026-10-04).
+fn unused_block(rows: &[PluginRow]) -> Option<String> {
+    let mut files: Vec<&str> = Vec::new();
+    for line in rows.iter().flat_map(|row| &row.shadowed) {
+        let path = line.strip_prefix("rm ").unwrap_or(line);
+        if !files.contains(&path) {
+            files.push(path);
+        }
+    }
+    if files.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Unused files. Keep joy-forge.\n  rm {}\n",
+        files.join(" ")
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Three stale files are named once, in full, in one command, and the
+    /// connector itself is named as the file to keep: three near identical
+    /// lines invited `rm joy-*`, which removes the connector too.
+    #[test]
+    fn stale_connector_files_are_listed_once_in_one_command() {
+        let row = |id: &'static str, shadowed: &[&str]| PluginRow {
+            id,
+            binary: None,
+            path: None,
+            found_in: None,
+            protocol: None,
+            version: None,
+            problem: None,
+            shadowed: shadowed.iter().map(|s| s.to_string()).collect(),
+        };
+        let rows = [
+            row("github", &["rm /bin/joy-github"]),
+            row("gitlab", &["rm /bin/joy-gitlab"]),
+            row("gitea", &["rm /bin/joy-gitea"]),
+        ];
+        assert_eq!(
+            unused_block(&rows).as_deref(),
+            Some("Unused files. Keep joy-forge.\n  rm /bin/joy-github /bin/joy-gitlab /bin/joy-gitea\n")
+        );
+        assert_eq!(unused_block(&[row("github", &[])]), None);
+    }
 
     /// The sentence a stopped sign in ends with names what was left
     /// WHEN JOY STOPPED, not the last number the connector wrote
@@ -1527,7 +1581,7 @@ mod tests {
         assert_eq!(sign_in_line(""), "run `joy forge login --host <host>`");
     }
 
-    /// D3.8: the CLI has ONE failure vocabulary, and the states this
+    /// The CLI has ONE failure vocabulary, and the states this
     /// door answers point at this door.
     #[test]
     fn the_action_line_points_at_the_door_that_fixes_the_state() {
@@ -1541,7 +1595,7 @@ mod tests {
         );
         // Everything else keeps the classifier's own PROSE, and a
         // state that has none says nothing: `next_step` is the button
-        // label of D4.7 ("retry", "show the fingerprint"), and a help
+        // label ("retry", "show the fingerprint"), and a help
         // line that reads "= help: retry" is not an instruction.
         assert_eq!(action_line(Failure::Offline, "github.com"), None);
         assert_eq!(action_line(Failure::RateLimited, "github.com"), None);
@@ -1575,7 +1629,7 @@ mod tests {
     }
 
     /// A refusal whose own message carries a help line gets no second
-    /// one: the D3.11 refusal says "store a token with joy forge login
+    /// one: the background refusal says "store a token with joy forge login
     /// --token-stdin", and "run `joy forge login --host x`" under it
     /// contradicts it.
     #[test]

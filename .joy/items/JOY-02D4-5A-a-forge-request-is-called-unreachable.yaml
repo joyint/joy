@@ -1,0 +1,27 @@
+id: JOY-02D4-5A
+title: A forge request is called unreachable when a child process ends while it waits for the answer
+type: bug
+status: new
+priority: high
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T14:46:52.940789918Z
+updated: 2026-10-13T14:46:52.940789918Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Seen in CI on 2026-10-13, run 38405846715 on main (a commit that changed one item and one log line): joy-github, tests/rest_against_fake.rs, release_prepends_the_notes_to_a_release_the_workflow_already_made failed with 'http://127.0.0.1:<port>/repos/acme/demo/releases/tags/v0.1.0 could not be reached: io: Interrupted system call (os error 4)'. The rerun of the same commit was green.
+
+  Who interrupted it, and why (traced and reproduced on 2026-10-13, glibc 2.39):
+  1. Another test of the same binary asks for a foreign credential and starts a child, the test double of gh ('gh auth token --hostname ...', a shell script that exits at once). joy-forge-net does the same in production for gh, glab and tea (src/foreign.rs).
+  2. To start a child, the C library blocks every signal in the starting thread (rt_sigprocmask(SIG_BLOCK, ~[]) right before clone3 with CLONE_VFORK) and unblocks them after the child has replaced itself.
+  3. When the child ends inside that window, its SIGCHLD cannot be discarded as the ignored signal it is, because a blocked signal is never discarded. The kernel wakes another thread of the process for it.
+  4. That thread sits in a socket read with a timeout: ureq sets SO_RCVTIMEO and SO_SNDTIMEO for the request's deadline. A socket call with a timeout that is woken by a signal fails with EINTR and is not restarted, handler or not.
+  5. joy-forge-net's http.rs turns every transport error into '<url> could not be reached', so the interrupted read reads as a forge that is away.
+
+  Reproduced without a tracer and without any signal handler, in a program of forty lines: four threads start children that exit at once, eight threads read from sockets that never answer. With a read timeout of 200 ms, 120 reads came back interrupted while about 127 000 children ran; with no child none did; with children and no read timeout none did.
+
+  What it means outside the test: any host that starts children while a forge request waits can meet it, and a host that HAS a handler for SIGCHLD meets it on every child that ends. Not looked at: whether the platform's runtime installs one, and how often its forge contacts are hit.
+
+  To do: an interrupted read or write of a forge request is carried on inside the same request until its deadline, not answered as unreachable. Repeating the whole request is not the way, since a request that is not a read may already have arrived. A test starts children beside a waiting request and holds that it still gets its answer.

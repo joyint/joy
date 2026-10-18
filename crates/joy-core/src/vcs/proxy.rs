@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! THE proxy decision of one contact (design D1.11, D1.13), and the
-//! reading half of the trust store hatch of D1.12, whose one
+//! THE proxy decision of one contact, and the
+//! reading half of the trust store hatch, whose one
 //! `git2::opts` call lives in this crate's `lib.rs` because it is
 //! process global and must run before the first contact.
 //!
@@ -15,7 +15,7 @@
 //! joy-core therefore carries the options [`options_for`] built, and
 //! there is one such function.
 //!
-//! It decides between the three outcomes of D1.11:
+//! It decides between the three outcomes:
 //!
 //! 1. **Bypassed** (`GIT_PROXY_NONE`). The host matches joy's own
 //!    NO_PROXY evaluation, or the configuration turns the proxy off
@@ -45,7 +45,7 @@
 //! works: libgit2 presents a proxy URL's own userinfo before it
 //! consults any callback (http.c:141-152), so joy resolves the proxy
 //! credential through its own helper runner (`protocol=http`,
-//! `host=<proxyhost>[:port]`, D1.3), builds the URL in memory and
+//! `host=<proxyhost>[:port]`), builds the URL in memory and
 //! passes it as `ProxyOptions::url`. The credential never touches the
 //! person's git config, and it never appears in a log line or an error
 //! text: [`Proxy`] prints its NAME, which is `host:port` and nothing
@@ -65,7 +65,7 @@
 //! defines neither `GIT_NTLM` nor `GIT_GSSAPI` (build.rs:256-269) and
 //! both aliases resolve to `git_http_auth_dummy` (auth_ntlm.h:15,
 //! auth_negotiate.h:15, auth.c:65-71). That asymmetry is not hidden: it
-//! is the `proxy_auth` guidance of D1.8c, which
+//! is the `proxy_auth` guidance, which
 //! [`super::contact::verdict`] writes.
 
 use std::cell::RefCell;
@@ -74,7 +74,7 @@ use std::path::Path;
 use super::remote_url::{RemoteUrl, Transport};
 use crate::host::HostKind;
 
-/// Which of the three outcomes of D1.11 this contact got.
+/// Which of the three outcomes this contact got.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
     /// `GIT_PROXY_NONE`: NO_PROXY matched, the configuration turns the
@@ -94,7 +94,7 @@ pub enum Outcome {
 #[derive(Clone, PartialEq, Eq)]
 pub struct Proxy {
     outcome: Outcome,
-    /// `host:port`, the only name a 407 may carry (D1.8c). `None` when
+    /// `host:port`, the only name a 407 may carry. `None` when
     /// joy knows no proxy.
     name: Option<String>,
     /// The URL handed to libgit2, userinfo included. Never logged.
@@ -190,8 +190,8 @@ struct Noted {
 }
 
 thread_local! {
-    /// The proxy THIS thread's contact went through, for the evidence
-    /// of D1.8c: a 407 names the proxy and never the forge. libgit2
+    /// The proxy THIS thread's contact went through, for the evidence:
+    /// a 407 names the proxy and never the forge. libgit2
     /// calls back on the contact's own thread, which is the same scope
     /// the certificate cell of [`super::certificates`] uses.
     static CURRENT: RefCell<Option<Noted>> = const { RefCell::new(None) };
@@ -229,7 +229,7 @@ pub(crate) fn note(name: Option<&str>, credentialed: bool) {
     });
 }
 
-/// THE proxy options of one contact (D1.11).
+/// THE proxy options of one contact.
 ///
 /// `url` is the remote URL the contact travels over and `repo` the
 /// repository it belongs to, or `None` for a clone, which has none yet.
@@ -482,7 +482,7 @@ fn env_proxy(target: &RemoteUrl, env: &Environment) -> Option<String> {
     per_scheme.or_else(|| env.all_proxy.clone())
 }
 
-/// joy's own NO_PROXY evaluation (D1.11), which is ONE function for the
+/// joy's own NO_PROXY evaluation, which is ONE function for the
 /// whole product (JOY-02A3-E4): `joy_forge_net::proxy::no_proxy_matches`
 /// is this function, so a host the person excluded is excluded for a
 /// git contact here and for a connector's REST call there, by the same
@@ -490,11 +490,10 @@ fn env_proxy(target: &RemoteUrl, env: &Environment) -> Option<String> {
 ///
 /// The implementation lives HERE and not in the shared network layer,
 /// because that layer depends on this crate already: the refresh lock
-/// of D2.6a takes `joy_core::util::file_lock`, which the design says
-/// lands once (J4a, "no package after J4a carries a lock dependency of
-/// its own for locking"). Two edges would be a cycle, and cargo says so
+/// takes `joy_core::util::file_lock`, the one lock primitive.
+/// Two edges would be a cycle, and cargo says so
 /// before rustc does. Nothing about the matcher needs libgit2, so this
-/// direction costs a connector nothing it is forbidden to link (D2.1):
+/// direction costs a connector nothing it is forbidden to link:
 /// joy-core's default build carries no network transport at all, the
 /// `forge-net` feature carries it.
 ///
@@ -663,11 +662,11 @@ impl ProxyUrl {
     }
 
     /// What joy asks its credential helper runner about: `protocol=http`
-    /// and `host=<proxyhost>[:port]` (D1.11), whatever the proxy's own
+    /// and `host=<proxyhost>[:port]`, whatever the proxy's own
     /// scheme is.
     ///
     /// The protocol is `http` for an `https://` proxy too, and that is
-    /// the design's word: it is one login, to one machine in the middle,
+    /// deliberate: it is one login, to one machine in the middle,
     /// and a person who stored it once should not have to store it
     /// again because the proxy URL gained a `s`. libgit2 presents the
     /// userinfo the same way either way (http.c:141-152).
@@ -676,7 +675,7 @@ impl ProxyUrl {
     }
 }
 
-/// The refusal of D1.11, which names the proxy and never its password.
+/// The refusal, which names the proxy and never its password.
 fn unsupported_sentence(scheme: &str, value: &str) -> String {
     if scheme.starts_with("socks") {
         format!(
@@ -712,7 +711,7 @@ pub fn redacted(value: &str) -> String {
 /// '%s'", proxy)` (http.c:340-342), reached when `git_net_url_parse_http`
 /// succeeds on that URL and `git_net_url_valid` then refuses it. joy
 /// validates the host and the port itself and percent encodes the
-/// userinfo, so this is a narrow door, but D1.11's promise is absolute
+/// userinfo, so this is a narrow door, but the promise is absolute
 /// ("never appears in a log line or an error text") and the defence is
 /// cheap. [`redacted`] does the same for one URL joy holds as a whole;
 /// this does it for a sentence with a URL somewhere inside it.
@@ -780,13 +779,13 @@ fn percent_decode(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// The proxy credential from joy's own helper runner (D1.3).
+/// The proxy credential from joy's own helper runner.
 ///
 /// The host kind is [`HostKind::Background`] whatever the contact's own
 /// kind is, on purpose: this lookup runs BEFORE the contact, where
 /// nobody has been told why they are being asked, and a helper that
 /// draws a window here would draw it on every open proxy too. The way
-/// in for a person is the `proxy_auth` state's own next step (D1.8c),
+/// in for a person is the `proxy_auth` state's own next step,
 /// which stores the answer under this same host.
 fn helper_credential(proxy: &ProxyUrl, config: Option<&git2::Config>) -> Option<(String, String)> {
     let opened;
@@ -817,7 +816,7 @@ fn helper_credential(proxy: &ProxyUrl, config: Option<&git2::Config>) -> Option<
 // ---- the Linux only CA escape hatch, read here, applied in lib.rs ------
 
 /// One CA location a person or an operator configured, with the place
-/// it came from so that a refusal can name it (D1.12).
+/// it came from so that a refusal can name it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CaEntry {
     /// `ca_bundle`, `ca_dir`, `http.sslCAInfo` or `http.sslCAPath`.
@@ -836,12 +835,12 @@ pub enum CaKind {
     Directory,
 }
 
-/// The `ca_bundle` and `ca_dir` entries of `forges.yaml` (D2.5).
+/// The `ca_bundle` and `ca_dir` entries of `forges.yaml`.
 ///
 /// The setting is process global, so it cannot be per host: the FIRST
 /// entry that carries one wins, and the log says which host it came
 /// from. joy reads only these two keys here; the rest of the file
-/// belongs to the connector (package J2).
+/// belongs to the connector.
 pub fn forges_yaml_ca(file: &Path) -> Vec<CaEntry> {
     let Ok(text) = std::fs::read_to_string(file) else {
         return Vec::new();
@@ -881,7 +880,7 @@ pub fn forges_yaml_ca(file: &Path) -> Vec<CaEntry> {
 }
 
 /// The two keys of `forges.yaml` this module reads. Every other key of
-/// D2.5 belongs to the connector, and serde ignores what it does not
+/// The rule belongs to the connector, and serde ignores what it does not
 /// name.
 #[derive(Debug, serde::Deserialize)]
 struct ForgeEntry {
@@ -892,7 +891,7 @@ struct ForgeEntry {
 }
 
 /// `http.sslCAInfo` and `http.sslCAPath` from git config: the ONE named
-/// exception of D1.12, because that is the setting a corporate
+/// exception, because that is the setting a corporate
 /// workstation image already carries. libgit2 itself reads neither (no
 /// hit for either key in the whole 1.9.6 tree).
 pub fn git_config_ca(config: &git2::Config) -> Vec<CaEntry> {
@@ -958,7 +957,7 @@ pub enum CaDecision {
     Refused(Vec<String>),
 }
 
-/// The decision of D1.12 over the entries that were found.
+/// The decision over the entries that were found.
 ///
 /// `forges.yaml` wins over git config for the same kind: it is joy's
 /// own file and the operator ships it, while `http.sslCAInfo` is
@@ -984,7 +983,7 @@ pub fn ca_decision(entries: Vec<CaEntry>, store: TrustStore) -> CaDecision {
 }
 
 /// The sentence a refused entry gets, naming the entry and the store
-/// that decides instead (D1.12).
+/// that decides instead.
 fn ca_refusal(entry: &CaEntry, store: TrustStore) -> String {
     let store_sentence = match store {
         TrustStore::Keychain => {

@@ -1,0 +1,25 @@
+email: horst.schwarz@joydev.com
+capabilities: all
+verify_key: 05ae823757c1d3d0db5f2f66c7f55642b2258f15776a6b2f029142bfa9b5f73d
+kdf_nonce: 3da1d77fe4dcbd9c1ee917dc49451f500c7d46cdc6e93cb9bf61f466282985ea
+seed_wrap_passphrase: 57402a95dfc0d886011aec14ef266b42663669b215520b29907370ce2f8fb0b8f3f7bd633f4a00b2408abd1507200f937065df532b8b55d42bfc5c34
+seed_wrap_recovery: f602d41850606de032cc021b95efbc4dff69669a976c9da8e69eb6214613d6fa265a279cfaedf8af39e9b47f74ded2598268bce30e3cd67d840476bc
+ai_delegations:
+  agy:
+    delegation_verifier: 240ae695e06234e0017baa776d0520c6d6effc3b1c050922db52c294c8fee1b0
+    delegation_salt: 05bacbf4cf95e050bf1237472665c3da02b3681d1e1bfc4fd61d5f5e65981bbf
+    created: 2026-09-21T10:41:27.473161Z
+  claude:
+    delegation_verifier: 5b231331bf36f1f00c2348576a0c70c42f03056730bcee8560acf5c20e68c03b
+    delegation_salt: 707f1b543eb35285e922b61d64ac01a0292d68dd5b48b97cc7d791a2bbce7018
+    created: 2026-04-21T15:59:22.223224422Z
+    rotated: 2026-05-05T21:04:20.367172Z
+  copilot:
+    delegation_verifier: 48fc28af23c5ff2683ba80609ca31f7369c29b83a5ade3c4ec62441af770f9a0
+    delegation_salt: 1a5025ad892b39051cbf224c863d93196b571bff399862033c717523db41dd1d
+    created: 2026-09-20T10:20:11.208051Z
+  vibe:
+    delegation_verifier: a58c225b1ef548c07c41e0ad4aec7d3e8b2ab0f70bcc91836f8bfb17e84c3f54
+    delegation_salt: ca4140af6b05998106d67fc1eb54baaf3ade93b84aa5fdd3963a89b3399b7a54
+    created: 2026-10-12T12:51:07.139680483Z
+updated: 2026-10-16T19:01:32.380388629Z

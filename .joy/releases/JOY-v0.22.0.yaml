@@ -1,0 +1,42 @@
+version: v0.22.0
+date: 2026-10-04
+previous: v0.21.1
+contributors:
+- id: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+  events: 37
+  items: 11
+- id: horst.schwarz@joydev.com
+  events: 12
+  items: 12
+- id: ai:copilot@joy delegated-by:horst.schwarz@joydev.com
+  events: 5
+  items: 1
+items:
+  stories:
+  - id: JOY-02B2-80
+    title: Support Antigravity in joy ai init
+  tasks:
+  - id: JOY-02BF-1C
+    title: Nightly builds as a rolling prerelease that joy update never installs
+  - id: JOY-02BA-45
+    title: Open the git repository once per purpose
+  - id: JOY-02B9-B0
+    title: Stage a file without scanning the working tree
+  - id: JOY-02B8-78
+    title: Load a single item without loading all items
+  - id: JOY-02B7-B7
+    title: Read each item file once per pass
+  - id: JOY-02B1-45
+    title: Sign in by name works without git config, and joy ai init takes --user
+  bugs:
+  - id: JOY-02B4-46
+    title: 'Flaky test: a connector script written by a test can be busy when joy starts it'
+  - id: JOY-02B5-F3
+    title: A 401 at the git door refreshes once and retries; a refused refresh is remembered with its reason; busy is not no-token
+  - id: JOY-02B8-AB
+    title: An AI whose delegation session no longer stands acts as the person who signed in on the machine
+  reworks:
+  - id: JOY-02BB-C7
+    title: One list of the variables a test never inherits from the person's shell
+  - id: JOY-02B6-1B
+    title: Cut file accesses per command to one pass over the items

@@ -1,8 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The identity call sites of the CLI (D3.9 and package J11 of the forge
-//! connection NG design, JOY-02A0-6E; corrected by the operator's
+//! The identity call sites of the CLI (JOY-02A0-6E; corrected by the operator's
 //! decision of 2026-09-19, JOY-02AE-1A).
 //!
 //! Every command that needs to know who is acting asks
@@ -26,6 +25,10 @@
 //! same three sources in the same order.
 //! These tests drive the real binary, because the question is what a
 //! command does on a machine, and the machine is what they take away.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::path::PathBuf;
 use std::process::Output;
@@ -66,23 +69,20 @@ impl Machine {
     /// session, and it asks who acts here to know whose seed to derive.
     fn joy_with_a_passphrase_in_the_environment(&self, args: &[&str]) -> Output {
         let mut command = self.base_command(args);
-        command.env_remove("JOY_SESSION");
         command.env("JOY_PASSPHRASE", PASSPHRASE);
         command.output().expect("joy runs")
     }
 
     fn joy_with_session(&self, args: &[&str], session: Option<&str>) -> Output {
         let mut command = self.base_command(args);
-        command.env_remove("JOY_PASSPHRASE");
-        match session {
-            Some(value) => command.env("JOY_SESSION", value),
-            None => command.env_remove("JOY_SESSION"),
-        };
+        if let Some(value) = session {
+            command.env("JOY_SESSION", value);
+        }
         command.output().expect("joy runs")
     }
 
     fn base_command(&self, args: &[&str]) -> std::process::Command {
-        let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+        let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
         command
             .args(args)
             .current_dir(&self.root)
@@ -97,10 +97,7 @@ impl Machine {
             .env("HOMEPATH", "")
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
-            .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("GIT_AUTHOR_EMAIL")
-            .env_remove("GIT_COMMITTER_EMAIL")
-            .env_remove("EMAIL");
+            .env("GIT_CONFIG_NOSYSTEM", "1");
         command
     }
 
@@ -177,7 +174,17 @@ impl Machine {
             "add",
             ai,
             "--capabilities",
-            "all",
+            "conceive",
+            "plan",
+            "design",
+            "implement",
+            "test",
+            "review",
+            "document",
+            "create",
+            "assign",
+            "jobs",
+            "delete",
             "--passphrase",
             PASSPHRASE,
         ]);
@@ -336,7 +343,7 @@ fn assert_every_step_needed_an_identity(steps: &[Step]) {
     }
 }
 
-/// Every group of identity call sites D3.9 lists, in one run: auth,
+/// Every group of identity call sites the rule lists, in one run: auth,
 /// crypt, board (the item write), project and the event log behind them.
 /// The passphrase commands come last because they end the session.
 fn identity_script(machine: &Machine) -> Vec<Step> {
@@ -494,23 +501,26 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
                 "project",
                 "member",
                 "add",
-                "ai:claude@joy",
+                "claude",
                 "--capabilities",
-                "all",
+                "conceive",
+                "plan",
+                "design",
+                "implement",
+                "test",
+                "review",
+                "document",
+                "create",
+                "assign",
+                "jobs",
+                "delete",
                 "--passphrase",
                 PASSPHRASE,
             ],
         ),
         (
             "token add",
-            vec![
-                "auth",
-                "token",
-                "add",
-                "ai:claude@joy",
-                "--passphrase",
-                PASSPHRASE,
-            ],
+            vec!["auth", "token", "add", "claude", "--passphrase", PASSPHRASE],
         ),
         (
             "delegation rotate",
@@ -518,7 +528,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
                 "auth",
                 "delegation",
                 "rotate",
-                "ai:claude@joy",
+                "claude",
                 "--passphrase",
                 PASSPHRASE,
             ],
@@ -552,12 +562,12 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
 /// host: the migration rekeys every human member, so the address a
 /// machine was founded with stops being a member key halfway through.
 ///
-/// Under J11 this was the one command git config could not rescue,
+/// Earlier this was the one command git config could not rescue,
 /// because the address was no longer a member map key after the rekey;
 /// the migration re-pinned the acting member itself to cover it. The
 /// operator's 2026-09-19 correction (JOY-02AE-1A) removes the need for
 /// either trick: `member_key_for_email` already resolves a CLEARTEXT
-/// address against an anonymous project's `email_match` verifier, so
+/// address against an anonymous project's `email_tag` verifier, so
 /// the same git config that named the founder before the rekey still
 /// names them after it, with no re-pin involved.
 fn privacy_migration_script(machine: &Machine) -> Vec<Step> {
@@ -771,7 +781,7 @@ fn the_session_answers_every_identity_call_site_until_it_ends() {
     }
 }
 
-/// The acceptance of J11 was that every joy command needing an identity
+/// The earlier acceptance was that every joy command needing an identity
 /// worked in a repository with no git config once the member was known,
 /// because the founding pin answered for it. The operator's 2026-09-19
 /// correction (JOY-02AE-1A) retires that pin from resolve_identity, so
@@ -796,7 +806,7 @@ fn every_identity_command_needs_a_session_a_git_config_or_a_forge_account() {
     );
 }
 
-/// The acceptance of J11 was that removing `user.email` changed no joy
+/// The earlier acceptance was that removing `user.email` changed no joy
 /// command's behaviour. Replaced by its inverse, as the item says: with
 /// `user.email` set the binary knows the member, without it and without
 /// a forge account it does not.
@@ -866,7 +876,7 @@ fn the_verbs_that_take_something_away_need_git_config_too() {
 /// The privacy migration, inverted for the same reason: with git config
 /// it keeps working straight through the rekey, because
 /// `member_key_for_email` already resolves a cleartext address against
-/// an anonymous project's `email_match` verifier and needs no help from
+/// an anonymous project's `email_tag` verifier and needs no help from
 /// a pin; without git config, and without a forge account, the migration
 /// cannot even start.
 ///
@@ -921,10 +931,10 @@ fn the_privacy_migration_needs_git_config_too() {
 /// git config that names a registered member of this very project, and
 /// no pin at all.
 ///
-/// Before this correction (package J11 of D3.9) nothing on such a
+/// Before this correction nothing on such a
 /// machine answered, and a person had to name themselves again despite
 /// their own checkout already saying who they were. Now the git config
-/// decides on its own, exactly the way it did before D3.9 first took it
+/// decides on its own, exactly the way it did before the rule first took it
 /// out of the order, and `joy auth status` names it as the source.
 #[test]
 fn a_git_config_alone_decides_who_acts() {
@@ -960,7 +970,7 @@ fn a_git_config_alone_decides_who_acts() {
 
     // A write, with no session at all, resolves the founder from git
     // config alone and succeeds outright: the exact opposite of what
-    // package J11 accepted.
+    // was accepted before.
     let add = machine.joy(&["add", "task", "First thing"]);
     assert!(add.status.success(), "{}", text(&add));
 
@@ -980,10 +990,10 @@ fn a_git_config_alone_decides_who_acts() {
 }
 
 /// A delegation session answers WHO is acting, and nothing about what
-/// they may do (D3.9): the rights question is the guard's, and the crypt
+/// they may do: the rights question is the guard's, and the crypt
 /// verbs that change who can read a zone ask it.
 ///
-/// This is the shape J11 creates and therefore has to close, on a
+/// This is the shape identity resolution creates and therefore has to close, on a
 /// machine whose git config names the founder (operator decision
 /// 2026-09-19, JOY-02AE-1A: the human writes below need SOME identity,
 /// and a session answers only for the AI). An AI session with no manage
@@ -998,7 +1008,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
     assert!(item.status.success(), "{}", text(&item));
     let encrypted = machine.joy(&["crypt", "add", "LG-0001", "--passphrase", PASSPHRASE]);
     assert!(encrypted.status.success(), "{}", text(&encrypted));
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     for (label, args) in [
         (
@@ -1010,7 +1020,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
             vec![
                 "crypt",
                 "grant",
-                "ai:claude@joy",
+                "claude",
                 "--zone",
                 "default",
                 "--passphrase",
@@ -1026,7 +1036,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
             text(&output)
         );
         assert!(
-            text(&output).contains("ai:claude@joy") && text(&output).contains("manage"),
+            text(&output).contains("claude") && text(&output).contains("manage"),
             "`joy {label}` names the AI and the right it lacks: {}",
             text(&output)
         );
@@ -1043,7 +1053,7 @@ fn a_delegation_session_cannot_change_who_reads_a_zone() {
     );
 }
 
-/// The order of D3.9, at its top: a delegation session outranks git
+/// The order, at its top: a delegation session outranks git
 /// config. `joy deauth` under an AI session ends THAT session, and the
 /// operator whose address the git config carries keeps theirs.
 #[test]
@@ -1052,12 +1062,12 @@ fn a_delegation_session_outranks_the_git_config() {
     machine.git_config_says("a@b.c");
     found_and_enrol(&machine);
 
-    let session_env = machine.a_delegation_session("ai:claude@joy");
+    let session_env = machine.a_delegation_session("claude");
 
     let deauth = machine.joy_with_session(&["deauth"], Some(&session_env));
     assert!(deauth.status.success(), "{}", text(&deauth));
     assert!(
-        text(&deauth).contains("ai:claude@joy"),
+        text(&deauth).contains("claude"),
         "the AI's own session is the one that ends: {}",
         text(&deauth)
     );
@@ -1150,7 +1160,7 @@ fn without_a_session_or_a_config_joy_names_the_remedy() {
 /// AI member has no `kdf_nonce` and can never have one, so resolving it
 /// there would refuse the operator work they are entitled to do.
 ///
-/// This is the shape the CLI had before J11, and the operator's
+/// This is the shape the CLI had before, and the operator's
 /// 2026-09-19 correction (JOY-02AE-1A) brought git config back for the
 /// plain human write below; the point this test still makes is that a
 /// delegation session, once it exists, outranks that config for the AI
@@ -1162,7 +1172,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     machine.git_config_says("a@b.c");
     let item = machine.joy(&["add", "task", "First thing"]);
     assert!(item.status.success(), "{}", text(&item));
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     // The zone commands: the operator's passphrase opens the operator's
     // seed, under the AI's session.
@@ -1177,7 +1187,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     // A member write is a different matter: the guard refuses an AI
     // manage action whatever the passphrase says, and it names the AI in
     // the refusal, because the AI is who is acting. Identity and rights
-    // are two questions, and only the first one moved in J11.
+    // are two questions, and only the first one moved.
     let member_add = machine.joy_with_session(
         &[
             "project",
@@ -1191,7 +1201,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     );
     assert!(!member_add.status.success(), "{}", text(&member_add));
     assert!(
-        text(&member_add).contains("ai:claude@joy"),
+        text(&member_add).contains("claude"),
         "{}",
         text(&member_add)
     );
@@ -1211,7 +1221,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
     );
     assert!(changed.status.success(), "{}", text(&changed));
     assert!(
-        text(&changed).contains("a@b.c") && !text(&changed).contains("ai:claude@joy"),
+        text(&changed).contains("a@b.c") && !text(&changed).contains("claude"),
         "the operator is the one whose passphrase changed: {}",
         text(&changed)
     );
@@ -1219,7 +1229,7 @@ fn a_delegation_session_acts_for_the_operator_where_a_passphrase_is_needed() {
 
 /// An anonymous project hands every command the operator's OPAQUE id,
 /// because that is what the member map is keyed by, whichever of
-/// resolve_identity's sources answers (D3.9, package J11; the source is
+/// resolve_identity's sources answers (the source is
 /// git config since the operator's 2026-09-19 correction, JOY-02AE-1A,
 /// but the opaque id at rest is the same either way). Two writes on the
 /// token path were still keyed by ADDRESS, and an address matches no
@@ -1245,12 +1255,12 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
 
     // Register the AI, issue its token, redeem it. Every step asserts its
     // own success, so the one that breaks names itself.
-    let session = machine.a_delegation_session("ai:claude@joy");
+    let session = machine.a_delegation_session("claude");
 
     // The delegation the token was issued from is written down, under the
     // operator's own member entry. This is the entry redemption looks for,
     // and the one that used to be silently skipped here.
-    let project = std::fs::read_to_string(machine.root.join(".joy").join("project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&machine.root);
     assert!(
         project.contains("ai_delegations:") && project.contains("delegation_verifier:"),
         "the issued delegation is recorded in project.yaml: {project}"
@@ -1268,7 +1278,7 @@ fn an_ai_token_of_an_anonymous_project_redeems_and_the_ai_acts() {
     );
     let actor = the_actor_of_the_only_item(&machine);
     assert!(
-        actor.starts_with("ai:claude@joy delegated-by:m-"),
+        actor.starts_with("claude delegated-by:m-"),
         "the AI acts for the operator, by opaque id: {actor}"
     );
 
@@ -1306,9 +1316,19 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
         "project",
         "member",
         "add",
-        "ai:claude@joy",
+        "claude",
         "--capabilities",
-        "all",
+        "conceive",
+        "plan",
+        "design",
+        "implement",
+        "test",
+        "review",
+        "document",
+        "create",
+        "assign",
+        "jobs",
+        "delete",
         "--passphrase",
         PASSPHRASE,
     ]);
@@ -1320,7 +1340,7 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
         "auth",
         "token",
         "add",
-        "ai:claude@joy",
+        "claude",
         "--user",
         FOUNDER,
         "--passphrase",
@@ -1353,7 +1373,7 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
     let actor = the_actor_of_the_only_item(&machine);
     assert_eq!(
         actor,
-        format!("ai:claude@joy delegated-by:{}", claims.delegated_by),
+        format!("claude delegated-by:{}", claims.delegated_by),
         "the item names the operator by the very id the token claimed"
     );
     assert!(
@@ -1362,9 +1382,9 @@ fn a_token_names_its_operator_by_key_however_the_operator_was_named() {
     );
 }
 
-/// D3.9 promises a person that naming themselves once settles it: this
-/// repository's own git config remembers the member (JOY-02AE-1A,
-/// correcting D3.9; the device pin that used to carry this, including
+/// The rule promises a person that naming themselves once settles it: this
+/// repository's own git config remembers the member (JOY-02AE-1A;
+/// the device pin that used to carry this, including
 /// through `acting_member`, is retired for good). In an ANONYMOUS
 /// project git config still carries the real address, because that is
 /// what it has always held; the project's own member map key is the

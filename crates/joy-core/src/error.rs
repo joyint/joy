@@ -8,8 +8,8 @@ pub enum JoyError {
     #[error("project already initialized at {0}")]
     AlreadyInitialized(PathBuf),
 
-    /// No founding address and nobody to ask for one: the named refusal of
-    /// the forge connection NG design (D3.9). A host that CAN ask a person
+    /// No founding address and nobody to ask for one: the named refusal.
+    /// A host that CAN ask a person
     /// asks instead of raising this.
     #[error("this project does not know who you are; run joy init --user <address>")]
     NoFounderIdentity,
@@ -63,6 +63,12 @@ pub enum JoyError {
         source: std::io::Error,
     },
 
+    /// The project on disk was written by a joy that is newer than this
+    /// one, and says so in `format` (see `store::PROJECT_FORMAT`). The one
+    /// sentence every host shows for it: what happened and what to do.
+    #[error("this project needs a newer joy: install the update")]
+    NewerFormat { format: u32, reads: u32 },
+
     #[error("{path}: {source}")]
     YamlParse {
         path: PathBuf,
@@ -78,7 +84,7 @@ pub enum JoyError {
     /// A forge contact that failed, carried TYPED (JOY-02A3-E4): the
     /// classifier's verdict travels with the error instead of being
     /// flattened into prose, so a surface names the state and offers
-    /// its one action (D1.8b) rather than parsing a sentence.
+    /// its one action rather than parsing a sentence.
     ///
     /// `Display` is the plain sentence the person reads and nothing
     /// else; libgit2's own words and the sources joy tried stay on the
@@ -119,8 +125,11 @@ pub enum JoyError {
     #[error("no access to zone '{zone}': ask a member with access to run `joy crypt grant`")]
     ZoneAccessDenied { zone: String },
 
-    #[error("passphrase too short (minimum 3 words)")]
-    PassphraseTooShort,
+    #[error("the passphrase is empty")]
+    PassphraseEmpty,
+
+    #[error("the new passphrase must differ from the current one")]
+    PassphraseUnchanged,
 
     #[error("guard denied: {0}")]
     GuardDenied(String),
@@ -138,7 +147,7 @@ pub enum JoyError {
 impl JoyError {
     /// The verdict behind this error when it is a failed forge contact:
     /// the state for the banner, the sentence, the detail line and the
-    /// moment the forge serves again (D1.8b). `None` for every other
+    /// moment the forge serves again. `None` for every other
     /// error, and a caller that only wants the state can read
     /// [`crate::vcs::contact::Failure::Error`] for those.
     pub fn contact(&self) -> Option<&crate::vcs::contact::ContactError> {
@@ -150,7 +159,7 @@ impl JoyError {
 
     /// The state a surface shows for this error: the classifier's
     /// verdict when the error came from a contact, and `error`
-    /// otherwise - never guessed at from prose (D1.8a).
+    /// otherwise - never guessed at from prose.
     pub fn failure(&self) -> crate::vcs::contact::Failure {
         self.contact()
             .map(|contact| contact.failure)

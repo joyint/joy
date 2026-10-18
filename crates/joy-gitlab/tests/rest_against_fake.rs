@@ -1,15 +1,18 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: LicenseRef-Commercial
 
-//! The GitLab connector against an in process fake API (JOY-0298-E4,
-//! design D2.7a, D2.7c and D2.8).
+//! The GitLab connector against an in process fake API (JOY-0298-E4).
 //!
-//! The case that carries J2's acceptance is the last one: a token with
+//! The case that carries the acceptance is the last one: a token with
 //! the read write set (`read_api write_repository`) answers `store`,
 //! `files` and `repositories`, and answers `create-repository` with
 //! `scope_missing` naming `api`. That is the resolution of the v2
 //! contradiction: `write_repository` "Uses Git-over-HTTP. Does not
 //! support API authentication.", so creating a project needs `api`.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use joy_forge_net::config::Instances;
 use joy_forge_net::fake::{Call, FakeForge, Reply};
@@ -36,7 +39,7 @@ fn remote() -> Target {
     Target::Remote(format!("https://{HOST}/group/sub/demo.git"))
 }
 
-/// The read write set of D2.7a, as the instance reports it.
+/// The read write set, as the instance reports it.
 fn read_write_token(call: &Call) -> Option<Reply> {
     (call.path == "/personal_access_tokens/self").then(|| {
         Reply::json(
@@ -46,7 +49,7 @@ fn read_write_token(call: &Call) -> Option<Reply> {
     })
 }
 
-/// The first hardcoded base of D2.8: a self hosted instance is asked
+/// The first hardcoded base: a self hosted instance is asked
 /// about its own people, never gitlab.com.
 #[test]
 fn identity_asks_the_instance_and_not_gitlab_com() {
@@ -67,7 +70,7 @@ fn identity_asks_the_instance_and_not_gitlab_com() {
     );
 }
 
-/// J2's acceptance, in one case: the read write set reads everything
+/// The read write set reads everything
 /// and is told, locally, that creating needs `api`.
 #[test]
 fn the_read_write_set_reads_everything_and_cannot_create() {
@@ -114,7 +117,7 @@ fn the_read_write_set_reads_everything_and_cannot_create() {
     let store = joy_gitlab::gitlab::store_answer(&remote(), &ctx);
     assert_eq!(store["state"], "store");
     assert_eq!(store["project_yaml"], "name: Demo\n");
-    // GitLab answers `repository_size` in bytes already (D2.4)
+    // GitLab answers `repository_size` in bytes already
     assert_eq!(store["size_bytes"], 8192);
 
     // files
@@ -192,7 +195,7 @@ fn the_full_set_creates_the_project() {
     assert_eq!(post.json().unwrap()["visibility"], "private");
 }
 
-/// D2.7c's 404 rule: "404 is `gone` only when the set contains
+/// the 404 rule: "404 is `gone` only when the set contains
 /// `read_api` or `api`". A token that holds `write_repository` alone
 /// meets the API as an anonymous caller, so GitLab hides a private
 /// project behind the same 404 a deleted one gets, and the person must
@@ -223,7 +226,7 @@ fn a_404_on_a_set_that_reads_the_api_is_gone() {
     assert_eq!(store["state"], "gone");
 }
 
-/// D2.7c: a 403 whose WWW-Authenticate names an insufficient scope is a
+/// A 403 whose WWW-Authenticate names an insufficient scope is a
 /// scope problem, and the answer says so instead of `denied`.
 #[test]
 fn a_refusal_the_pre_check_could_not_see_is_still_not_denied() {

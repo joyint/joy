@@ -39,7 +39,7 @@ impl Transport {
 
     /// Whether a credential helper answers for this transport at all.
     /// Helpers speak http and https; an ssh remote is served by the
-    /// ssh chain (design D1.2).
+    /// ssh chain.
     pub fn takes_helper(self) -> bool {
         matches!(self, Transport::Https | Transport::Http)
     }
@@ -120,7 +120,7 @@ impl RemoteUrl {
     }
 
     /// `<protocol>://<host>[:<port>]`, the middle config key of
-    /// design D1.3 and the key of the per-host credential cache.
+    /// The rule and the key of the per-host credential cache.
     pub fn host_key(&self) -> String {
         format!("{}://{}", self.transport.protocol(), self.host_field())
     }
@@ -129,7 +129,7 @@ impl RemoteUrl {
 /// The transport a URL's SCHEME names, for a text [`RemoteUrl::parse`]
 /// refused: `https://host:99999/o/r.git` carries no readable authority,
 /// but it is still an https remote, and every caller that only needs
-/// the branch (D1.8a) should hear that rather than "local". `None` for
+/// the branch should hear that rather than "local". `None` for
 /// a text with no scheme and for a scheme joy does not speak.
 pub fn scheme_transport(url: &str) -> Option<Transport> {
     match split_scheme(url.trim())? {
@@ -186,7 +186,7 @@ fn split_scheme(url: &str) -> Option<(&str, &str)> {
 /// (`git_net_url_parse_scp`, net.c:661-806), so joy reads both:
 /// `git@[::1]:owner/repo.git`, where the bracket holds an IPv6
 /// address, and `[git@host:2222]:owner/repo.git`, the only scp-like
-/// shape that carries a PORT, which design D1.5 names by name. Read as
+/// shape that carries a PORT, which the rule names by name. Read as
 /// a plain `host:path` the second one yields the host `host` and the
 /// path `2222]:owner/repo.git`, and every key joy builds from a remote
 /// (the throttle, the twin, the helper lookup) is then built from
@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(parsed.path, "owner/repo.git");
     }
 
-    /// The bracketed form design D1.5 names by name. Read as a plain
+    /// The bracketed form the rule names by name. Read as a plain
     /// `host:path` it yields the host `git.example.com` with the path
     /// `2222]:owner/repo.git`, and every key joy builds from a remote
     /// is then built from nonsense.

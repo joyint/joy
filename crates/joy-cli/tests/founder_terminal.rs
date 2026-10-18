@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The founding question with a real terminal on the other end (D3.9 and
-//! D1.1 of the forge connection NG design, JOY-0297-1A).
+//! The founding question with a real terminal on the other end
+//! (JOY-0297-1A).
 //!
-//! Two of J9's acceptance criteria are about what `joy init` does for a
+//! Two acceptance criteria are about what `joy init` does for a
 //! PERSON at a terminal, and neither can be proven by a test harness that
 //! hands joy a pipe: with a pipe the host is `Background` whatever else
 //! is true, so the interactive branch is never entered and a refusal
@@ -16,6 +16,10 @@
 //! same input (`joy_core::host::HostKind::detect`), covered by
 //! joy-core's own cases.
 #![cfg(unix)]
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::io::{Read, Write};
 use std::os::fd::{FromRawFd, OwnedFd};
@@ -76,7 +80,7 @@ fn joy_on_a_terminal(
 ) -> (bool, String) {
     let terminal = Terminal::open();
     let [stdin, stdout, stderr] = terminal.stdio();
-    let mut command = joy_process::command(env!("CARGO_BIN_EXE_joy"));
+    let mut command = joy_test_env::command(env!("CARGO_BIN_EXE_joy"));
     command
         .args(args)
         .current_dir(root)
@@ -87,10 +91,9 @@ fn joy_on_a_terminal(
         .stdin(stdin)
         .stdout(stdout)
         .stderr(stderr);
-    match session {
-        Some(value) => command.env("JOY_SESSION", value),
-        None => command.env_remove("JOY_SESSION"),
-    };
+    if let Some(value) = session {
+        command.env("JOY_SESSION", value);
+    }
     let mut child = command.spawn().expect("joy runs");
     // The child holds its own copies now, and every copy on this side has
     // to go: the three the `Command` still owns and the one the pair was
@@ -146,7 +149,7 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// The acceptance of J9: `joy init` with no git config ON A TERMINAL asks
+/// `joy init` with no git config ON A TERMINAL asks
 /// for the address and completes. The first answer is the anonymous mode
 /// question `joy init` asks a person, the second is the address.
 #[test]
@@ -167,17 +170,17 @@ fn init_on_a_terminal_asks_for_the_address_and_completes() {
         "the person was asked: {seen}"
     );
     assert!(seen.contains("Address:"), "the person was asked: {seen}");
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(
         project.contains("typed@example.com"),
         "the typed address founded the project: {project}"
     );
 }
 
-/// The acceptance of J9 for the delegated host: THE SAME COMMAND, the
+/// THE SAME COMMAND, the
 /// same terminal, the same missing git config, under a live `JOY_SESSION`
 /// refuses with the named sentence and asks nobody. An agent that owns a
-/// terminal is still an agent (D1.1), so the terminal is what makes this
+/// terminal is still an agent, so the terminal is what makes this
 /// case worth anything: without one, `Background` would have refused for
 /// its own reason and the session would prove nothing.
 #[test]
@@ -217,14 +220,13 @@ fn a_live_session(home: &Path) -> String {
     let root = home.join("delegator");
     std::fs::create_dir_all(&root).unwrap();
     let joy = |args: &[&str]| -> (bool, String) {
-        let out = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        let out = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&root)
             .env("HOME", home)
             .env("XDG_STATE_HOME", home.join(".state"))
             .env("XDG_CONFIG_HOME", home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_SESSION")
             .output()
             .expect("joy runs");
         (
@@ -240,7 +242,7 @@ fn a_live_session(home: &Path) -> String {
     let (ok, seen) = joy(&["init", "--name", "Delegator", "--user", "human@example.com"]);
     assert!(ok, "{seen}");
     // This checkout gets a git identity of its own: the commands that
-    // mint a delegation are J11's call sites and still read one. The
+    // mint a delegation still read one. The
     // checkout under test never sees it (its own HOME is empty and this
     // config is repository local), which is the whole point of the case.
     let repo = git2::Repository::open(&root).unwrap();
@@ -253,7 +255,7 @@ fn a_live_session(home: &Path) -> String {
             "project",
             "member",
             "add",
-            "ai:claude@joy",
+            "claude",
             "--passphrase",
             passphrase,
         ],
@@ -261,14 +263,7 @@ fn a_live_session(home: &Path) -> String {
         let (ok, seen) = joy(&args);
         assert!(ok, "{args:?}: {seen}");
     }
-    let (ok, token) = joy(&[
-        "auth",
-        "token",
-        "add",
-        "ai:claude@joy",
-        "--passphrase",
-        passphrase,
-    ]);
+    let (ok, token) = joy(&["auth", "token", "add", "claude", "--passphrase", passphrase]);
     assert!(ok, "{token}");
     // The token is the quoted line among the instructions.
     let token = token

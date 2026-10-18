@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-use anyhow::{bail, Result};
+use anyhow::Result;
 use clap::Args;
 
 use joy_core::guard::Action;
@@ -16,7 +16,7 @@ pub struct AssignArgs {
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_item_id))]
     id: String,
 
-    /// Member ID (email or ai:tool@joy). Omit to use git config user.email.
+    /// Member (email, or the name of an AI member). Omit to use git config user.email.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_member))]
     member: Option<String>,
 
@@ -41,14 +41,16 @@ pub fn run(args: AssignArgs) -> Result<()> {
 
     crate::auth_gate::enforce(&mut ctx, &Action::AssignItem, &item.id)?;
 
-    // Validate format. In anonymous mode the acting member resolves to an opaque
-    // id (e.g. self-assign), so accept that shape too alongside e-mail / ai: ids.
-    if !member.contains('@')
-        && !member.starts_with("ai:")
-        && !joy_core::member_id::is_opaque_member_id(&member)
-    {
-        bail!("invalid member format: expected email or ai:tool@joy");
-    }
+    // A person by address, an AI member by its name, which has to be
+    // one of this project's. Taking an assignment away asks nothing.
+    let project = joy_core::store::load_project(&ctx.root)?;
+    let member = if args.unassign {
+        project.former_assignee(&member)
+    } else {
+        project
+            .assignee(&member)
+            .map_err(|why| anyhow::anyhow!(why))?
+    };
 
     if args.unassign {
         let before = item.assignees.len();
@@ -97,6 +99,19 @@ pub fn run(args: AssignArgs) -> Result<()> {
             .collect::<Result<Vec<_>>>()?,
         None => Vec::new(),
     };
+
+    // A job is taken by its assignee: one that could not take it for
+    // this person is not given it (the same rule decides again when the
+    // job is set to open).
+    if matches!(item.item_type, joy_core::model::item::ItemType::Job) {
+        let mut probe = item.clone();
+        probe.assignees = vec![Assignee {
+            member: member.clone().into(),
+            capabilities: Vec::new(),
+        }];
+        joy_core::auth::grants::job_terms(&project, &probe, ctx.identity.person().id())
+            .map_err(|why| anyhow::anyhow!(why))?;
+    }
 
     // Update existing assignment or add new one
     let before = item.clone();

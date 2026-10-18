@@ -15,7 +15,7 @@ _anon() {
 
 # The founder's opaque id, read straight from project.yaml.
 _member_id() {
-    grep -oE 'm-[a-z2-7]{10}' .joy/project.yaml | head -1
+    members_grep -oE 'm-[a-z2-7]{10}' | head -1
 }
 
 @test "auth status resolves the session member, never a raw id (terminal + json)" {

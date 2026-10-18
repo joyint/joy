@@ -1,0 +1,22 @@
+id: JOY-02D9-0F
+title: 'Job lifecycle: one module decides status, signal, offered steps and the words'
+type: task
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+effort: 4
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-16T20:59:00.558719155Z
+updated: 2026-10-16T21:48:07.972008278Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: 'Operator 2026-10-16, after the job JOY-JOB-0001-53 went to review over a missing API key. The job rules are spread over four places (platform runner round end, watcher refusal and resume, change_job_status, and the app computing ''unavailable'' itself). One module in joy-core, job_lifecycle, without database or network, decides: after_round(outcome) -> the status (succeeded and failed go to review; a question too; aborted stays); start_block(project, job, person, default budget, host fact) -> the reason a job cannot start (no assignee, no key or agent as the host says, budget used up, capability or level); signal(job, block) -> normal | blocked(reason) | failed(error) | question | delivered, what the app''s square next to the status bar shows; offered(job, signal) -> what the pills offer (nothing while blocked in new); the words the platform lends the AI for an escalated tool request (as the AI would ask, with the job''s level and the level it needs). Budget helpers move here from the platform. The whole table of status x outcome x feedback x block is tested exhaustively, and a test applies the rules repeatedly and proves every job settles. Review stays the one place where a person is needed; new plus blocked means ''not set up yet''. The dialog with the AI runs over the job''s comments as before.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T20:59:23.396233308Z
+  text: 'Plan: crates/joy-core/src/job_lifecycle.rs with Signal, start_block, after_round, signal, offered, resumes, escalation words and the budget helpers (spent, cap, exceeded) moved from the platform; table tests over every status x outcome x feedback x block, a settle test; ADR JOY-01FE-37 gets the table as a comment.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-16T21:48:07.949574985Z
+  text: 'Result: crates/joy-core/src/job_lifecycle.rs as planned, with the table in its module doc; start_block judges capability and level only while the job is new (JI-0166-D8); the bounce applies to every open job that cannot start (an unassigned one too). Tests: every combination of status x outcome x feedback x block against the table, the settle test (no job loops, no answered question runs twice), budget, escalation words. just lint and just test green. ADR JOY-01FE-37 has the refined rules as a comment.'

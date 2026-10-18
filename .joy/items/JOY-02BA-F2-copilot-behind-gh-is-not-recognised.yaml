@@ -1,0 +1,23 @@
+id: JOY-02BA-F2
+title: Copilot behind gh is not recognised although gh copilot runs, and the refusal does not say what was tried
+type: bug
+status: new
+priority: high
+tags:
+- ai
+- adapters
+- windows
+capabilities:
+- implement
+- review
+effort: 3
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-03T07:25:18.444594545Z
+updated: 2026-10-03T07:25:18.444594545Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: |-
+  Operator, 2026-10-03, corporate Windows machine without admin rights: 'gh copilot -v' answers 'GitHub Copilot CLI 1.0.88', yet the desktop's roster says 'Not installed on this machine. Install GitHub Copilot CLI and sign in, or run gh copilot once' and offers 'npm i -g @github/copilot', which such a machine cannot do. The gh launch exists exactly for this case (JOY-02AC-D2): probe gh, verify 'gh copilot -- --version', start 'gh copilot -- --acp'. The verify fails there; the suspect is the '--' that gh forwards and the Copilot CLI then reads as the end of options. The operator supplies the output and exit code of 'gh copilot -- --version' and 'gh copilot --version' from that machine; the verify and the entrypoint follow the spelling that works, for the CLI gh installs (1.0.x), and the npm 'copilot' launch stays first.
+
+  - The refusal names what was tried: 'gh copilot -- --version exited 2: <first stderr line>' instead of a sentence that assumes nothing is installed. missing_on_machine / Missing carry the attempted argv and the answer.
+  - A test with a stub gh that behaves like the real one on that machine (fails on the old spelling, answers on the new) pins the spelling; the existing copilot_picks_the_launch_the_machine_actually_has test keeps the two-launch order.
+  - Checked on the Windows runner or by the operator before it is called done; no Windows here.

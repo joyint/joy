@@ -7,8 +7,8 @@ use std::path::Path;
 
 use joy_ai::ai_setup::{
     is_tool_configured, is_tool_stale, plan_member_reset, remove_joy_block_or_file,
-    remove_legacy_ai_artifacts, untrack_gitignored_tool_files, update_gitignore, MemberResetPlan,
-    TOOLS as ALL_TOOLS,
+    remove_legacy_ai_artifacts, shared_agents_md_needed, untrack_gitignored_tool_files,
+    update_gitignore, MemberResetPlan, TOOLS as ALL_TOOLS,
 };
 
 use std::sync::atomic::AtomicBool;
@@ -50,7 +50,7 @@ const CONTRIBUTING_TEMPLATE: &str = include_str!("../../docs/CONTRIBUTING.md");
 
 #[derive(clap::Args)]
 #[command(
-    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as ai:copilot@joy. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add ai:<name>@joy\nthen issue a delegation token with `joy auth token add ai:<name>@joy`."
+    after_help = "GitHub Copilot is found under `copilot`, under `gh copilot`, and in a VS Code-family editor even with neither installed -- all of it as the member copilot. Where the editor cannot be seen from (tmux, ssh, sudo), name it: joy ai init --tool copilot.\n\nGoogle Antigravity is found under `agy`; when using only its editor, name it: joy ai init --tool agy.\n\nFor a chat-only AI joy cannot detect at all, register the member manually:\n  joy project member add <name>\nthen issue a delegation token with `joy auth token add <name>`."
 )]
 pub struct AiArgs {
     #[command(subcommand)]
@@ -61,12 +61,28 @@ pub struct AiArgs {
 enum AiCommand {
     /// Initialize AI tool integration for new tools
     Init(InitArgs),
+    /// Add one AI member, set its tool up and issue its token
+    Add(AddArgs),
     /// Remove AI tool configurations from this project
     Reset(ResetArgs),
     /// Rotate the (operator, AI) delegation keypair
     Rotate(RotateArgs),
     /// Read the AI operational guide (CLI reference for AI assistants)
     Tutorial(AiTutorialArgs),
+}
+
+#[derive(clap::Args)]
+struct AddArgs {
+    /// Name of the AI member, e.g. claude or reviewer
+    name: String,
+
+    /// The tool that runs it (claude, qwen, vibe, copilot). Default: the tool the name names.
+    #[arg(long)]
+    adapter: Option<String>,
+
+    /// The model it runs on. Default: the tool's own.
+    #[arg(long)]
+    model: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -90,7 +106,7 @@ struct InitArgs {
     #[arg(long, value_hint = clap::ValueHint::FilePath)]
     contributing: Option<String>,
 
-    /// Only set up a specific tool (claude, qwen, vibe, copilot) — even
+    /// Only set up a specific tool (claude, qwen, vibe, agy, copilot) — even
     /// when it is not auto-detected. Skips the docs prompts.
     #[arg(long)]
     tool: Option<String>,
@@ -98,7 +114,7 @@ struct InitArgs {
 
 #[derive(clap::Args)]
 struct ResetArgs {
-    /// Only reset a specific tool (claude, qwen, vibe, copilot)
+    /// Only reset a specific tool (claude, qwen, vibe, agy, copilot)
     #[arg(long)]
     tool: Option<String>,
 
@@ -109,7 +125,7 @@ struct ResetArgs {
 
 #[derive(clap::Args)]
 struct RotateArgs {
-    /// AI member ID whose delegation to rotate (e.g. ai:claude@joy).
+    /// AI member whose delegation to rotate (e.g. claude).
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 }
@@ -117,6 +133,7 @@ struct RotateArgs {
 pub fn run(args: AiArgs) -> anyhow::Result<()> {
     match args.command {
         AiCommand::Init(a) => ai_init(a),
+        AiCommand::Add(a) => add(a),
         AiCommand::Reset(a) => reset(a),
         AiCommand::Rotate(a) => crate::commands::auth::run_ai_rotate(&a.member),
         AiCommand::Tutorial(a) => ai_tutorial(a),
@@ -158,6 +175,42 @@ fn in_crate_ai_tutorial_matches_canonical() {
 
 /// Run the AI init flow with default prompts. Used by the `joy` welcome
 /// wizard after a fresh `joy init`.
+/// `joy ai add <name>`: one AI member, ready to work. It is registered
+/// with what the project gives a new AI member, the tool that runs it is
+/// set up in this checkout, and its token is printed, all with one
+/// passphrase.
+fn add(args: AddArgs) -> anyhow::Result<()> {
+    let name = args.name.clone();
+    let adapter = match args.adapter.as_deref() {
+        Some(adapter) => joy_ai::naming::tool_adapter(adapter)
+            .ok_or_else(|| anyhow::anyhow!("unknown adapter: {adapter}"))?,
+        None => joy_ai::naming::tool_adapter(&name).ok_or_else(|| {
+            anyhow::anyhow!(
+                "{name} is not the name of a tool: say which tool runs it with --adapter"
+            )
+        })?,
+    };
+    crate::commands::project::add_ai_member(&name, Some(adapter.to_string()), args.model)?;
+
+    // The tool's own files (instructions, settings, the joy skill), the
+    // way `joy ai init --tool` writes them. A tool joy only runs through
+    // an adapter and writes no files for is fine as it is.
+    let ctx = joy_core::context::Context::load()?;
+    if joy_ai::ai_setup::TOOLS
+        .iter()
+        .any(|(_, id, _, _)| *id == adapter)
+    {
+        joy_core::embedded::sync_files(&ctx.root, joy_core::init::PROJECT_FILES)?;
+        joy_ai::ai_setup::configure_tool(&ctx.root, adapter, &mut |_| {})?;
+        if !crate::output::is_json() {
+            let tool = tool_display_name(adapter).unwrap_or(adapter);
+            println!();
+            println!("{tool} is set up in this checkout.");
+        }
+    }
+    Ok(())
+}
+
 pub fn run_init_default() -> anyhow::Result<()> {
     ai_init(InitArgs::default())
 }
@@ -231,8 +284,7 @@ struct AiInitPayload {
 /// attestations in `setup_new_tools` without re-prompting. Returns `None`
 /// if auth was already initialised.
 fn ensure_human_auth_initialized(root: &Path) -> anyhow::Result<Option<String>> {
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let project = joy_core::store::read_project(&project_path)?;
+    let project = joy_core::store::load_project(root)?;
     // The human this command sets authentication up for: the name given
     // to this call (`--user`), else the operator behind a delegation
     // session, else the person signed in at this terminal, else this
@@ -278,7 +330,7 @@ pub(crate) fn tool_display_name(id: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn tool_ids() -> &'static [&'static str] {
-    &["claude", "qwen", "vibe", "copilot"]
+    &["claude", "qwen", "vibe", "agy", "copilot"]
 }
 
 /// Is the tool on this machine? For the READ-ONLY surfaces (`joy update
@@ -404,8 +456,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
 
     dprintln!("{}", color::section("Documentation"));
 
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project: Project = joy_core::store::read_yaml(&project_path)?;
+    let mut project: Project = joy_core::store::load_project(root)?;
     let mut project_changed = false;
     let mut all_found = true;
     let mut any_auto_detected = false;
@@ -515,13 +566,7 @@ fn check_docs(root: &Path, args: &InitArgs) -> anyhow::Result<()> {
     }
 
     if project_changed {
-        joy_core::store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!(
-            "{}/{}",
-            joy_core::store::JOY_DIR,
-            joy_core::store::PROJECT_FILE
-        );
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        joy_core::store::save_project(root, &project)?;
     }
 
     if any_auto_detected {
@@ -642,6 +687,22 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             &[".vibe/skills/joy/", ".vibe/agents/", "AGENTS.md"],
         ),
         (
+            "Google Antigravity",
+            "agy",
+            &[
+                ".agents/skills/joy/SKILL.md",
+                ".agents/skills/joy/setup.md",
+                ".agents/agents/joy-conceiver/agent.md",
+                ".agents/agents/joy-planner/agent.md",
+                ".agents/agents/joy-designer/agent.md",
+                ".agents/agents/joy-implementer/agent.md",
+                ".agents/agents/joy-tester/agent.md",
+                ".agents/agents/joy-reviewer/agent.md",
+                ".agents/agents/joy-documenter/agent.md",
+                "AGENTS.md",
+            ],
+        ),
+        (
             "GitHub Copilot",
             "copilot",
             &[
@@ -668,11 +729,16 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     };
 
     // Collect the local config files that exist for the selected tools.
+    let resetting: Vec<&str> = tools.iter().map(|(_, id, _)| *id).collect();
+    let keep_shared = shared_agents_md_needed(&root, &resetting);
     let mut to_remove: Vec<(&str, &str)> = Vec::new();
     for (name, _, paths) in &tools {
         for path in *paths {
             let full = root.join(path);
-            if full.exists() {
+            if (*path != "AGENTS.md" || !keep_shared)
+                && !to_remove.iter().any(|(_, existing)| *existing == *path)
+                && full.exists()
+            {
                 to_remove.push((name, path));
             }
         }
@@ -683,8 +749,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     // from deleting per-developer config files: a member is only ever removed
     // when it is orphaned (no operator still delegates it), never merely because
     // the local config happens to be gone (JOY-01CD-D5).
-    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path).ok();
+    let mut project = joy_core::store::load_project(&root).ok();
     let caller_key = project.as_ref().and_then(|_| {
         joy_core::identity::resolve_identity(&root)
             .ok()
@@ -692,10 +757,10 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
     });
     let mut plans: Vec<MemberResetPlan> = Vec::new();
     if let Some(ref p) = project {
-        // Canonical tool members (ai:<tool>@joy).
+        // The members named after the tools.
         let member_ids: Vec<String> = tools
             .iter()
-            .map(|(_, id, _)| format!("ai:{id}@joy"))
+            .map(|(_, id, _)| joy_ai::naming::member_id(id))
             .collect();
         for member_id in &member_ids {
             if let Some(plan) = plan_member_reset(p, &root, member_id, caller_key.as_deref()) {
@@ -797,7 +862,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             if plan.drop_caller_delegation {
                 if let Some(ck) = caller_key.as_deref() {
                     if let Some(m) = p.member_by_key_mut(ck) {
-                        if m.ai_delegations.remove(&plan.member_id).is_some() {
+                        if m.drop_delegation(&plan.member_id).is_some() {
                             project_changed = true;
                         }
                     }
@@ -817,7 +882,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
                     let member_keys: Vec<String> = p.member_keys().cloned().collect();
                     for k in &member_keys {
                         if let Some(m) = p.member_by_key_mut(k) {
-                            m.ai_delegations.remove(&plan.member_id);
+                            m.drop_delegation(&plan.member_id);
                         }
                     }
                     dprintln!(
@@ -841,13 +906,7 @@ fn reset(args: ResetArgs) -> anyhow::Result<()> {
             }
         }
         if project_changed {
-            joy_core::store::write_yaml_preserve(&project_path, p)?;
-            let rel = format!(
-                "{}/{}",
-                joy_core::store::JOY_DIR,
-                joy_core::store::PROJECT_FILE
-            );
-            joy_core::git_ops::auto_git_add(&root, &[&rel]);
+            joy_core::store::save_project(&root, p)?;
         }
     }
 
@@ -914,8 +973,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
     let mut newly_configured = 0;
 
     // Load project for member registration
-    let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
-    let mut project = joy_core::store::read_project(&project_path)?;
+    let mut project = joy_core::store::load_project(root)?;
     let mut project_changed = false;
 
     // The acting human's identity keypair, derived lazily on the first
@@ -940,15 +998,20 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
         }
         let already = is_tool_configured(root, id);
-        let member_id = format!("ai:{id}@joy");
+        let member_id = joy_ai::naming::member_id(id);
         let should_register;
 
         if already {
+            if is_tool_stale(root, id, &member_id)? {
+                let mut report = |line: String| qprintln!("    {}{}", color::check_mark(), line);
+                configure(root, &member_id, &mut report)?;
+                newly_configured += 1;
+            }
             dprintln!(
                 "  {}{:<24} {}",
                 color::check_mark(),
                 name,
-                color::inactive("already configured")
+                color::inactive("configured")
             );
             configured_tools.push(*id);
             // Backfill the member entry when the tool was configured outside
@@ -985,7 +1048,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
 
             // Derive the attesting human's keypair on first need.
             if acting.is_none() {
-                // The attester is the human this command acts for (D3.9),
+                // The attester is the human this command acts for,
                 // named by their on-disk member key: in anonymous mode
                 // (ADR-042) the stored attester is then the opaque id and
                 // never a cleartext address, and verification resolves it
@@ -999,16 +1062,15 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
             let (attester_id, attester_kp) = acting.as_ref().unwrap();
 
-            let signed_fields =
-                joy_core::auth::attestation::signed_fields_for(&member_id, &capabilities, None);
-            let attestation = joy_core::auth::attestation::sign_attestation(
+            let mut new_member = joy_core::model::project::Member::ai(capabilities);
+            joy_core::auth::vouch::sign(
+                &project,
                 attester_id,
                 attester_kp,
-                signed_fields,
+                &member_id,
+                &mut new_member,
+                joy_core::auth::vouch::Occasion::New,
             );
-
-            let mut new_member = joy_core::model::project::Member::new(capabilities);
-            new_member.attestation = Some(attestation);
             // Record the ACP adapter on the member (JI-0164): the adapter lives
             // in project.yaml now, so the platform can route turns without a
             // per-member agent file.
@@ -1026,20 +1088,16 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
     }
 
     if project_changed {
-        joy_core::store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!(
-            "{}/{}",
-            joy_core::store::JOY_DIR,
-            joy_core::store::PROJECT_FILE
-        );
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        joy_core::store::save_project(root, &project)?;
     }
 
     if configured_tools.is_empty() {
         dprintln!("  {}No supported AI tools detected.", color::warn_mark());
         dprintln!(
             "  {}",
-            color::inactive("Supported: Claude Code, Qwen Code, Mistral Vibe, GitHub Copilot")
+            color::inactive(
+                "Supported: Claude Code, Qwen Code, Mistral Vibe, Google Antigravity, GitHub Copilot"
+            )
         );
         dprintln!(
             "  {}",

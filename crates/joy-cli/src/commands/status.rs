@@ -118,6 +118,23 @@ pub fn run(args: StatusArgs) -> Result<()> {
     };
     crate::auth_gate::enforce(&mut ctx, &action, &item.id)?;
 
+    // A job is approved (new -> open) and started (open -> in-progress)
+    // only as its assignee can take it for this person: with the jobs
+    // capability, at the level the job asks for and at most the one the
+    // assignee may run at for them (JI-019D-46, joy-core's rule). The
+    // level is the job's own from the approval on.
+    if matches!(item.item_type, ItemType::Job) {
+        let project = store::load_project(&ctx.root)?;
+        item.interaction_level = joy_core::auth::grants::job_step(
+            &project,
+            &item,
+            &old_status,
+            &new_status,
+            ctx.identity.person().id(),
+        )
+        .map_err(|why| anyhow::anyhow!(why))?;
+    }
+
     // Warn when reopening a released item
     if matches!(old_status, Status::Closed | Status::Deferred)
         && !matches!(new_status, Status::Closed | Status::Deferred)
@@ -143,6 +160,10 @@ pub fn run(args: StatusArgs) -> Result<()> {
         }
     }
 
+    // The whole set as closing reads it, kept for the sibling check
+    // after the save so that closing costs one pass over the items.
+    let mut set_before_close: Option<Vec<joy_core::model::Item>> = None;
+
     // Warn when closing an item that has open children
     if matches!(new_status, Status::Closed) {
         let all_items = items::load_items(&ctx.root)?;
@@ -165,6 +186,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
                 );
             }
         }
+        set_before_close = Some(all_items);
     }
 
     // Warn when starting an item with open dependencies
@@ -208,8 +230,7 @@ pub fn run(args: StatusArgs) -> Result<()> {
             }
 
             // Warn if member lacks item capabilities
-            let project_path = store::joy_dir(&ctx.root).join(store::PROJECT_FILE);
-            if let Ok(project) = store::read_project(&project_path) {
+            if let Ok(project) = store::load_project(&ctx.root) {
                 if let Some(member) = project.member_by_key(ctx.identity.member.id()) {
                     if !matches!(
                         member.capabilities,
@@ -292,10 +313,15 @@ pub fn run(args: StatusArgs) -> Result<()> {
     // Auto-close parent when all children are closed
     // (must run before auto_git_post_command so auto-close changes are included)
     if let (Status::Closed, Some(ref parent_id)) = (&new_status, &item.parent) {
-        let all_items = items::load_items(&ctx.root)?;
+        // The set was read before this item was saved as closed, so
+        // the item itself is left out of the question.
+        let all_items = match set_before_close.take() {
+            Some(set) => set,
+            None => items::load_items(&ctx.root)?,
+        };
         let has_open_siblings = all_items
             .iter()
-            .any(|i| i.parent.as_deref() == Some(parent_id) && i.is_active());
+            .any(|i| i.id != item.id && i.parent.as_deref() == Some(parent_id) && i.is_active());
 
         if !has_open_siblings {
             if let Ok(mut parent) = items::load_item(&ctx.root, parent_id) {

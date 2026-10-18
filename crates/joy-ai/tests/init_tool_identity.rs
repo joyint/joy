@@ -1,20 +1,24 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The one identity call site package J11 moves outside joy-cli:
-//! `ai_setup::init_tool`, the desktop app's activation entry (D3.9 and
-//! package J11 of the forge connection NG design, JOY-02A0-6E).
+//! The one identity call site outside joy-cli:
+//! `ai_setup::init_tool`, the desktop app's activation entry
+//! (JOY-02A0-6E).
 //!
 //! It used to attest the AI member it registers with `git config
 //! user.email`; it now asks `joy_core::identity::acting_human_key`. The
 //! two cases that matter to a desktop are that activation works on a
 //! checkout with no git identity at all once the person is known, and
-//! that a checkout where nobody is known says so in D4.5's words instead
+//! that a checkout where nobody is known says so in the words instead
 //! of registering a member attested by a guess.
 //!
 //! ONE test in its own binary: it moves `XDG_STATE_HOME`, `HOME` and
 //! `XDG_CONFIG_HOME`, which are process state, so a second test beside
 //! it would read the device pin or the git identity this one writes.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::path::Path;
 
@@ -26,7 +30,7 @@ const PASSPHRASE: &str = "correct horse battery staple";
 /// A project founded by `founder` with `founder` enrolled, on a device
 /// whose state directory is this test's own. Also leaves the
 /// repository's own `user.email` naming `founder`: since the operator's
-/// 2026-09-19 correction (JOY-02AE-1A, correcting D3.9) `resolve_identity`
+/// 2026-09-19 correction (JOY-02AE-1A) `resolve_identity`
 /// reads git config again, a caller that wants activation attested by
 /// `founder` has to set it explicitly, exactly as a working checkout
 /// would have it.
@@ -52,8 +56,7 @@ fn founded(root: &Path, founder: &str) {
         joy_core::auth::enroll::EnrollmentMaterial {
             verify_key: keypair.public_key().to_hex(),
             kdf_nonce: salt.to_hex(),
-            seed_wrap_passphrase: seed_mod::wrap_seed_with_passphrase(&seed, PASSPHRASE, &salt)
-                .unwrap(),
+            seed_wrap: seed_mod::wrap_seed_with_passphrase(&seed, PASSPHRASE, &salt).unwrap(),
             seed_wrap_recovery: seed_mod::wrap_seed_with_recovery(&seed, &recovery, &salt).unwrap(),
         },
     )
@@ -109,12 +112,12 @@ fn activation_takes_its_attester_from_the_acting_member() {
     founded(root, "alice@example.com");
 
     // The desktop activates a tool. The attester is the member the
-    // repository's own git config names (JOY-02AE-1A, correcting D3.9),
+    // repository's own git config names (JOY-02AE-1A),
     // and the attestation is signed with her seed.
     joy_ai::ai_setup::init_tool(root, "claude", PASSPHRASE, &mut |_| {}).unwrap();
     let project = joy_core::store::load_project(root).unwrap();
     let member = project
-        .member_by_key("ai:claude@joy")
+        .member_by_key("claude")
         .expect("the tool's member is registered");
     let attestation = member
         .attestation
@@ -140,7 +143,7 @@ fn activation_takes_its_attester_from_the_acting_member() {
     );
     let project = joy_core::store::load_project(root).unwrap();
     assert!(
-        project.member_by_key("ai:qwen@joy").is_none(),
+        project.member_by_key("qwen").is_none(),
         "no member is registered on an attester joy had to guess"
     );
 }

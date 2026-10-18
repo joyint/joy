@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Which proxy the connector's own HTTP client uses (D1.11, applied to
-//! the connector by D2.8: "the client honours the same proxy sources").
+//! Which proxy the connector's own HTTP client uses (applied to
+//! the connector: "the client honours the same proxy sources").
 //!
 //! The engine can hand libgit2 `ProxyOptions::auto()` and let it walk
 //! its own order. The connector has no libgit2, so the same order is
-//! walked here, with the two corrections D1.11 names:
+//! walked here, with the two corrections the rule names:
 //!
 //! - `NO_PROXY` is joy's own matcher and applies to a proxy from git
 //!   config too, because libgit2 applies it to the environment branch
@@ -17,9 +17,9 @@
 //!   engine's `joy_core::vcs::proxy::no_proxy_matches`, so an excluded
 //!   host is excluded for a git contact and for a REST call by the
 //!   same rule. It sits in the engine and is re-exported here, because
-//!   this crate depends on the engine already (D2.6a's refresh lock
+//!   this crate depends on the engine already (the refresh lock
 //!   takes `joy_core::util::file_lock`) and the other direction would
-//!   be a cycle. A connector still links no libgit2 transport (D2.1):
+//!   be a cycle. A connector still links no libgit2 transport:
 //!   joy-core's default build has none.
 //! - `ALL_PROXY` / `all_proxy` is read, because libgit2 never reads it
 //!   and git does.
@@ -27,13 +27,13 @@
 //! A SOCKS proxy is refused by name instead of failing obscurely, with
 //! the sentence the engine uses.
 //!
-//! One source of D1.11 is deliberately NOT here yet: the proxy password
-//! that lives in the machine's credential helper. D1.11 resolves it
-//! "through the helper runner of D1.3" and builds
-//! `http://user:pass@proxy:port` in memory, and that runner is J4p's
-//! work in the engine. Until it exists, the connector uses the userinfo
+//! One source is deliberately NOT here yet: the proxy password
+//! that lives in the machine's credential helper. The rule resolves it
+//! "through the helper runner" and builds
+//! `http://user:pass@proxy:port` in memory, and that runner is the
+//! engine's work. Until it exists, the connector uses the userinfo
 //! the proxy URL already carries, which is the same amount a person has
-//! today; when J4p lands, the helper answer is fed in here in one place
+//! today; when it exists, the helper answer is fed in here in one place
 //! ([`choose`]'s result) and nothing else changes.
 
 use crate::gitconfig::GitConfig;
@@ -167,7 +167,7 @@ fn from_env(url: &str, env: &dyn EnvSource) -> Option<String> {
 /// libgit2 parses every proxy URL as an HTTP proxy and always speaks
 /// HTTP CONNECT (httpclient.c:686-700), so a SOCKS proxy is refused by
 /// name rather than attempted. The connector says the same sentence the
-/// engine says (D1.11, D2.8).
+/// engine says.
 fn check_scheme(proxy: &str) -> Result<(), ProxyRefusal> {
     let scheme = proxy
         .split_once("://")
@@ -191,7 +191,7 @@ fn check_scheme(proxy: &str) -> Result<(), ProxyRefusal> {
 }
 
 /// A proxy URL as it may appear in a message: without its userinfo. A
-/// proxy password never reaches a log line or an error text (D1.11).
+/// proxy password never reaches a log line or an error text.
 pub fn redact(proxy: &str) -> String {
     let (scheme, rest) = match proxy.split_once("://") {
         Some((scheme, rest)) => (format!("{scheme}://"), rest),
@@ -203,18 +203,17 @@ pub fn redact(proxy: &str) -> String {
     }
 }
 
-/// THE NO_PROXY matcher (D1.11), and there is one: this function IS
+/// THE NO_PROXY matcher, and there is one: this function IS
 /// [`joy_core::vcs::proxy::no_proxy_matches`], so a host the person
 /// excluded is excluded for a git contact and for a connector's REST
 /// call by the same rule and with the same answer.
 ///
 /// The implementation lives on the engine's side of the two, because
-/// this crate depends on the engine already (the refresh lock of D2.6a
-/// takes `joy_core::util::file_lock`, which landed once with J4a) and
+/// this crate depends on the engine already (the refresh lock
+/// takes `joy_core::util::file_lock`) and
 /// the other direction would close a cycle. It costs a connector
 /// nothing it must not link: joy-core's default build carries no
-/// network transport, so no libgit2 transport comes with the matcher
-/// (D2.1).
+/// network transport, so no libgit2 transport comes with the matcher.
 ///
 /// The grammar is libgit2's (net.c:1070-1117): a comma separated list
 /// of `*`, `*.domain`, `.domain`, `host` and `host:port`, with no CIDR
@@ -229,7 +228,7 @@ pub fn no_proxy_matches(host: &str, port: u16, list: &str) -> bool {
 
 /// The port a contact to `url` really opens, which is what a `host:port`
 /// entry of NO_PROXY is compared against: the one the URL names, or the
-/// scheme's own. The engine derives it the same way (D1.11), so
+/// scheme's own. The engine derives it the same way, so
 /// `NO_PROXY="api.acme.example:443"` excludes the host on both sides.
 fn port_of(url: &str) -> u16 {
     let secure = url
@@ -360,7 +359,7 @@ mod tests {
         );
     }
 
-    /// D1.11's own example: libgit2 loses `b.com` because it does not
+    /// the own example: libgit2 loses `b.com` because it does not
     /// trim. joy trims, so a contact to b.com bypasses the proxy.
     #[test]
     fn no_proxy_entries_are_trimmed() {
@@ -434,13 +433,13 @@ mod tests {
     /// contact. The corpus is the grammar's corners plus the port that
     /// is not a port, which is where the two had drifted apart.
     ///
-    /// Every row carries the answer D1.11 requires, because the
+    /// Every row carries the answer the rule requires, because the
     /// identity alone would hold just as well if both sides were wrong
     /// together; the identity is asserted after it, as the cheap guard
     /// against a second copy growing somewhere. This side owns the
     /// identity because only this side may name the other: the engine
     /// cannot depend back on the shared network layer without a cycle
-    /// (D2.6a's refresh lock takes `joy_core::util::file_lock`).
+    /// (the refresh lock takes `joy_core::util::file_lock`).
     #[test]
     fn the_connector_and_the_engine_share_one_matcher() {
         for (host, port, list, expected) in [
@@ -503,7 +502,7 @@ mod tests {
     }
 
     /// A proxy from git config is subject to NO_PROXY too, which is the
-    /// correction of D1.11 against libgit2.
+    /// correction against libgit2.
     #[test]
     fn a_config_proxy_also_bows_to_no_proxy() {
         let config = GitConfig::from_text("[http]\n proxy = http://proxy.example:3128\n");

@@ -20,8 +20,11 @@ test: test-unit test-cmd test-int
 # what CI runs (cargo test --workspace). Do NOT re-add --lib: it silently
 # skips the integration tests (e.g. job_session_mint) and lets a red CI
 # slip past a green local check. fast-kdf keeps Argon2id minimal for speed.
+# joy-ai/acp: the ACP lane and its tests exist only with that feature, and
+# no member of this workspace turns it on (the platform and the desktop
+# do), so without it here the lane tests ran nowhere.
 test-unit:
-    cargo test --workspace --features fast-kdf
+    cargo test --workspace --features fast-kdf,joy-ai/acp
 
 # Snapshot tests (trycmd)
 test-cmd:
@@ -106,9 +109,9 @@ sync-tutorial:
 # Run fmt-check, lint, test
 # The fast gate, for every commit: static checks plus the functional
 # core. Seconds, not minutes, so nobody is tempted to skip it.
-check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive test-unit test-cmd test-smoke
+check: _toolchain-check sync-tutorial fmt-check lint check-windows guard-vcs guard-certificate-check guard-interactive guard-test-env test-unit test-cmd test-smoke
 
-# ZERO git processes (JOY-01FD-ED, design D3.2). Not "git lives in one
+# ZERO git processes (JOY-01FD-ED). Not "git lives in one
 # place" any more: joy runs on git2 alone, because the operator's reason
 # is mobile and the app has to work on a machine with no git binary at
 # all. joy-core/src/vcs is therefore no longer exempt - it is where the
@@ -162,14 +165,62 @@ guard-vcs:
                 fi
             done
             if [ "$sanctioned" -eq 0 ]; then
-                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only (design D3.2)"
+                echo "guard-vcs: $f spawns a git process (line $line); joy runs git2 only"
                 bad=1
             fi
         done
     done
     exit $bad
 
-# The ONE `certificate_check` closure (design D1.4a). git2 0.21 holds
+# A test inherits nothing of the developer's shell and session
+# (JOY-02BB-C7 - One list of the variables a test never inherits from the
+# person's shell). A developer's shell carries JOY_SESSION, sometimes
+# JOY_USER or JOY_PASSPHRASE, git's identity variables, a forge CLI that
+# is signed in, and a session bus with their keychain behind it. Every
+# test binary used to keep its own list of what to remove, the lists
+# drifted, and under a shell that had the three variables set 47 cases
+# failed while others asked the developer's keychain and their gh.
+# crates/joy-test-env says the rule once, and this guard holds its two
+# halves:
+#
+#   1. Every test binary sweeps its process when it loads:
+#      `joy_test_env::isolate!();` stands in each file directly under a
+#      tests directory and, under #[cfg(test)], in the root of every
+#      crate. Which case reaches the outside cannot be read off its
+#      source, so the only crates left out are the two below the rule:
+#      joy-test-env itself, whose own cases are about the sweep, and
+#      joy-process, which joy-test-env is built on. A crate does not
+#      depend on what depends on it, and the cases of joy-process start
+#      nothing but their own test binary, which they hand a JOY_
+#      variable of their own that the sweep would take away.
+#   2. A test starts a process with joy_test_env::command and no other
+#      way. A mention in a comment is prose, not a spawn.
+#
+# Measured, not assumed: with stray variables in the shell, a canary gh,
+# glab and tea first on PATH and dbus-monitor on the session bus, a run
+# of the unit and bats suites is green, reaches no canary and makes no
+# call to org.freedesktop.Secret.Service.
+guard-test-env:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{justfile_directory()}}"
+    bad=0
+    for f in crates/*/tests/*.rs crates/*/src/lib.rs crates/*/src/main.rs crates/*/src/bin/*.rs; do
+        [ -f "$f" ] || continue
+        case "$f" in crates/joy-test-env/*|crates/joy-process/*) continue ;; esac
+        if ! grep -qE '^joy_test_env::isolate!\(\);$' "$f"; then
+            echo "guard-test-env: $f is the root of a test binary and does not say joy_test_env::isolate!();"
+            bad=1
+        fi
+    done
+    spawn='(joy_process::command|Command::new)\('
+    while IFS=: read -r file line _; do
+        echo "guard-test-env: $file:$line starts a process past joy_test_env::command"
+        bad=1
+    done < <(grep -rnE "$spawn" crates/*/tests --include='*.rs' | grep -vE '^[^:]+:[0-9]+: *(//|\*|/\*)' || true)
+    exit $bad
+
+# The ONE `certificate_check` closure. git2 0.21 holds
 # exactly one such slot per contact (remote_callbacks.rs:27), so a
 # second installer anywhere in the tree would silently take the ssh
 # host key decision away from joy_core::vcs::certificates and hand it
@@ -219,7 +270,7 @@ guard-certificate-check:
     fi
     exit $bad
 
-# The interactive gate of design D3.11: `login`, `logout` and the token
+# The interactive gate: `login`, `logout` and the token
 # paste are compiled OUT of every build that must not perform them, and
 # the platform is the build that must not. Three things can let that
 # drift back, so three things are checked here:
@@ -230,7 +281,7 @@ guard-certificate-check:
 #      repository and is out of reach here, so nothing below can see
 #      whether it asks: that one is the app pipeline's to check.
 #   3. the platform's OWN resolved graph carries no `interactive`
-#      feature node, which is the check D3.11 writes down and the only
+#      feature node, which is the check the rule writes down and the only
 #      one no manifest reading can replace. It needs the platform
 #      checked out beside joy; where it is not, the recipe says so and
 #      the manifest half still runs.
@@ -252,7 +303,7 @@ guard-interactive manifest="../platform/Cargo.toml":
         bad=1
     fi
     if grep -qE '^default = .*"interactive"' "$core"; then
-        echo "guard-interactive: $core has interactive in its DEFAULT features; D3.11 wants it off"
+        echo "guard-interactive: $core has interactive in its DEFAULT features; the rule wants it off"
         bad=1
     fi
     askers=$(grep -lE '^joy-core = .*"interactive"' crates/*/Cargo.toml | sort | tr '\n' ' ')
@@ -281,9 +332,9 @@ guard-interactive manifest="../platform/Cargo.toml":
 
 # Take the pinned host keys off the three public forges again and check
 # them against crates/joy-core/data/host-keys.json, the pin file a
-# release ships (design D1.4a: the Codeberg pin is a blob taken once
+# release ships (the Codeberg pin is a blob taken once
 # and checked against a page that publishes fingerprints only). This is
-# the build step of D1.4a, and CI runs it every night
+# the build step, and CI runs it every night
 # (.github/workflows/ci.yaml, job host-key-pins), so a rotation or a
 # hand-edited pin is noticed by a job and not by a person whose contact
 # failed. Needs the network; the offline half of the same check is the
@@ -417,14 +468,14 @@ setup:
 # queries, JOY-0251-AA)
 #
 # The layout an install has (JOY-029E-9D): joy and joy-forge in the bin
-# directory, so joy resolves the connector by the name order of D2.2,
-# and the host key pin file of design D1.4a under the prefix's share
+# directory, so joy resolves the connector by the name order,
+# and the host key pin file under the prefix's share
 # directory, which is the second candidate of pins::candidates and the
-# path the installers of W1 write. Not into ~/.local/bin: a pin file
+# path the installers write. Not into ~/.local/bin: a pin file
 # there is the first candidate and would shadow the share copy for
 # good. The `rm` line clears exactly that, because an earlier revision
 # of this recipe wrote one. The three legacy names stay in the recipe
-# on purpose: a machine that carries them is the shadowing case of D2.2a.
+# on purpose: a machine that carries them is the shadowing case.
 install:
     cargo build --release -p joy-cli -p joy-bi -p joy-github -p joy-gitlab -p joy-gitea && mkdir -p ~/.local/bin ~/.local/share/joy && cp target/release/joy target/release/joy-forge target/release/joy-bi target/release/joy-github target/release/joy-gitlab target/release/joy-gitea ~/.local/bin/ && rm -f ~/.local/bin/host-keys.json && cp crates/joy-core/data/host-keys.json ~/.local/share/joy/
 
@@ -471,7 +522,8 @@ release bump="patch" prerelease="":
     # its own audit trail.
     just auto-commit
     if [ -n "$(git status --porcelain)" ]; then
-        echo "Error: working tree is not clean."
+        echo "Error: working tree is not clean:"
+        git status --short | sed -n '1,20s/^/  /p'
         exit 1
     fi
     echo "Updating external dependencies..."
@@ -482,8 +534,15 @@ release bump="patch" prerelease="":
     echo "Refreshing Cargo.lock..."
     cargo update --workspace
     echo "Checking (format, lint, test)..."
-    if ! just check > /dev/null 2>&1; then
-        echo "Checks failed. Run 'just check' for details. Rolling bump back."
+    # The output is kept: a check that fails only here, on the bumped
+    # tree, cannot be asked again once the bump is rolled back.
+    check_log="${TMPDIR:-/tmp}/joy-release-check.log"
+    if ! just check > "$check_log" 2>&1; then
+        echo "Checks failed. What failed, from $check_log:"
+        grep -E 'FAILED|panicked at|^error|^not ok|recipe .* failed' "$check_log" | tail -n 20 || true
+        echo "The last lines:"
+        tail -n 25 "$check_log"
+        echo "Rolling bump back."
         # The root manifest is a version file too (release.version-files
         # in .joy/project.yaml): it carries the `[workspace.package]`
         # version that joy-process, joy-forge-net and joy-telemetry
@@ -495,6 +554,14 @@ release bump="patch" prerelease="":
         # (JOY-02A4-89).
         git restore Cargo.toml crates/ Cargo.lock
         exit 1
+    fi
+    # The record commits only what joy wrote, the version files. The lock
+    # file refreshed for the bumped version goes in before it: left
+    # uncommitted behind the tag, it keeps this checkout changed, and the
+    # umbrella release that follows stops on that.
+    if ! git diff --quiet Cargo.lock; then
+        git add Cargo.lock
+        git commit --quiet -m "chore: Cargo.lock for the release [no-item]"
     fi
     joy release record "{{bump}}" "{{prerelease}}"
     tag=$(git describe --tags --exact-match HEAD 2>/dev/null || echo "unknown")
@@ -523,7 +590,7 @@ publish-crates: sync-tutorial
     # joy-bi rides after joy-core (its only internal dependency);
     # joy-forge-net rides after joy-core too, because the connector's
     # refresh lock takes `joy_core::util::file_lock` and its NO_PROXY
-    # matcher is the engine's (D2.6a, JOY-02A3-E4); the three forge
+    # matcher is the engine's (JOY-02A3-E4); the three forge
     # connectors ride after joy-forge-net, which is what they share,
     # joy-telemetry rides after joy-core too, its only internal
     # dependency; and joy-cli after all of them, because it links the
@@ -559,7 +626,7 @@ publish-crates: sync-tutorial
     # old version while every dependent was bumped past them, and
     # `cargo publish -p joy-cli` then asked crates.io for a
     # joy-telemetry that was never uploaded (JOY-02A4-89, the shape of
-    # JOY-0246-B7). No package of the forge connection NG plan may edit
+    # JOY-0246-B7). That work may not edit
     # .joy, so the three inherit instead: `version.workspace = true`
     # against the `[workspace.package]` version of the root manifest,
     # which is in the list, and their joy-core requirement inherits
@@ -696,7 +763,7 @@ publish-crates: sync-tutorial
 # The macOS lane has no recipe here: the apple archives are built,
 # Developer ID signed and verified by the `build-local-artifacts` job of
 # .github/workflows/release.yml, which the tag this step pushes starts
-# (JOY-02A8-F4, design decision 6). What that lane REQUIRES, wherever it
+# (JOY-02A8-F4). What that lane REQUIRES, wherever it
 # runs, is one identity for both copies of the connector: the Developer
 # ID Application certificate of Joydev GmbH, the same one the desktop
 # app signs its sidecars with. On a GitHub hosted runner it arrives as
@@ -708,3 +775,46 @@ publish-crates: sync-tutorial
 # Publish workspace crates, then push + forge release.
 publish: publish-crates
     joy release publish
+
+# Push the AUR package joyint-joy-bin for the published release <version>
+# (with or without the v): the template in packaging/aur takes the
+# release's checksums, is test-built and goes to the AUR with its
+# .SRCINFO. Arch only; the release's AUR job (.github/workflows/aur.yml)
+# runs it in an Arch container with the AUR key.
+publish-aur version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for t in makepkg curl git; do command -v "$t" >/dev/null || { echo "$t not found: the AUR package is built on Arch"; exit 1; }; done
+    version="{{version}}"
+    version="${version#v}"
+    pkg=joyint-joy-bin
+    out="{{source_directory()}}/target/aur/$pkg"
+    rm -rf "$out"; mkdir -p "$out"
+    base="https://github.com/joyint/joy/releases/download/v$version"
+    sha() {
+        curl -fsSL --proto '=https' --retry 6 --retry-delay 20 --retry-all-errors \
+            "$base/joy-cli-$1-unknown-linux-gnu.tar.xz.sha256" | cut -d' ' -f1
+    }
+    x86_64=$(sha x86_64 || true)
+    aarch64=$(sha aarch64 || true)
+    if [ ${#x86_64} -ne 64 ] || [ ${#aarch64} -ne 64 ]; then
+        echo "no published checksums for v$version: publish the release first"
+        exit 1
+    fi
+    sed -e "s|@PKGVER@|${version//-/_}|g" -e "s|@VER@|$version|g" \
+        -e "s|@SHA256_X86_64@|$x86_64|" -e "s|@SHA256_AARCH64@|$aarch64|" \
+        "{{source_directory()}}/packaging/aur/$pkg/PKGBUILD" > "$out/PKGBUILD"
+    cd "$out"
+    makepkg --printsrcinfo > .SRCINFO
+    # --nodeps: nothing is built, the release archive is repacked; the
+    # libraries it runs on are needed where it is installed, not here.
+    makepkg --force --cleanbuild --noconfirm --nodeps
+    repo=$(mktemp -d)
+    trap 'rm -rf "$repo"' EXIT
+    git clone "ssh://aur@aur.archlinux.org/$pkg.git" "$repo"
+    cp PKGBUILD .SRCINFO "$repo/"
+    cd "$repo"
+    git add PKGBUILD .SRCINFO
+    git diff --cached --quiet && { echo "AUR already at $version"; exit 0; }
+    git commit -m "Update to $version"
+    git push origin HEAD:master

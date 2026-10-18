@@ -1,0 +1,11 @@
+id: FX-0001-30
+title: A task from before the member files
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+created_by: founder@example.com
+created: 2026-10-07T20:25:48.090283910Z
+updated: 2026-10-07T20:25:48.090283910Z
+updated_by: founder@example.com

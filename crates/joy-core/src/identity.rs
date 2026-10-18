@@ -4,8 +4,7 @@
 //! Identity resolution for Joy CLI operations.
 //!
 //! Resolves the acting user's identity from, in this order (operator
-//! decision 2026-09-19, item JOY-02AE-1A, correcting D3.9 of
-//! docs/design/forge-connection-ng.md, and the operator's decisions of
+//! decision 2026-09-19, item JOY-02AE-1A, and the operator's decisions of
 //! 2026-09-27, which added the name on the call and put the person's
 //! own session in front of git config):
 //! 0. The name given to this very call: the global `--user <address>`,
@@ -74,10 +73,36 @@ pub struct Identity {
     pub delegated_by: Option<MemberRef>,
     /// Whether this identity was cryptographically authenticated (session or token).
     pub authenticated: bool,
+    /// For an AI member: what its token says the delegator allows it
+    /// (JI-019D-46, see [`crate::auth::grants`]). `None` for a person,
+    /// and for an AI whose token was issued before grants existed.
+    pub grant: Option<String>,
+}
+
+impl Identity {
+    /// A person, or an AI member without a grant of its delegator's own.
+    pub fn new(
+        member: impl Into<MemberRef>,
+        delegated_by: Option<MemberRef>,
+        authenticated: bool,
+    ) -> Self {
+        Identity {
+            member: member.into(),
+            delegated_by,
+            authenticated,
+            grant: None,
+        }
+    }
 }
 
 impl Identity {
     /// Format for event log entries.
+    /// The person behind this identity: the member itself, or for an AI
+    /// member the person it acts for.
+    pub fn person(&self) -> &MemberRef {
+        self.delegated_by.as_ref().unwrap_or(&self.member)
+    }
+
     /// Returns `"member"` or `"member delegated-by:human"`.
     ///
     /// This string is written to the on-disk event log and item `created_by` /
@@ -93,8 +118,8 @@ impl Identity {
 
 /// Resolve the acting identity for the current operation.
 ///
-/// Priority (operator decision 2026-09-19, item JOY-02AE-1A, correcting
-/// D3.9 of the forge connection NG design; the name on the call and the
+/// Priority (operator decision 2026-09-19, item JOY-02AE-1A;
+/// the name on the call and the
 /// session step added by the operator on 2026-09-27): the name given to
 /// this call first, then the delegation session, then the person who
 /// signed in at this terminal, then git config, then the forge account,
@@ -141,6 +166,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
             member: member.into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         });
     }
 
@@ -149,7 +175,18 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     //    against `session_public_key` stored in the session file. Without
     //    possession of the env var a sibling terminal cannot reuse a
     //    session file it can read.
-    if let Some(env_value) = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty()) {
+    //
+    //    A process that carries the variable is an AI's, whether or not
+    //    the session behind it still stands. It never falls back to a
+    //    person's session (step 2): a delegation that expired, was
+    //    rotated or lost its file would otherwise turn the agent into
+    //    the person who signed in on this machine, authenticated and
+    //    with their chat seed. It goes on unproven instead, like git
+    //    config, and the guard refuses what needs proof.
+    let ai_session_env = std::env::var("JOY_SESSION").ok().filter(|s| !s.is_empty());
+    let carries_ai_session = ai_session_env.is_some();
+    let mut said_why = false;
+    if let Some(env_value) = ai_session_env {
         if let Some((sid, ephemeral_private, delegation_private)) =
             crate::auth::session::parse_session_env_full(&env_value)
         {
@@ -190,6 +227,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                     // hint and fall through unauthenticated, as
                                     // the job and cross-project paths do.
                                     hint_once(&reason);
+                                    said_why = true;
                                 } else {
                                     return Ok(Identity {
                                         member: sess.claims.member.clone().into(),
@@ -206,6 +244,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                             .clone()
                                             .map(Into::into),
                                         authenticated: true,
+                                        grant: sess.claims.grant.clone(),
                                     });
                                 }
                             }
@@ -224,9 +263,13 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                             &sess.claims.member,
                             current_pid,
                         ));
+                        said_why = true;
                     }
                 }
             }
+        }
+        if !said_why {
+            hint_once(DEAD_AI_SESSION);
         }
     }
 
@@ -235,12 +278,14 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
     //    member typed outranks an address a config file carries, which
     //    is how somebody works with no git identity at all, and how a
     //    second person acts at a checkout whose config names the first.
-    if let Some(ref p) = project {
+    //    Never for a process that carries JOY_SESSION (see step 1).
+    if let Some(p) = project.as_ref().filter(|_| !carries_ai_session) {
         if let Some(member) = member_key_from_session(p) {
             return Ok(Identity {
                 member: member.into(),
                 delegated_by: None,
                 authenticated: true,
+                grant: None,
             });
         }
     }
@@ -271,6 +316,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         member: member_key.into(),
         delegated_by: None,
         authenticated: false,
+        grant: None,
     })
 }
 
@@ -292,8 +338,17 @@ fn member_key_from_session(project: &Project) -> Option<String> {
     let project_id = crate::auth::session::project_id_of(project);
     let tty = crate::auth::session::current_tty();
     let now = chrono::Utc::now();
-    crate::auth::session::list_project_sessions(&project_id)
-        .ok()?
+    let sessions = crate::auth::session::list_project_sessions(&project_id).ok()?;
+    // A session of this terminal that ran out is said ONCE and then
+    // removed, so the person learns why the next command asks again (or
+    // why they act unproven) instead of meeting a silent change.
+    for ended in sessions.iter().filter(|sess| {
+        !is_ai_member(&sess.claims.member) && sess.claims.expires <= now && sess.claims.tty == tty
+    }) {
+        hint_once(SESSION_ENDED);
+        let _ = crate::auth::session::remove_session(&project_id, &ended.claims.member);
+    }
+    sessions
         .into_iter()
         .filter(|sess| !is_ai_member(&sess.claims.member))
         .filter(|sess| sess.claims.expires > now && sess.claims.tty == tty)
@@ -364,6 +419,16 @@ fn member_key_from_forge_account(root: &Path, project: &Project) -> Option<Strin
         .or_else(|| crate::privacy::member_key_owned_by(project, spec, &ctx, &acting))
 }
 
+/// What an AI reads when the session in `JOY_SESSION` no longer stands
+/// and nothing more specific was said: it expired, its file is gone, or
+/// the value is not a session at all.
+const DEAD_AI_SESSION: &str =
+    "JOY_SESSION is no longer valid: redeem a fresh token (joy auth --token <TOKEN>)";
+
+/// What a person reads once when the session they made at this terminal
+/// has run out.
+const SESSION_ENDED: &str = "Your joy session here has ended: sign in again with `joy auth`";
+
 /// Print one identity hint to stderr, at most once per process.
 ///
 /// [`resolve_identity`] is asked more than once by some commands (the
@@ -388,7 +453,7 @@ fn hint_once(hint: &str) {
 }
 
 /// The at-rest member key the current command acts as (operator decision
-/// 2026-09-19, JOY-02AE-1A, correcting D3.9 of package J11). Every
+/// 2026-09-19, JOY-02AE-1A). Every
 /// joy-cli command that needs to know who is acting asks this and
 /// nothing else, so the order lives in one place: [`resolve_identity`]
 /// reads the delegation session first, then the session of this
@@ -418,14 +483,14 @@ pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
     Ok(member)
 }
 
-/// The at-rest member key of the HUMAN the current command acts for
-/// (D3.9, package J11): the same answer as [`acting_member_key`] for a
+/// The at-rest member key of the HUMAN the current command acts for:
+/// the same answer as [`acting_member_key`] for a
 /// person at a terminal, and the delegating operator under a delegation
 /// session, never the AI.
 ///
 /// This is the question every command asks that needs a passphrase, a
 /// seed or a wrap: an AI member has no `kdf_nonce` and no
-/// `seed_wrap_passphrase` and can never have one, so resolving the AI
+/// `seed_wrap` and can never have one, so resolving the AI
 /// there would refuse work the operator is entitled to do. The operator
 /// is not guessed: it is the `delegated_by` claim the session was signed
 /// with at redemption, so it names the person who issued the token and
@@ -495,7 +560,7 @@ pub fn git_config_prefill() -> Option<String> {
 /// repository's own git config (local before global), then the account
 /// the forge tool for the remote's host reports, and the typed error
 /// when none of the three answers (operator decision 2026-09-19,
-/// JOY-02AE-1A, correcting D3.9, completed in a later addition to the
+/// JOY-02AE-1A, completed in a later addition to the
 /// same item).
 ///
 /// Unlike [`resolve_identity`] this never reads the session: `joy auth`
@@ -556,7 +621,7 @@ fn forge_account_candidate(root: &Path, project: &Project) -> Option<String> {
     acting.emails.first().cloned()
 }
 
-/// The signature a commit of `member` carries in THIS checkout (D4.5).
+/// The signature a commit of `member` carries in THIS checkout.
 /// git config is consulted for the display name only, and only when that
 /// name maps to this very member; everything else comes from the member
 /// id.
@@ -588,7 +653,7 @@ pub fn commit_signature(root: &Path, member: &str) -> Result<(String, String), J
 }
 
 /// Whether this checkout's `user.name` may stand in as the display name
-/// of `member` (D4.5: "name is git config `user.name` when it maps to the
+/// of `member` ("name is git config `user.name` when it maps to the
 /// acting member, else the member id").
 ///
 /// The one way a name maps to a member: a `user.email` in the SAME git
@@ -616,8 +681,8 @@ fn config_name_belongs_to(
     }
 }
 
-/// The two signature fields the member acting in `root` commits with
-/// (D4.5), for a caller that holds no identity of its own.
+/// The two signature fields the member acting in `root` commits with,
+/// for a caller that holds no identity of its own.
 ///
 /// This is what the git binary used to take from `user.name` and
 /// `user.email` when joy shelled `git commit`. libgit2 asks for the
@@ -637,7 +702,9 @@ pub fn acting_signature(root: &Path) -> Result<(String, String), JoyError> {
 pub fn has_ai_members(root: &Path) -> bool {
     let project = load_project_optional(root);
     match project {
-        Some(p) => p.member_keys().any(|k| is_ai_member(k)),
+        Some(p) => p
+            .member_values()
+            .any(|m| m.kind == crate::model::project::MemberKind::Ai),
         None => false,
     }
 }
@@ -682,8 +749,7 @@ pub fn token_session_rejection(
         ));
     }
     let registered = project.members().any(|(_, m)| {
-        m.ai_delegations
-            .get(&sess.claims.member)
+        m.delegation_to(&sess.claims.member)
             .is_some_and(|d| &d.delegation_verifier == verifier)
     });
     if !registered {
@@ -739,8 +805,7 @@ fn ephemeral_public_matches(
 }
 
 fn load_project_optional(root: &Path) -> Option<Project> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    store::read_project(&project_path).ok()
+    store::load_project(root).ok()
 }
 
 #[allow(dead_code)]
@@ -771,6 +836,7 @@ mod tests {
             member: "alice@example.com".into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         };
         assert_eq!(id.log_user(), "alice@example.com");
     }
@@ -778,19 +844,20 @@ mod tests {
     #[test]
     fn identity_log_user_delegated() {
         let id = Identity {
-            member: "ai:claude@joy".into(),
+            member: "claude".into(),
             delegated_by: Some("horst@joydev.com".into()),
             authenticated: false,
+            grant: None,
         };
-        assert_eq!(id.log_user(), "ai:claude@joy delegated-by:horst@joydev.com");
+        assert_eq!(id.log_user(), "claude delegated-by:horst@joydev.com");
     }
 
     #[test]
     fn cross_project_warning_names_session_and_current_projects() {
-        let msg = cross_project_session_warning("JOY", "ai:claude@joy", "JI");
+        let msg = cross_project_session_warning("JOY", "claude", "JI");
         assert!(msg.contains("belongs to project JOY"));
-        assert!(msg.contains("member ai:claude@joy"));
+        assert!(msg.contains("member claude"));
         assert!(msg.contains("current project is JI"));
-        assert!(msg.contains("joy auth token add ai:claude@joy"));
+        assert!(msg.contains("joy auth token add claude"));
     }
 }

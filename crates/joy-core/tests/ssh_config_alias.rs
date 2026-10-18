@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! An ssh config alias is honoured, all the way to the address joy
-//! dials (forge connection NG, design D1.4 and D1.5).
+//! dials.
 //!
 //! libgit2 reads no ssh config at all and opens the socket itself from
 //! the URL, so `git@work:owner/repo.git` with `Host work / HostName
@@ -13,6 +13,10 @@
 //! `IdentityFile` and `User` while doing it.
 //!
 //! Its own test binary: it moves HOME, which is process state.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use joy_core::vcs::remote_url::{RemoteUrl, Transport};
 use joy_core::vcs::{ssh_auth, ssh_config, HostKind};
@@ -50,7 +54,7 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
 
     // The scp-like remote keeps its form, because the two forms do not
     // mean the same path: the bracketed form is the only scp-like
-    // shape that carries a port (D1.5).
+    // shape that carries a port.
     let dialled = ssh_config::effective_url("git@work:owner/repo.git")
         .expect("the alias names another address");
     assert_eq!(dialled, "[git@git.example.com:2222]:owner/repo.git");
@@ -81,6 +85,20 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
         ssh_config::effective_url("https://work/owner/repo.git"),
         None,
         "https is not ssh's business"
+    );
+    // A connector is asked about the address joy dials, never about the
+    // alias: `work` is a name on this machine and no forge has a login
+    // for it. Asked with the alias, `joy release publish` answered "no
+    // GitHub credential for work" while the push before it had gone
+    // through.
+    assert_eq!(
+        joy_core::forge_plugins::Target::remote("git@plain:o/r.git"),
+        joy_core::forge_plugins::Target::Remote("git@git.example.com:o/r.git".into())
+    );
+    assert_eq!(
+        joy_core::forge_plugins::Target::remote("https://github.com/o/r.git"),
+        joy_core::forge_plugins::Target::Remote("https://github.com/o/r.git".into()),
+        "a remote the config does not rename is handed over as written"
     );
     // A rename with no port change keeps the plain scp form.
     assert_eq!(
@@ -124,7 +142,7 @@ fn an_alias_is_dialled_at_its_real_address_and_keeps_its_own_key() {
     );
 
     // The Include is read, so a ProxyJump inside a config.d fragment
-    // is refused by name instead of being invisible (D1.4).
+    // is refused by name instead of being invisible.
     assert!(
         ssh_config::refusal_for_url("git@inside.corp.invalid:o/r.git")
             .expect("the fragment's rule counts")

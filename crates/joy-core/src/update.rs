@@ -94,9 +94,14 @@ pub fn cmp_version(a: &str, b: &str) -> std::cmp::Ordering {
 /// downgrade guard in `main.rs` and by [`VersionMarkerItem`] to refuse
 /// rolling repo state back to an older binary's templates.
 pub fn marker_ahead_of(root: &std::path::Path, current_version: &str) -> Option<String> {
-    let marker = init::last_sync_version(root)?;
-    if cmp_version(&marker, current_version) == std::cmp::Ordering::Greater {
-        Some(marker)
+    marker_ahead(init::last_sync_version(root).as_deref(), current_version)
+}
+
+/// [`marker_ahead_of`] for a caller that already read the marker.
+pub fn marker_ahead(marker: Option<&str>, current_version: &str) -> Option<String> {
+    let marker = marker?;
+    if cmp_version(marker, current_version) == std::cmp::Ordering::Greater {
+        Some(marker.to_string())
     } else {
         None
     }
@@ -167,11 +172,8 @@ pub fn write_migrated_project(
     root: &Path,
     migrated_value: serde_yaml_ng::Value,
 ) -> UpdateResult<()> {
-    let project_path = crate::store::joy_dir(root).join(crate::store::PROJECT_FILE);
     let project: crate::model::project::Project = serde_yaml_ng::from_value(migrated_value)?;
-    crate::store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", crate::store::JOY_DIR, crate::store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    crate::store::save_project(root, &project)?;
     Ok(())
 }
 
@@ -358,7 +360,7 @@ impl UpdateItem for HooksPathItem {
         if vcs.is_repo(root) {
             // The first `joy update` that finds a FOREIGN path records
             // it and says so once, so the hooks the person installed
-            // keep running after joy's (design D3.5).
+            // keep running after joy's.
             if !before {
                 let previous = vcs.config_get(root, "core.hooksPath").unwrap_or_default();
                 init::record_chained_hooks(root, &previous)?;
@@ -562,10 +564,130 @@ pub fn core_items() -> Vec<Box<dyn UpdateItem>> {
     ]
 }
 
+// -- what a sync changed ----------------------------------------------
+//
+// A sync rewrites files in the checkout and nobody commits them: they
+// lie there as changes nobody remembers making, are taken for leftovers
+// and discarded, and then something stops working with no trace of why
+// (JOY-02CF-EE). So whoever runs a sync looks at the checkout before,
+// asks afterwards what the sync changed, and commits exactly that
+// ([`crate::git_ops::commit_project_update`]).
+
+/// The checkout as it stood before a sync.
+pub struct Before {
+    picture: std::collections::BTreeMap<String, String>,
+    /// The joy version this clone was last synced with, read before the
+    /// sync stamps its own.
+    marker: Option<String>,
+}
+
+/// Look at the checkout before a sync runs in it.
+pub fn before(root: &Path) -> Before {
+    Before {
+        picture: crate::vcs::forge::checkout_picture(root),
+        marker: init::last_sync_version(root),
+    }
+}
+
+/// What a sync changed in a checkout.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Changed {
+    /// The paths the sync changed that joy commits.
+    pub paths: Vec<String>,
+    /// The paths the sync changed that joy leaves to the person: a file
+    /// outside joy's own directory that already carried uncommitted
+    /// changes before the sync. Committing it would take the person's
+    /// half finished edit into joy's commit.
+    pub left: Vec<String>,
+    /// The joy version the clone was synced with before, `None` when it
+    /// never was.
+    pub from: Option<String>,
+}
+
+/// Which paths changed in the checkout since [`before`] looked at it.
+///
+/// A path counts when it differs from HEAD now and either did not
+/// before, or holds something else than it did. Under joy's own
+/// directory everything that changed is joy's to commit; elsewhere only
+/// a file that was clean before.
+pub fn changed_since(root: &Path, before: &Before) -> Changed {
+    let mut changed = Changed {
+        from: before.marker.clone(),
+        ..Changed::default()
+    };
+    let joys_own = format!("{}/", crate::store::JOY_DIR);
+    for (path, holds) in crate::vcs::forge::checkout_picture(root) {
+        match before.picture.get(&path) {
+            Some(held) if *held == holds => {}
+            Some(_) if !path.starts_with(&joys_own) => changed.left.push(path),
+            _ => changed.paths.push(path),
+        }
+    }
+    changed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::cmp::Ordering;
+
+    /// A sync's changes are told apart from what lay in the checkout
+    /// before, and a file of the person's that the sync also wrote into
+    /// is left to them unless it is joy's own (JOY-02CF-EE).
+    #[test]
+    fn what_a_sync_changed_is_told_from_what_lay_there_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        crate::vcs::forge::init_repo(root, "main").unwrap();
+        std::fs::create_dir_all(root.join(".joy")).unwrap();
+        for (path, content) in [
+            (".joy/project.yaml", "name: first"),
+            (".gitignore", "target"),
+            ("SECURITY.md", "old"),
+            ("src.rs", "committed"),
+        ] {
+            std::fs::write(root.join(path), content).unwrap();
+        }
+        crate::vcs::forge::stage_paths(root, &[".joy", ".gitignore", "SECURITY.md", "src.rs"])
+            .unwrap();
+        crate::vcs::forge::commit_index(root, "first [no-item]", "m", "m@e.c").unwrap();
+        init::set_last_sync_version(root, "0.1.0").unwrap();
+
+        // the person's own unfinished work, some of it in files joy manages
+        std::fs::write(root.join("src.rs"), "half finished").unwrap();
+        std::fs::write(root.join(".gitignore"), "target\nmine").unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "name: renamed").unwrap();
+        let before = before(root);
+
+        // the sync
+        std::fs::write(root.join("SECURITY.md"), "new").unwrap();
+        std::fs::write(root.join(".gitignore"), "target\nmine\njoy's block").unwrap();
+        std::fs::write(root.join(".joy/project.yaml"), "name: renamed\nschema: 2").unwrap();
+        std::fs::write(root.join(".joy/config.defaults.yaml"), "added").unwrap();
+        init::set_last_sync_version(root, CURRENT_VERSION).unwrap();
+
+        let changed = changed_since(root, &before);
+        assert_eq!(
+            changed.paths,
+            [
+                ".joy/config.defaults.yaml",
+                ".joy/project.yaml",
+                "SECURITY.md"
+            ]
+        );
+        assert_eq!(changed.left, [".gitignore"]);
+        assert_eq!(changed.from.as_deref(), Some("0.1.0"));
+
+        // and a second look finds nothing new
+        let again = super::before(root);
+        assert_eq!(
+            changed_since(root, &again),
+            Changed {
+                from: Some(CURRENT_VERSION.to_string()),
+                ..Changed::default()
+            }
+        );
+    }
 
     #[test]
     fn cmp_version_orders_numerically() {

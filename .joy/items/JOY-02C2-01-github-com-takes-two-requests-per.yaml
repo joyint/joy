@@ -1,0 +1,15 @@
+id: JOY-02C2-01
+title: github.com takes two requests per second per credential
+type: decision
+status: new
+priority: high
+tags:
+- vcs
+- performance
+capabilities:
+- conceive
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-07T09:32:08.317064552Z
+updated: 2026-10-07T09:32:08.317064552Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Operator decision 2026-10-07. The forge budget for github.com was 1.0 request per second, a decided value from before the queue stood per credential (JP-0169-C8). GitHub''s own limits for authenticated git over HTTPS lie far above it. The budget becomes 2.0; codeberg.org (measured 0.9), gitlab.com (documented 5.0) and the unknown host (1.0) stay. Expected: queue waits under chat polling halve. Guards: the sync-queue e2e and the production forge.contact spans.'

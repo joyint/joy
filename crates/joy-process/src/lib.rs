@@ -32,7 +32,7 @@
 //!
 //! Who may be asked anything is NOT this crate's answer any more:
 //! `joy_core::host::HostKind`, set once by the entry point of each host,
-//! decides that (design D1.1 and D1.10), and `headless` answers false on
+//! decides that, and `headless` answers false on
 //! every unix host so it never could. What is left here is the window
 //! rule and nothing else.
 //!
@@ -109,9 +109,9 @@ fn host_has_console() -> bool {
 /// own (git and ssh both give up without a tty).
 ///
 /// For the programs that ask questions: joy's credential helper runner
-/// is the one that reads it, and the host kind of D1.1 is what really
+/// is the one that reads it, and the host kind is what really
 /// decides whether a person may be asked. joy runs no git process at
-/// all any more (design D3.2), so nothing here is about git.
+/// all any more, so nothing here is about git.
 pub fn headless() -> bool {
     !host_has_console()
 }

@@ -1,6 +1,11 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
+// Nothing of the developer's shell and session reaches the unit tests
+// of this crate (JOY-02BB-C7).
+#[cfg(test)]
+joy_test_env::isolate!();
+
 mod auth_gate;
 mod color;
 mod commands;
@@ -10,8 +15,11 @@ mod crypt_session;
 mod editor;
 mod effort;
 mod forge;
+mod member_names;
 mod member_resolver;
+mod migrations;
 mod output;
+mod passphrase_meter;
 mod prompt;
 mod ps_alias;
 mod update_registry;
@@ -136,7 +144,7 @@ pub(crate) struct Cli {
     session: Option<String>,
 
     /// Act as this member
-    #[arg(long, global = true, value_name = "ADDRESS")]
+    #[arg(long, global = true, value_name = "EMAIL")]
     user: Option<String>,
 
     /// Passphrase (non-interactive)
@@ -309,6 +317,31 @@ struct CloseShortcutArgs {
     no_items: bool,
 }
 
+/// What joy says AFTER the command's own output: a hint that must be the
+/// last thing on the screen, where it is seen (operator, 2026-10-14:
+/// "this repo was last synced with a newer joy" stood above the list of
+/// a `joy ls` and scrolled away with it). Said by [`say_what_waits`],
+/// which `main` calls once the command and its error, if any, are out.
+static SAID_AFTER: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+fn say_after(words: String) {
+    SAID_AFTER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .push(words);
+}
+
+/// Say on stderr what waited for the command's output to end.
+pub fn say_what_waits() {
+    for words in SAID_AFTER
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .drain(..)
+    {
+        eprintln!("{}", color::hint_on_stderr(&words));
+    }
+}
+
 /// Detect a binary-version mismatch against the per-clone marker and,
 /// when auto-sync is enabled, run the repo sync. Best-effort: any error
 /// here is swallowed; never blocks a user-facing command.
@@ -332,16 +365,28 @@ fn auto_sync_repo() {
     // binary, refuse to touch anything and warn once. Running an old
     // binary against newer joy-managed files risks dropping schema
     // fields and rolling templates back. See JOY-016B-A1.
-    if let Some(marker) = update_registry::marker_ahead_of(&root, current) {
-        eprintln!(
+    //
+    // The guard, the lazy activation and the sync decision below all
+    // ask this clone's git config. They ask it together: every joy
+    // invocation comes through here, and each open of the repository
+    // is file accesses a slow filesystem makes a person wait for.
+    let state = joy_core::init::clone_state(&root);
+    let recorded = state
+        .as_ref()
+        .and_then(|state| state.last_sync_version.clone());
+    if let Some(marker) = joy_core::update::marker_ahead(recorded.as_deref(), current) {
+        say_after(format!(
             "warning: this repo was last synced with joy {marker}; you are running joy {current}.\n\
              Update joy before continuing to avoid downgrading repo state."
-        );
+        ));
         return;
     }
 
-    // Always reassert lazy activation (cheap and idempotent).
-    let _ = joy_core::init::ensure_lazy_activation(&root);
+    // Always reassert lazy activation (cheap and idempotent). Outside a
+    // git repository there is nothing to activate.
+    if let Some(state) = &state {
+        let _ = joy_core::init::ensure_lazy_activation_for(&root, state);
+    }
 
     // Honour the auto-sync toggle from .joy/config.yaml.
     let config = joy_core::store::load_config();
@@ -349,22 +394,47 @@ fn auto_sync_repo() {
         return;
     }
 
-    match joy_core::init::last_sync_version(&root) {
+    match recorded {
         Some(v) if v == current => {} // already in sync
         recorded => {
             // Run the full sync (lazy-activation + auth update + ai
             // update + stamp marker). Each routine prints its own
             // summary; the trailing one-liner ties them together so the
             // user / AI can spot the version transition.
+            let before = joy_core::update::before(&root);
             let _ = commands::update::run_full_sync(&root, false);
+            // What the sync changed is committed without a question:
+            // changes nobody remembers making get thrown away, and then
+            // nobody knows why something stopped working (JOY-02CF-EE).
+            use joy_core::git_ops::UpdateCommit;
+            let changed = joy_core::update::changed_since(&root, &before);
+            let commit = joy_core::git_ops::commit_project_update(
+                &root,
+                &changed,
+                &commands::update::acting(&root),
+            );
             let prev = recorded.unwrap_or_else(|| "(never)".to_string());
-            eprintln!("joy {current}: synced this repo (previous marker: {prev}).");
+            match &commit {
+                UpdateCommit::Written(id) => eprintln!(
+                    "joy {current}: synced this repo (previous marker: {prev}), committed as {}.",
+                    commands::update::short_id(id)
+                ),
+                _ => eprintln!("joy {current}: synced this repo (previous marker: {prev})."),
+            }
+            if !matches!(commit, UpdateCommit::Written(_)) {
+                if let Some(line) = commands::update::commit_line(&commit) {
+                    eprintln!("  {line}");
+                }
+            }
+            if let Some(line) = commands::update::left_line(&changed) {
+                eprintln!("  {line}");
+            }
         }
     }
 }
 
 /// Say a forge refusal joy-core met on a path that is not the command's
-/// answer, in the words of [`contact_report`] (D3.8): the state, the
+/// answer, in the words of [`contact_report`]: the state, the
 /// plain sentence and the one next step, as one JSON object on stderr in
 /// `--json` mode so that stdout stays the command's one envelope.
 fn say_a_contact_aside(
@@ -377,14 +447,14 @@ fn say_a_contact_aside(
     contact_report::Refusal::of(&host, error).say_aside(headline, tail);
 }
 
-/// Lend joy-core this terminal for the host key question of D1.4a, and
+/// Lend joy-core this terminal for the host key question, and
 /// only where there is a person at it.
 ///
 /// joy-core owns the one `certificate_check` closure and every
 /// known_hosts rule behind it; what it has no way to do is ask. A
 /// `Background` or `Delegated` host installs nothing, and a host that
 /// installs nothing refuses an unknown key with the file and the line
-/// to paste, which is what D1.4a asks of those two anyway.
+/// to paste, which is what the rule asks of those two anyway.
 fn install_host_key_question(kind: joy_core::host::HostKind) {
     if kind == joy_core::host::HostKind::Interactive {
         joy_core::vcs::certificates::set_trust_prompt(ask_about_a_host_key);
@@ -392,7 +462,7 @@ fn install_host_key_question(kind: joy_core::host::HostKind) {
 }
 
 /// What a person is shown before joy trusts a host key it has never
-/// seen (design D1.4a), and what joy would write if they say yes.
+/// seen, and what joy would write if they say yes.
 ///
 /// Everything the person needs to compare with the forge's published
 /// fingerprint is in the two first lines, in the spelling the forges
@@ -460,7 +530,7 @@ pub fn cli_main() -> anyhow::Result<()> {
 
     clap_complete::CompleteEnv::with_factory(Cli::command).complete();
 
-    let raw: Vec<String> = std::env::args().collect();
+    let raw: Vec<String> = member_names::modernise(std::env::args().collect());
     // Use try_parse_from so we can append the Windows PowerShell alias tip to
     // the very end of `joy help` / `joy -h` output (JOY-01C3-90). clap prints
     // help/version and would otherwise exit before we get a chance.
@@ -528,7 +598,7 @@ pub fn cli_main() -> anyhow::Result<()> {
     });
 
     // Who is behind this process, decided ONCE, here, before anything
-    // dispatches (D1.1). Everything downstream reads the answer through
+    // dispatches. Everything downstream reads the answer through
     // `joy_core::host::process_host()` and never looks at the environment
     // again. Two facts go into it: whether a person can be asked anything
     // at all (a terminal on both ends, and not a `--json` run, whose
@@ -554,7 +624,7 @@ pub fn cli_main() -> anyhow::Result<()> {
 
     // ...and this host's way of saying a forge refusal that is not the
     // command's answer, so joy-core's own contacts speak the one
-    // vocabulary of D3.8 too. The auto-git push is the one that needed
+    // vocabulary too. The auto-git push is the one that needed
     // it: with `workflow.auto-git: push` it runs after nearly every joy
     // write, and it said `Warning: auto-git push failed: <prose>` with
     // no state word, no next step and no object under `--json`.
@@ -748,7 +818,7 @@ mod tests {
         );
     }
 
-    /// D1.4a: the question exists where a person does, and nowhere
+    /// The question exists where a person does, and nowhere
     /// else. A `Background` or `Delegated` joy that installed one would
     /// hand an unanswerable question to a hook or an agent; joy-core
     /// then treats "nobody was asked" as its own answer and refuses by
@@ -768,8 +838,8 @@ mod tests {
         clear_trust_prompt();
     }
 
-    /// What a person reads before joy appends a line to known_hosts
-    /// (D1.4a): the host with its port, the fingerprint in the spelling
+    /// What a person reads before joy appends a line to known_hosts:
+    /// the host with its port, the fingerprint in the spelling
     /// the forges publish, the published key when a pin knows one, the
     /// fact that this host is known under other key types, and the file
     /// that would change.

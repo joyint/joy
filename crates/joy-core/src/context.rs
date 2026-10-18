@@ -39,6 +39,7 @@ impl Context {
             member: "unknown".into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         });
         let guard = Guard::load(&root)?;
         Ok(Self {

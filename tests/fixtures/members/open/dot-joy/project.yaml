@@ -1,0 +1,84 @@
+name: Fixture open
+acronym: FX
+language: en
+members:
+  ai:claude@joy:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    adapter: claude
+    verify_key: afd9f387574506b7b21cc87e9e3a33cf8efd6dc6db81df961c7749778e16537e
+    attestation:
+      attester: founder@example.com
+      signed_fields:
+        email: ai:claude@joy
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+      signed_at: 2026-10-07T20:25:48.060498462Z
+      signature: 7d736e4e32efff1d57ce81425253d17379159e82eb25717ac9913e69ddfd262d19fb4ec239662a739abd88f503f546b2d0b9846c4367724d9a7c571937acaf0e
+  founder@example.com:
+    capabilities: all
+    verify_key: 0d5eeac60c05d03211ce6a4f113cf5de7bed760ce0607b1261fe811cbc4a13c3
+    kdf_nonce: 9ae158e53d25f67b4d62eb850499b95fbfb448f74ef4c021e590cf4a44513dd0
+    seed_wrap_passphrase: cade025b589ad492753950165be8df84ec7eb877bdf3bbfd34e4c7289da1e98ce82d7f7c963c2fd1bd23b6633bf8f98adfbe90c00e523e056161df0c
+    seed_wrap_recovery: ddb2392d1cc4594bc05e072ae375f90166ae1e6b885d9c581f6daa84971b2fad8681cc8f31dfcaa8971603457f4d298155bfb5a6e4281bbc98d953a2
+    ai_delegations:
+      ai:claude@joy:
+        delegation_verifier: afd9f387574506b7b21cc87e9e3a33cf8efd6dc6db81df961c7749778e16537e
+        delegation_salt: ec5ddc20990d51a8d8580f2dc87eb2166a569683f3c094de92a92e70eeef0f3c
+        created: 2026-10-07T20:25:48.111161616Z
+    attestation:
+      attester: second@example.com
+      signed_fields:
+        email: founder@example.com
+        capabilities: all
+      signed_at: 2026-10-07T20:25:47.982716649Z
+      signature: b1f9d120f6dd6ed7c58aa048175a2c7286ac8e888734d474cdf2d2d78f7b92a90e0f3c57250aa2ebee0c7ef453bf5a43b81b0108e7a525ba7d14593857c00301
+  second@example.com:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    verify_key: 8b7b18b788e3f803877157cfb7ef7efea56591283f66171d22838e842415364c
+    kdf_nonce: 96eaeda1ec41110f3d4d11e7a7ae4846c8b19ed9aed038ad2e2b2237da764635
+    seed_wrap_passphrase: 510754cc8a3feaf952b21b7ef3cf2f697a17b73f182a2713e54c6d8cc7d5a3d0a4b24f6bb86e9f245aa3573948bc1146e805f288ba8a4308529696ae
+    seed_wrap_recovery: e55edc0553524942cabc6d564228f58a6b21ca72f9480b57eaa26ff1cde90d19666a46ee781fa70c594a863d16b850b54afbf2439b9453acda4a7a13
+    attestation:
+      attester: founder@example.com
+      signed_fields:
+        email: second@example.com
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+        otp_hash: 62de60a57133ebc24ce670f1e38ed9a1f4b10f8bc5139788b32ab172daa2ec31:4c6b7cd685a861ea325e53f219c24e457b13aef8907b6e2633855bc983fcc9ed
+      signed_at: 2026-10-07T20:25:47.950524933Z
+      signature: d35cefb2d1d824b0a7a34883329da87c8418c5044e8d3e015dbeda73843b4c44d9e544e2032dd9571ec7a7bcd5af9f4465faa4f0ae1074b27b627941ffa11304
+created: 2026-10-07T20:25:47.877795627Z

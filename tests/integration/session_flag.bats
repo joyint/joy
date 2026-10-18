@@ -11,7 +11,7 @@ active_member_line() {
 
 @test "joy --session authenticates as AI member equivalent to JOY_SESSION" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     local session="$JOY_SESSION"
     unset JOY_SESSION
 
@@ -19,12 +19,12 @@ active_member_line() {
     [ "$status" -eq 0 ]
     local member_line
     member_line=$(active_member_line "$output")
-    [[ "$member_line" == *"ai:test@joy"* ]]
+    [[ "$member_line" == *"testai"* ]]
 }
 
 @test "joy --session takes precedence over JOY_SESSION env var" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     local good_session="$JOY_SESSION"
     # Set a bogus JOY_SESSION; --session must win.
     export JOY_SESSION="joy_s_bogusvalue"
@@ -33,19 +33,19 @@ active_member_line() {
     [ "$status" -eq 0 ]
     local member_line
     member_line=$(active_member_line "$output")
-    [[ "$member_line" == *"ai:test@joy"* ]]
+    [[ "$member_line" == *"testai"* ]]
 }
 
 @test "joy without --session and without JOY_SESSION has no active AI session" {
     setup_human_auth
-    setup_ai_session ai:test@joy
+    setup_ai_session testai
     unset JOY_SESSION
 
     run joy auth status
     [ "$status" -eq 0 ]
     # The active-session block must not name an AI member; the listing of
-    # delegated sessions may still mention ai:test@joy.
+    # delegated sessions may still mention testai.
     local member_line
     member_line=$(active_member_line "$output")
-    [[ "$member_line" != *"ai:test@joy"* ]]
+    [[ "$member_line" != *"testai"* ]]
 }

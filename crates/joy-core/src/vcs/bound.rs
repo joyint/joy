@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! joy's own bound on a call the operating system does not bound
-//! (design D1.9, JOY-02A7-A2).
+//! (JOY-02A7-A2).
 //!
 //! `vcs::forge::bound_forge_waits` sets libgit2's two socket bounds,
 //! `GIT_OPT_SET_SERVER_CONNECT_TIMEOUT` and `GIT_OPT_SET_SERVER_TIMEOUT`.
@@ -74,7 +74,7 @@ thread_local! {
 /// A Git Credential Manager window and joy's own host key question both
 /// sit inside a libgit2 callback and both are answered by a person, in
 /// their own time. Neither is silence, and a bound that cut them off
-/// would throw away the answer the person was typing (design D1.3's
+/// would throw away the answer the person was typing (the
 /// prompt deadline is the bound that belongs to those, and it is the
 /// helper runner's own).
 pub fn hold() -> Hold {
@@ -115,7 +115,7 @@ pub fn heartbeat() {
 /// What the work says to the caller while it runs, and what it hears
 /// back.
 ///
-/// The one caller is the clone of D4.3: its progress callback belongs to
+/// The one caller is the clone: its progress callback belongs to
 /// the person who started the clone, it is not `Send` and it may not be
 /// moved to another thread, and its answer STOPS the download, so it has
 /// to be asked and answered while the transfer waits. Every count

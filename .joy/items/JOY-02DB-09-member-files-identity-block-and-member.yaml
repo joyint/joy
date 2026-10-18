@@ -1,0 +1,28 @@
+id: JOY-02DB-09
+title: 'Member files: identity block and member type'
+type: story
+status: new
+priority: high
+capabilities:
+- plan
+- implement
+- review
+effort: 4
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-18T07:32:16.016099440Z
+updated: 2026-10-18T07:32:16.016099440Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  GitGuardian flagged the member files of joy 0.23 as "Company Email Password exposed" (joyint/joy, jyn, crypt, joydev-horst/joyint-forge-test on 2026-10-17): a top-level `email: <address>` with `seed_wrap_passphrase` four lines below reads like an address and its password. The same values under the address as a map key (project.yaml up to 0.22) were pushed on 2026-10-12 without an alert.
+
+  New member file shape, format 4:
+  - `type: person | ai | platform`, required; joy names a missing or unknown type instead of guessing.
+  - `identity:` holds one key, the name a member goes by everywhere (address, m-id in an anonymous project, AI name, platform name); under it verify_key, kdf_nonce, seed_wrap, seed_wrap_recovery, enrollment_verifier, email_tag.
+  - Renamed: seed_wrap_passphrase -> seed_wrap, email_match -> email_tag. `email:` and `name:` are gone.
+  - capabilities, adapter, model, level, granted, origin, members_wrap, crypt_wraps, ai_delegations and updated stay at the top.
+
+  Migration: through the existing yes of `joy update` (JOY-02CC-C1); a project of format 2 or 3 is read and written as before until a person says yes, then every member file is rewritten and project.yaml says format 4. A project with its members still in project.yaml goes to format 4 in the same step. Old names are read only in the dated migration.
+
+  Where the project is loaded, the member's type decides instead of the shape of its id; the id rule stays as the fallback where only an id is seen. `platform` is read and written but not used yet: assigning or delegating to a platform member is refused.
+
+  Also: `--user <EMAIL>` instead of `<ADDRESS>`, the SECURITY.md template says .joy/members and the new names.

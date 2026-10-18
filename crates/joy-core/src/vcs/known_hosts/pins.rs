@@ -1,13 +1,12 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The host keys the three public forges publish, shipped as data
-//! (design D1.4a, decision 23).
+//! The host keys the three public forges publish, shipped as data.
 //!
 //! **Data in the release, not code in the binary.** The pins live in
 //! `host-keys.json` inside the release and joy reads that file at run
 //! time: beside the joy binary, or in `<prefix>/share/joy` beside its
-//! `bin` directory. D1.4a asks for exactly this, and for one reason: a
+//! `bin` directory. The rule asks for exactly this, and for one reason: a
 //! pinned host that rotates its key would otherwise be unreachable
 //! until a new joy is built and installed, which is the failure the
 //! pin is supposed to bound rather than cause. Whoever can write into
@@ -27,7 +26,7 @@
 //! it removes the one moment where a man in the middle could be caught
 //! on a fresh machine, and it makes joy refuse a legitimate key
 //! rotation at these hosts until a new pin file arrives. The operator
-//! took that trade (decision 23), because the alternative left a
+//! took that trade, because the alternative left a
 //! container and a fresh CI machine with no way to use an ssh remote at
 //! all. The bound on the cost is this file: a rotation is a file that
 //! is replaced, and the refusal sentence names the joy version and the
@@ -126,7 +125,7 @@ pub fn shipped() -> &'static [PinnedHost] {
 
 /// The pin a contact may consult for one host: the one the release
 /// ships, or nothing. A known_hosts line always wins over it, and it is
-/// asked only where no file holds any line for the host (D1.4a).
+/// asked only where no file holds any line for the host.
 pub fn consulted_for(host: &str) -> Option<&'static PinnedHost> {
     find(shipped(), host)
 }

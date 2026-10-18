@@ -1,0 +1,89 @@
+name: Fixture anonymous
+acronym: FX
+language: en
+privacy: anonymous
+members:
+  ai:claude@joy:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    adapter: claude
+    verify_key: 7d2d3b8e27dba45d4dd463e33d80b18f1d10e727cb85410df8f873ae7b71ab20
+    attestation:
+      attester: m-nl6ts2ldoc
+      signed_fields:
+        email: ai:claude@joy
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+      signed_at: 2026-10-07T20:25:48.345306601Z
+      signature: c28690666a8c717aab366451743469f2204c7d8ce0bf39bf2bce0acbc71a861e60f35b99a0df384b6b11018ab0f0de7275a6648af1520efa8a48f30467a85e03
+  m-4awlodxpte:
+    capabilities:
+      conceive: {}
+      plan: {}
+      design: {}
+      implement: {}
+      test: {}
+      review: {}
+      document: {}
+      create: {}
+      assign: {}
+    verify_key: 2ca3b419656adb33d622d8a701cb9e7d522ae6a7596f1e523a88636c0ad693f2
+    kdf_nonce: 9f38661e2673eca0e02b8390644a41bd54b96bc7e0cbeb0ae91b053d25e67f51
+    seed_wrap_passphrase: 22bcf252b2bcb9f4c2d84bf78f17e415a942d3a5d5c20e057347f5093a3728bdb8d63773c0ffb19d2946366d2878c58871c88d590afbd846dc0e0a3b
+    seed_wrap_recovery: 3861a38d3a8c3a3ea0852c74ee582a3c000be0052ae3e121ef9499ad4b1a54bd8e2407976b57227926763d6c9dbc5590e8ef470a3514ce365205a520
+    email_match: 2cfcf66e96df5b6490a724bd36c151cac9906f7a03a215479f4b04f26a6d8aa1
+    members_wrap: 315f6cdfd242be370c88730ebd940723f35c49c1b207592d63417170b119446c9caa5cbfbf28ad4930a1b1ddd041c946a59bdc8ab80c1b8465ab78b27d02d5a643e6d10c54fe51a0ca2fdbdfdbeef35820eef2e74e84b4a963c489b6
+    attestation:
+      attester: m-nl6ts2ldoc
+      signed_fields:
+        email: m-4awlodxpte
+        capabilities:
+          conceive: {}
+          plan: {}
+          design: {}
+          implement: {}
+          test: {}
+          review: {}
+          document: {}
+          create: {}
+          assign: {}
+        otp_hash: 56927840cdd03490a99012af6a03473e3d056906f9e488a087282c514073bbb8:d5e075daac4df715403ede02b4230fc7e4c3731c8963776fc176b32f058f9444
+      signed_at: 2026-10-07T20:25:48.230882547Z
+      signature: a5dd31cd1fa770ed2b0c3e45ca46921d357651551e7b0754e81c3d63813214a6e440b84afc2049a23b05b0d2dc9b13a522f82ee6d40aa1d288fbc8da7f79df0a
+  m-nl6ts2ldoc:
+    capabilities: all
+    verify_key: 315f6cdfd242be370c88730ebd940723f35c49c1b207592d63417170b119446c
+    kdf_nonce: 94b08d56cac104e1fb80d3fb64c3831583ac3f345180f0a7e51275cea293ac91
+    seed_wrap_passphrase: b68a7450b82bbb86a58f89e1441d0cf213dd264ecc45da0b3df174df781a429b3ecff1237ee0610317c4a8fa6e96638fb991e612340ddbd321b2e573
+    seed_wrap_recovery: 28576d9473b2240dcef1935ba80b2cb76d3591d5b4cb7a68806770358c9ecd9699bd612688dbf44ff4edcbcdb816eef59d0f480f12d0a8b6ca087cd9
+    ai_delegations:
+      ai:claude@joy:
+        delegation_verifier: 7d2d3b8e27dba45d4dd463e33d80b18f1d10e727cb85410df8f873ae7b71ab20
+        delegation_salt: 6b997f1e9a91aa9b4a4d734b4ee5dfb1d5edfb8173b99c7ae7dffb1ccb6e2967
+        created: 2026-10-07T20:25:48.467115001Z
+    email_match: 901ed42e0ab4014740a08d65e3529a94b1b64cad4a586f221a0d148c30bc37e0
+    members_wrap: 315f6cdfd242be370c88730ebd940723f35c49c1b207592d63417170b119446c9ce74b7d2ed1fde3cd2807ad94eac9100bdae841f9bd3d5e90d2347699dce7d5c4fce71866c4d0d1c79810716f4b165856c105041f48d615686a2161
+    attestation:
+      attester: m-4awlodxpte
+      signed_fields:
+        email: m-nl6ts2ldoc
+        capabilities: all
+      signed_at: 2026-10-07T20:25:48.256327107Z
+      signature: a6eaf71d56a70636098ae26990483b2f1ce0c0152e964aa72cdeeedb136190d1ef8dbd7686bb45982f597cf24d43d4b730af9a97497c3daa18cb28dd1ef3bc02
+created: 2026-10-07T20:25:48.163582879Z

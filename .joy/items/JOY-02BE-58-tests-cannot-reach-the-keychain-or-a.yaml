@@ -1,0 +1,14 @@
+id: JOY-02BE-58
+title: Tests cannot reach the keychain or a signed-in forge CLI on macOS and Windows
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+effort: 4
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-10-04T00:54:26.692321180Z
+updated: 2026-10-04T00:54:26.692321180Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Left open by JOY-02BB-C7 - One list of the variables a test never inherits from the person''s shell, and stated as its limit. Two parts of the rule hold on Linux or Unix only. The session bus rule (DBUS_SESSION_BUS_ADDRESS that nothing answers at) keeps a test away from the Secret Service; the macOS keychain and the Windows credential manager are not behind a variable, so on those systems a test that starts the real connector still reads the person''s keychain. The forge CLI stand-ins are shell scripts first on PATH; Windows starts a program by its .exe, so there a test still finds the person''s gh, glab and tea. Expected: the same guarantee on every system joy builds for. This needs a product side seam, not a test trick: for example a way to tell the connector to use the file store only, which the test rule then sets, and stand-ins that are programs on Windows. Decide the seam first (it is a product decision), then extend crates/joy-test-env and the guard.'

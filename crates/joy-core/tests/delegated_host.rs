@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The host kind under a REAL delegation session (D1.1 of the forge
-//! connection NG design, JOY-0297-1A).
+//! The host kind under a REAL delegation session
+//! (JOY-0297-1A).
 //!
 //! The case that matters is the agent on a terminal: it has stdin and
 //! stdout on a PTY, so the terminal answer alone would call it
@@ -13,6 +13,10 @@
 //!
 //! ONE test in its own binary: `JOY_SESSION` and the state directory that
 //! holds the session file are process state.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use chrono::Duration;
 use joy_core::auth::session;
@@ -32,7 +36,10 @@ fn live_session(member: &str, ttl: Duration) -> String {
         Some(ttl),
         &ephemeral.public_key().to_hex(),
         None,
-        Some("human@example.com".to_string()),
+        session::Delegator {
+            member: Some("human@example.com".to_string()),
+            grant: None,
+        },
     );
     session::save_session("DLG", &token).unwrap();
     let sid = session::session_storage_id("DLG", &token.claims);
@@ -51,22 +58,16 @@ fn a_live_session_makes_the_host_delegated_even_on_a_terminal() {
     assert_eq!(HostKind::detect(false), HostKind::Background);
 
     // A live delegation session: the agent owns a terminal and is still
-    // an agent. This is the case J9's refusal rule is written for, and it
+    // an agent. This is the case the refusal rule is written for, and it
     // is the one the value alone cannot prove.
-    std::env::set_var(
-        "JOY_SESSION",
-        live_session("ai:claude@joy", Duration::hours(1)),
-    );
+    std::env::set_var("JOY_SESSION", live_session("claude", Duration::hours(1)));
     assert_eq!(HostKind::detect(true), HostKind::Delegated);
     assert_eq!(HostKind::detect(false), HostKind::Delegated);
     assert!(!HostKind::detect(true).may_ask());
 
     // An expired session is no delegation: the process is what it was
     // before, so a person at the terminal is served rather than refused.
-    std::env::set_var(
-        "JOY_SESSION",
-        live_session("ai:claude@joy", Duration::minutes(-5)),
-    );
+    std::env::set_var("JOY_SESSION", live_session("claude", Duration::minutes(-5)));
     assert_eq!(HostKind::detect(true), HostKind::Interactive);
     assert_eq!(HostKind::detect(false), HostKind::Background);
 

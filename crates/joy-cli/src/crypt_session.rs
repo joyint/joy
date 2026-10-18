@@ -46,8 +46,7 @@ pub fn ensure_zone_keys() -> Result<()> {
     let Some(root) = joy_core::store::find_project_root(&cwd) else {
         return Ok(());
     };
-    let project_path = joy_core::store::joy_dir(&root).join(joy_core::store::PROJECT_FILE);
-    let project = joy_core::store::read_project(&project_path)?;
+    let project = joy_core::store::load_project(&root)?;
     // Who acts here is resolve_identity's own answer: the delegation
     // session first, then git config, then the forge account (operator
     // decision 2026-09-19, JOY-02AE-1A). The AI branch below is reached

@@ -17,7 +17,7 @@ use std::path::Path;
 use crate::error::JoyError;
 use crate::identity::Identity;
 use crate::model::item::{Capability, Status};
-use crate::model::project::{is_ai_member, Member, MemberCapabilities, Project};
+use crate::model::project::{Member, MemberCapabilities, MemberKind, Project};
 use crate::store;
 
 /// What operation is being attempted.
@@ -33,8 +33,8 @@ pub enum Action {
     /// Status change on a `job` item. Separate from [`Action::ChangeStatus`]
     /// because the whole job lifecycle is governed by the `jobs`
     /// capability, and the triage gate (`new -> open`) denies AI members
-    /// by default -- approving a job authorizes its spend, and that
-    /// release belongs to a human unless a `job: new -> open` status
+    /// by default -- setting a job to open lets its assignee take it and
+    /// spend, and that belongs to a human unless a `job: new -> open` status
     /// rule explicitly says otherwise. See JOY-01FE-37.
     /// The job's assignee rides along (JOY-027A-AB): a job is under its
     /// assignee's control, so only the assignee moves it from open to
@@ -49,10 +49,6 @@ pub enum Action {
     ManageProject,
     ManageMilestone,
     CreateRelease,
-    StartJob {
-        capability: Capability,
-        estimated_cost: Option<f64>,
-    },
 }
 
 impl Action {
@@ -77,7 +73,6 @@ impl Action {
                 Status::New => Capability::Create,
             },
             Action::ChangeJobStatus { .. } => Capability::Jobs,
-            Action::StartJob { capability, .. } => *capability,
         }
     }
 }
@@ -143,6 +138,7 @@ pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyErro
         member: "unknown".into(),
         delegated_by: None,
         authenticated: false,
+        grant: None,
     });
     Guard::load(root)?
         .check(action, &identity)
@@ -160,9 +156,17 @@ pub struct GateConfig {
 pub struct Guard {
     members: BTreeMap<String, Member>,
     gates: BTreeMap<String, GateConfig>,
+    /// The project as it was loaded: what an AI member may do is worked
+    /// out from two signed entries in it ([`crate::auth::grants`]).
+    project: Project,
 }
 
 impl Guard {
+    /// Whether the project has an AI member, by the kind of its members.
+    fn has_ai_members(&self) -> bool {
+        self.members.values().any(|m| m.kind == MemberKind::Ai)
+    }
+
     /// Create a Guard from a loaded project (no gates).
     pub fn new(project: &Project) -> Self {
         Self {
@@ -171,6 +175,7 @@ impl Guard {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             gates: BTreeMap::new(),
+            project: project.clone(),
         }
     }
 
@@ -182,13 +187,14 @@ impl Guard {
                 .map(|(k, v)| (k.clone(), v.clone()))
                 .collect(),
             gates,
+            project: project.clone(),
         }
     }
 
     /// Load project.yaml and create a Guard, including gate config.
     pub fn load(root: &Path) -> Result<Self, JoyError> {
         let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-        let project = store::read_project(&project_path)?;
+        let project = store::load_project(root)?;
         let gates = load_gates(&project_path)?;
         Ok(Self::with_gates(&project, gates))
     }
@@ -207,8 +213,8 @@ impl Guard {
 
         // Nobody is acting: no delegation session, no git config naming a
         // member, and no forge account naming one either (operator
-        // decision 2026-09-19, JOY-02AE-1A, correcting D3.9 of package
-        // J11). A fresh clone or a second machine with none of the three
+        // decision 2026-09-19, JOY-02AE-1A).
+        // A fresh clone or a second machine with none of the three
         // arrives here, and an empty name in front of "is not a
         // registered project member" is not a sentence anybody can act
         // on. [`Verdict::enforce`] turns this one into
@@ -218,7 +224,9 @@ impl Guard {
         }
 
         // Look up the member
-        let member = match self.members.get(identity.member.id()) {
+        // By the key the project knows the member under: an AI session
+        // from before the member files still names it the older way.
+        let member = match self.project.member_by_key(identity.member.id()) {
             Some(m) => m,
             None => {
                 return Verdict::Deny(format!(
@@ -229,15 +237,26 @@ impl Guard {
         };
 
         // A job is under its assignee's control (JOY-027A-AB): starting it
-        // and handing it to review are the assignee's alone, whoever else
-        // holds the jobs capability. Changing the assignee stays a plain
+        // and handing it to review are the assignee's, whoever else holds
+        // the jobs capability. Changing the assignee stays a plain
         // assignment, which is how control is handed over.
+        //
+        // One more may start it: a person, when the assignee is an AI
+        // member. An approved job is the AI member's to take from the open
+        // ones; a person who sets it to in-progress themselves orders
+        // exactly this job to be worked now (operator 2026-10-08). Handing
+        // it to review stays the assignee's alone.
         if let Action::ChangeJobStatus { from, to, assignee } = action {
             let assignee_only = matches!(
                 (from, to),
                 (Status::Open, Status::InProgress) | (Status::InProgress, Status::Review)
             );
-            if assignee_only {
+            let ordered_by_a_person = matches!((from, to), (Status::Open, Status::InProgress))
+                && !self.project.is_ai(identity.member.id())
+                && assignee
+                    .as_ref()
+                    .is_some_and(|a| self.project.is_ai(a.id()));
+            if assignee_only && !ordered_by_a_person {
                 match assignee {
                     Some(a) if a.id() == identity.member.id() => {}
                     Some(a) => {
@@ -260,7 +279,7 @@ impl Guard {
             }
         }
         // AI-specific restrictions apply regardless of capabilities (even capabilities: all)
-        if is_ai_member(&identity.member) {
+        if self.project.is_ai(&identity.member) {
             let required = action.required_capability();
 
             // AI members are never allowed to perform manage actions
@@ -284,15 +303,20 @@ impl Guard {
                 }
             }
 
-            // Job gates use `job: `-prefixed status_rules keys. The triage
-            // gate defaults to allow_ai: false -- approving a job is the
-            // human release that authorizes spend.
+            // Two steps of a job are a person's, always (operator
+            // 2026-10-08): approving it (new -> open), which lets its
+            // assignee take it and spend, and accepting its result
+            // (review -> closed). No status rule opens them to an AI
+            // member. The other job steps follow `job: `-prefixed
+            // status_rules keys, open to AI members unless a rule says no.
             if let Action::ChangeJobStatus { from, to, .. } = action {
                 let key = format!("job: {} -> {}", status_str(from), status_str(to));
-                let allow_ai = match self.gates.get(&key) {
-                    Some(gate) => gate.allow_ai,
-                    None => !matches!((from, to), (Status::New, Status::Open)),
-                };
+                let a_persons_step = matches!(
+                    (from, to),
+                    (Status::New, Status::Open) | (Status::Review, Status::Closed)
+                );
+                let allow_ai =
+                    !a_persons_step && self.gates.get(&key).is_none_or(|gate| gate.allow_ai);
                 if !allow_ai {
                     return Verdict::Deny(format!(
                         "AI member {} blocked by job gate on {} (allow_ai: false)",
@@ -308,7 +332,7 @@ impl Guard {
         // passphrase BEFORE this check (the CLI's auth gate, operator
         // 2026-09-27); this refusal is for the host that cannot.
         if self.needs_authentication(action, identity) {
-            let what = if self.members.keys().any(|k| is_ai_member(k)) {
+            let what = if self.has_ai_members() {
                 "this action"
             } else {
                 "manage actions"
@@ -317,6 +341,37 @@ impl Guard {
                 "{} must authenticate to perform {what}. Run `joy auth`.",
                 identity.member
             ));
+        }
+
+        // An AI member of a project with member files may do what two
+        // people signed for it, and nothing else (JI-019D-46): the
+        // project maximum and what its delegator allows. No signature,
+        // no capability; no capability, no action, whichever kind.
+        if self.project.is_ai(&identity.member) && crate::auth::grants::applies(&self.project) {
+            let required = action.required_capability();
+            // A job step is no exception: the assignee that starts its
+            // own job holds the jobs capability for the person it acts
+            // for, the same rule that offered it the job and decided
+            // when the job was set to open (`grants::job_terms`). A
+            // member changed since then is refused here.
+            let delegator = identity
+                .delegated_by
+                .as_ref()
+                .map(|d| d.id())
+                .unwrap_or_default();
+            return match crate::auth::grants::effective(
+                &self.project,
+                identity.member.id(),
+                delegator,
+                identity.grant.as_deref(),
+            ) {
+                Err(reason) => Verdict::Deny(reason),
+                Ok(may) if may.allows(&required) => Verdict::Allow,
+                Ok(_) => Verdict::Deny(format!(
+                    "{} does not have '{}' capability",
+                    identity.member, required
+                )),
+            };
         }
 
         // Fast path: capabilities: all allows everything
@@ -328,25 +383,6 @@ impl Guard {
 
         // Check if the member has the required capability
         if member.has_capability(&required) {
-            // Budget pre-check for StartJob
-            if let Action::StartJob {
-                capability,
-                estimated_cost: Some(cost),
-            } = action
-            {
-                if let MemberCapabilities::Specific(ref map) = member.capabilities {
-                    if let Some(config) = map.get(capability) {
-                        if let Some(max_cost) = config.max_cost_per_job {
-                            if *cost > max_cost {
-                                return Verdict::Deny(format!(
-                                    "{} estimated cost {:.2} exceeds max_cost_per_job {:.2} for '{}'",
-                                    identity.member, cost, max_cost, capability
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
             Verdict::Allow
         } else if required.is_management() {
             // Management actions are hard-denied (not just warned)
@@ -373,7 +409,7 @@ impl Guard {
         if identity.authenticated {
             return false;
         }
-        if self.members.keys().any(|k| is_ai_member(k)) {
+        if self.has_ai_members() {
             return true;
         }
         let auth_active = self.members.values().any(|m| m.verify_key.is_some());
@@ -393,7 +429,7 @@ impl Guard {
     ///   unenrolled members (pre-auth projects, no verifier) count as
     ///   before.
     pub fn is_last_manager(&self, member_id: &str) -> bool {
-        if is_ai_member(member_id) {
+        if self.project.kind_of(member_id) != MemberKind::Person {
             return false;
         }
         let is_manager = self
@@ -411,7 +447,7 @@ impl Guard {
             .filter(|(id, m)| {
                 *id != member_id
                     && m.has_capability(&Capability::Manage)
-                    && !is_ai_member(id)
+                    && m.kind == MemberKind::Person
                     && !pending_invite(m)
             })
             .count();
@@ -472,6 +508,7 @@ mod tests {
             member: member.into(),
             delegated_by: None,
             authenticated: true,
+            grant: None,
         }
     }
 
@@ -480,6 +517,7 @@ mod tests {
             member: member.into(),
             delegated_by: None,
             authenticated: false,
+            grant: None,
         }
     }
 
@@ -488,13 +526,26 @@ mod tests {
             member: member.into(),
             delegated_by: Some(delegated_by.into()),
             authenticated: true,
+            grant: None,
         }
     }
 
     fn project_with_members(members: Vec<(&str, MemberCapabilities)>) -> Project {
         let mut project = Project::new("Test".into(), Some("TST".into()));
         for (name, caps) in members {
-            project.register_member(name, Member::new(caps)).unwrap();
+            // as a project file holds them: an older one may name an AI
+            // member with every capability, which nobody can add today
+            project.insert_as_read(
+                name,
+                Member::of_kind(
+                    if crate::model::project::is_ai_member(name) {
+                        crate::model::project::MemberKind::Ai
+                    } else {
+                        crate::model::project::MemberKind::Person
+                    },
+                    caps,
+                ),
+            );
         }
         project
     }
@@ -506,16 +557,16 @@ mod tests {
 
     /// A job is under its assignee's control (JOY-027A-AB): only the
     /// assignee starts it and hands it to review; everyone with the jobs
-    /// capability still approves, stops, reopens or reassigns.
+    /// capability still opens, stops, reopens or reassigns it.
     #[test]
     fn only_the_assignee_starts_a_job_and_hands_it_to_review() {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             ("other@example.com", MemberCapabilities::All),
-            ("ai:vibe@joy", specific_caps(&[Capability::Jobs])),
+            ("vibe", specific_caps(&[Capability::Jobs])),
         ]);
         let guard = Guard::new(&project);
-        let ai: crate::member_ref::MemberRef = "ai:vibe@joy".into();
+        let ai: crate::member_ref::MemberRef = "vibe".into();
         let start = Action::ChangeJobStatus {
             from: Status::Open,
             to: Status::InProgress,
@@ -523,21 +574,22 @@ mod tests {
         };
         // the assignee, delegated by a human: allowed
         assert_eq!(
-            guard.check(&start, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            guard.check(&start, &ai_identity("vibe", "dev@example.com")),
             Verdict::Allow
         );
-        // a human who is not the assignee: denied, by name
-        match guard.check(&start, &identity("dev@example.com")) {
-            Verdict::Deny(reason) => assert!(reason.contains("only the assignee"), "{reason}"),
-            other => panic!("{other:?}"),
-        }
+        // a person starts an AI member's job: the explicit order to work
+        // exactly this one now
+        assert_eq!(
+            guard.check(&start, &identity("dev@example.com")),
+            Verdict::Allow
+        );
         let review = Action::ChangeJobStatus {
             from: Status::InProgress,
             to: Status::Review,
             assignee: Some(ai.clone()),
         };
         assert_eq!(
-            guard.check(&review, &ai_identity("ai:vibe@joy", "dev@example.com")),
+            guard.check(&review, &ai_identity("vibe", "dev@example.com")),
             Verdict::Allow
         );
         assert!(matches!(
@@ -568,7 +620,7 @@ mod tests {
             guard.check(&nobody, &identity("dev@example.com")),
             Verdict::Deny(_)
         ));
-        // the rest of the lifecycle is not the assignee's alone: approve,
+        // the rest of the lifecycle is not the assignee's alone: open,
         // stop, reopen
         for (from, to) in [
             (Status::New, Status::Open),
@@ -585,6 +637,94 @@ mod tests {
                 Verdict::Allow,
                 "{action:?}"
             );
+        }
+    }
+
+    /// In a project from before the member files an AI member without
+    /// the capability is refused for a MANAGEMENT action and only warned
+    /// for WORK, and the action runs: the validation saw exactly this.
+    /// It stays that way until a person brings the project over; with
+    /// member files the next case holds (JI-019D-46).
+    #[test]
+    fn an_ai_without_the_capability_is_refused_for_management_and_only_warned_for_work() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            ("claude", specific_caps(&[Capability::Review])),
+        ]);
+        let guard = Guard::new(&project);
+        let ai = ai_identity("claude", "dev@example.com");
+
+        match guard.check(&Action::CreateItem, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'create'"), "{reason}"),
+            other => panic!("create without the capability: {other:?}"),
+        }
+
+        let start = Action::ChangeStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+        };
+        match guard.check(&start, &ai) {
+            Verdict::Warn(reason) => assert!(reason.contains("'implement'"), "{reason}"),
+            other => panic!("start without implement: {other:?}"),
+        }
+    }
+
+    /// With member files an AI member does what two people signed for
+    /// it and nothing else: no capability, no action, work or not.
+    #[test]
+    fn with_member_files_an_ai_without_the_capability_is_refused_whatever_the_action() {
+        use crate::auth::vouch::{self, Occasion};
+        use crate::auth::IdentityKeypair;
+        use crate::model::project::MemberLayout;
+
+        let mut project = Project::new("Test".into(), Some("TST".into()));
+        project.set_member_layout(MemberLayout::Files);
+        let kp = IdentityKeypair::from_seed(&[7; 32]);
+        let mut dev = Member::person(MemberCapabilities::All);
+        dev.verify_key = Some(kp.public_key().to_hex());
+        project.register_member("dev@example.com", dev).unwrap();
+        let mut claude = Member::ai(specific_caps(&[Capability::Review]));
+        vouch::sign(
+            &project,
+            "dev@example.com",
+            &kp,
+            "claude",
+            &mut claude,
+            Occasion::New,
+        );
+        project.register_member("claude", claude).unwrap();
+
+        let guard = Guard::new(&project);
+        let ai = ai_identity("claude", "dev@example.com");
+        let start = Action::ChangeStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+        };
+        match guard.check(&start, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'implement'"), "{reason}"),
+            other => panic!("start without implement: {other:?}"),
+        }
+        match guard.check(&Action::CreateItem, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'create'"), "{reason}"),
+            other => panic!("create without the capability: {other:?}"),
+        }
+        let close = Action::ChangeStatus {
+            from: Status::Review,
+            to: Status::Closed,
+        };
+        assert_eq!(guard.check(&close, &ai), Verdict::Allow);
+        // its own job is no exception: taking a job needs the jobs
+        // capability, as the rule that offers the job says
+        // (`grants::job_assignee`); a member changed after the job was
+        // set to open is refused when it starts
+        let take = Action::ChangeJobStatus {
+            from: Status::Open,
+            to: Status::InProgress,
+            assignee: Some("claude".into()),
+        };
+        match guard.check(&take, &ai) {
+            Verdict::Deny(reason) => assert!(reason.contains("'jobs'"), "{reason}"),
+            other => panic!("a job taken without the jobs capability: {other:?}"),
         }
     }
 
@@ -674,7 +814,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -683,7 +823,7 @@ mod tests {
             ),
         ]);
         let guard = Guard::new(&project);
-        let id = ai_identity("ai:claude@joy", "dev@example.com");
+        let id = ai_identity("claude", "dev@example.com");
 
         // AI with Create -> CreateItem = Allow
         assert_eq!(guard.check(&Action::CreateItem, &id), Verdict::Allow);
@@ -715,12 +855,56 @@ mod tests {
         ));
     }
 
+    /// Approving a job and accepting its result are a person's steps for
+    /// good (operator 2026-10-08): no status rule opens them to an AI
+    /// member, while a normal item's steps stay open to it unless a rule
+    /// closes them.
+    #[test]
+    fn approving_and_accepting_a_job_stay_a_persons_whatever_the_rules_say() {
+        let project = project_with_members(vec![
+            ("dev@example.com", MemberCapabilities::All),
+            (
+                "claude",
+                specific_caps(&[Capability::Jobs, Capability::Review, Capability::Create]),
+            ),
+        ]);
+        let mut gates = BTreeMap::new();
+        for key in ["job: new -> open", "job: review -> closed"] {
+            gates.insert(key.to_string(), GateConfig { allow_ai: true });
+        }
+        let guard = Guard::with_gates(&project, gates);
+        let ai = ai_identity("claude", "dev@example.com");
+        for (from, to) in [
+            (Status::New, Status::Open),
+            (Status::Review, Status::Closed),
+        ] {
+            let job_step = Action::ChangeJobStatus {
+                from: from.clone(),
+                to: to.clone(),
+                assignee: Some("claude".into()),
+            };
+            match guard.check(&job_step, &ai) {
+                Verdict::Deny(reason) => assert!(reason.contains("job gate"), "{reason}"),
+                other => panic!("an AI member on a person's job step: {other:?}"),
+            }
+            assert_eq!(
+                guard.check(&job_step, &identity("dev@example.com")),
+                Verdict::Allow
+            );
+            // the same step of a normal item: no rule, so the AI member may
+            assert_ne!(
+                std::mem::discriminant(&guard.check(&Action::ChangeStatus { from, to }, &ai)),
+                std::mem::discriminant(&Verdict::Deny(String::new()))
+            );
+        }
+    }
+
     #[test]
     fn gate_blocks_ai_on_configured_transition() {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -734,7 +918,7 @@ mod tests {
             GateConfig { allow_ai: false },
         );
         let guard = Guard::with_gates(&project, gates);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
         let human = identity("dev@example.com");
 
         // AI blocked by gate
@@ -777,11 +961,11 @@ mod tests {
     #[test]
     fn no_gates_allows_all_transitions() {
         let project = project_with_members(vec![(
-            "ai:claude@joy",
+            "claude",
             specific_caps(&[Capability::Review, Capability::Create]),
         )]);
         let guard = Guard::new(&project); // no gates
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
 
         // Without gates, AI with Review can close
         assert_eq!(
@@ -801,7 +985,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -810,7 +994,7 @@ mod tests {
             ),
         ]);
         let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
+        let ai = ai_identity("claude", "dev@example.com");
         let human = identity("dev@example.com");
 
         // Without gate config, AI with Review capability CAN close items
@@ -912,7 +1096,7 @@ mod tests {
             ),
             // AI agent: can implement, review, create
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[
                     Capability::Implement,
                     Capability::Review,
@@ -924,7 +1108,7 @@ mod tests {
 
         let lead = identity("lead@example.com");
         let dev = identity("dev@example.com");
-        let ai = ai_identity("ai:claude@joy", "lead@example.com");
+        let ai = ai_identity("claude", "lead@example.com");
 
         // === Creating items ===
         // All three can create (all have Create)
@@ -1014,16 +1198,6 @@ mod tests {
         assert_eq!(cs(Status::Deferred).required_capability(), Capability::Plan);
         assert_eq!(cs(Status::Open).required_capability(), Capability::Plan);
         assert_eq!(cs(Status::New).required_capability(), Capability::Create);
-
-        // StartJob delegates to its capability
-        assert_eq!(
-            Action::StartJob {
-                capability: Capability::Implement,
-                estimated_cost: None
-            }
-            .required_capability(),
-            Capability::Implement
-        );
     }
 
     #[test]
@@ -1062,129 +1236,6 @@ mod tests {
         assert_eq!(events[0].event_type, "guard.warned");
         assert_eq!(events[0].target, "TST-0001");
         assert_eq!(events[0].details.as_deref(), Some("caution"));
-    }
-
-    #[test]
-    fn budget_precheck_allows_within_limit() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // Within budget -> Allow
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(3.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-
-        // Exactly at limit -> Allow
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(5.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-    }
-
-    #[test]
-    fn budget_precheck_denies_over_limit() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // Over budget -> Deny
-        let verdict = guard.check(
-            &Action::StartJob {
-                capability: Capability::Implement,
-                estimated_cost: Some(7.50),
-            },
-            &ai,
-        );
-        assert!(matches!(verdict, Verdict::Deny(_)));
-        if let Verdict::Deny(reason) = verdict {
-            assert!(reason.contains("7.50"));
-            assert!(reason.contains("5.00"));
-        }
-    }
-
-    #[test]
-    fn budget_precheck_allows_without_cost_limit() {
-        let project = project_with_members(vec![(
-            "ai:claude@joy",
-            specific_caps(&[Capability::Implement]),
-        )]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // No max_cost_per_job configured -> Allow regardless of cost
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: Some(999.0),
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
-    }
-
-    #[test]
-    fn budget_precheck_allows_without_estimate() {
-        let mut caps = BTreeMap::new();
-        caps.insert(
-            Capability::Implement,
-            crate::model::project::CapabilityConfig {
-                interaction_level: None,
-                max_interaction_level: None,
-                max_cost_per_job: Some(5.0),
-            },
-        );
-        let project =
-            project_with_members(vec![("ai:claude@joy", MemberCapabilities::Specific(caps))]);
-        let guard = Guard::new(&project);
-        let ai = ai_identity("ai:claude@joy", "dev@example.com");
-
-        // No estimated cost -> Allow (can't pre-check what we don't know)
-        assert_eq!(
-            guard.check(
-                &Action::StartJob {
-                    capability: Capability::Implement,
-                    estimated_cost: None,
-                },
-                &ai
-            ),
-            Verdict::Allow
-        );
     }
 
     #[test]
@@ -1242,7 +1293,7 @@ mod tests {
     fn is_last_manager_ai_not_counted() {
         let project = project_with_members(vec![
             ("lead@example.com", MemberCapabilities::All),
-            ("ai:claude@joy", MemberCapabilities::All),
+            ("claude", MemberCapabilities::All),
         ]);
         let guard = Guard::new(&project);
         // AI members don't count as managers (Guard blocks AI from manage)
@@ -1255,10 +1306,10 @@ mod tests {
         // last manager": the human manager still stands (JI-0161-C2).
         let project = project_with_members(vec![
             ("lead@example.com", MemberCapabilities::All),
-            ("ai:vibe@joy", MemberCapabilities::All),
+            ("vibe", MemberCapabilities::All),
         ]);
         let guard = Guard::new(&project);
-        assert!(!guard.is_last_manager("ai:vibe@joy"));
+        assert!(!guard.is_last_manager("vibe"));
     }
 
     #[test]
@@ -1282,7 +1333,7 @@ mod tests {
         let project = project_with_members(vec![
             ("dev@example.com", MemberCapabilities::All),
             (
-                "ai:claude@joy",
+                "claude",
                 specific_caps(&[Capability::Implement, Capability::Create]),
             ),
         ]);

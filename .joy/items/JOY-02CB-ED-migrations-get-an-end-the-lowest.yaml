@@ -1,0 +1,21 @@
+id: JOY-02CB-ED
+title: 'Migrations get an end: the lowest format joy still reads'
+type: rework
+status: new
+priority: medium
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-10T19:36:58.188280452Z
+updated: 2026-10-10T19:36:58.188280452Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Operator 2026-10-10: no legacy carried for good. joy's read-time migrations (migrations/item_yaml, project_yaml, repo) speak of a deprecation window, and none of them names an end. They cannot be removed by date, because the files live in the projects' own repositories: a file is brought over only when it is next saved, a closed job is never saved again, and nothing tells when the last old key is gone.
+
+  What gives them an end:
+  - When a project is lifted to a higher format, joy brings every file up in the same step (at 3: every job file from deadline to until). Then a format number is a statement about the whole project: format 3 means no deadline is left in it.
+  - joy gets a lower bound, the lowest format it still reads. A project below it is brought over once, as a whole, when a newer joy opens it for writing, instead of file by file as it happens.
+  - Once the bound is above a format, the migrations of that format are deleted: the module file and its line in apply.
+
+  First candidate: migrations/item_yaml/m_2026_10_job_until (the only place that knows a job window's old word deadline, JOY-02C9-70, JOY-02CA-EE). The other migrations get the same treatment in the same pass.

@@ -1,0 +1,367 @@
+# Copyright (c) 2026 Joydev GmbH (joydev.com)
+# SPDX-License-Identifier: MIT
+#
+# Nightly builds (JOY-02BF-1C): the current main, built for every target
+# a release is built for, published as ONE rolling GitHub prerelease with
+# the fixed tag `nightly`.
+#
+# Why this is a workflow of its own and not a mode of release.yml: that
+# file is hand-maintained and carries the signing, winget and forge
+# release logic of a real release. A nightly that lived inside it could
+# break a release; one beside it cannot. The price is that the build
+# steps exist twice. The targets do not: both workflows read them from
+# dist-workspace.toml through `dist plan`.
+#
+# What a nightly is NOT, and must never become: something `joy update`
+# installs (operator, 2026-10-04). Four things keep it out, each on its
+# own, and the `guard` step at the end of the publish job checks them
+# after every run:
+#
+#   1. It is a prerelease. GitHub's `releases/latest` is "the most recent
+#      non-prerelease, non-draft release", and that is what joy update
+#      and every installer URL ask for.
+#   2. axoupdater's fallback, the release list, filters prereleases.
+#   3. Its tag is `nightly`, which carries no version. axoupdater parses
+#      a release's tag into a version and drops a release it cannot
+#      parse. For the same reason release.yml, which starts on a tag that
+#      looks like X.Y.Z, does not start on this one.
+#   4. It carries no installer script. axoupdater takes a release for
+#      installable only if it holds a `joy-cli-installer*` asset. A
+#      nightly is the archives and their checksums and nothing else.
+#
+# If immutable releases are ever switched on for this repository, a
+# rolling tag stops working (tag and assets of a published release can
+# no longer change). The way out is a dated tag, and it must not look
+# like a version either: `nightly-2026-10-04`, never `0.22.0-nightly`.
+
+name: Nightly
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+  # A pull request that touches this workflow builds everything and
+  # publishes nothing, so a change here is tried before it is on main.
+  pull_request:
+    paths:
+      - ".github/workflows/nightly.yml"
+
+permissions:
+  contents: read
+
+# One run at a time touches the rolling release; a second one waits.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: "ubuntu-22.04"
+    outputs:
+      # A run with nothing to build still hands the build job a manifest
+      # it can read, so that its condition is a plain "no" and not an
+      # expression error.
+      val: ${{ steps.plan.outputs.manifest || '{"ci":{"github":{"artifacts_matrix":{"include":null}}}}' }}
+      build: ${{ steps.decide.outputs.build }}
+      publishing: ${{ github.event_name != 'pull_request' }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      # The scheduled run builds only when main moved since the last
+      # nightly. A run started by hand, or by a pull request, always builds.
+      - id: decide
+        name: Decide whether there is anything new to build
+        shell: bash
+        run: |
+          set -euo pipefail
+          build=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            last=$(gh api "repos/${{ github.repository }}/git/ref/tags/nightly" -q .object.sha 2>/dev/null || true)
+            if [ "$last" = "${{ github.sha }}" ]; then
+              echo "main is still at $last, which the nightly already holds. Nothing to build."
+              build=false
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+      # joy-core depends on joy-crypt via `path = "../crypt/crates/joy-crypt"`.
+      # actions/checkout refuses paths above $GITHUB_WORKSPACE, so we clone the
+      # public crypt repo via shell into the parent directory of the workspace
+      # so the relative path resolves the same way as in the umbrella checkout.
+      - name: Clone joyint/crypt sibling
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        run: git clone --depth 1 https://github.com/joyint/crypt.git ../crypt
+      - name: Install dist
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        # bash for pipefail, so a failed curl is not a silent success
+        shell: bash
+        run: "curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.31.0/cargo-dist-installer.sh | sh"
+      - name: Cache dist
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: cargo-dist-cache
+          path: ~/.cargo/bin/dist
+      - id: plan
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        run: |
+          dist plan --output-format=json > plan-dist-manifest.json
+          echo "dist ran successfully"
+          cat plan-dist-manifest.json
+          echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
+      # The shape a person unpacks (design D2.1, as release.yml checks it):
+      # joy and the connector in every archive, the host key pin file of
+      # D1.4a beside them.
+      - name: Check the archive shape
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=$(jq -r '
+            .artifacts | to_entries[]
+            | select(.value.kind == "executable-zip") | . as $archive
+            | (["joy", "joy-forge", "host-keys.json"] - [$archive.value.assets[].name])
+            | select(length > 0)
+            | "\($archive.key) is missing \(join(", "))"' plan-dist-manifest.json)
+          if [ -n "$missing" ]; then
+            echo "$missing" >&2
+            exit 1
+          fi
+      - name: "Upload dist-manifest.json"
+        if: ${{ steps.decide.outputs.build == 'true' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-plan-dist-manifest
+          path: plan-dist-manifest.json
+
+  # The build steps of release.yml's build-local-artifacts, without a tag
+  # and without the macOS Developer ID signing.
+  build:
+    name: build (${{ join(matrix.targets, ', ') }})
+    needs:
+      - plan
+    if: ${{ needs.plan.outputs.build == 'true' && fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix }}
+    runs-on: ${{ matrix.runner }}
+    # The `release` environment is what the GitHub OIDC token subject
+    # (repo:joyint/joy:environment:release) has to name for the Entra
+    # federated credential of the Windows signing step (JOY-0190). A pull
+    # request run signs nothing and stays out of that environment.
+    environment: ${{ needs.plan.outputs.publishing == 'true' && 'release' || '' }}
+    permissions:
+      contents: read
+      # OIDC token for the Azure login of the Windows signing step.
+      id-token: write
+    container: ${{ matrix.container && matrix.container.image || null }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      BUILD_MANIFEST_NAME: target/distrib/${{ join(matrix.targets, '-') }}-dist-manifest.json
+    steps:
+      - name: enable windows longpaths
+        run: |
+          git config --global core.longpaths true
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Clone joyint/crypt sibling
+        run: git clone --depth 1 https://github.com/joyint/crypt.git ../crypt
+      - name: Install Rust non-interactively if not already installed
+        if: ${{ matrix.container }}
+        run: |
+          if ! command -v cargo > /dev/null 2>&1; then
+            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+            echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          fi
+      # The key of release.yml on purpose: a release tag can restore a
+      # cache saved on main, so the nightly keeps the release build warm.
+      - name: Cache Rust build outputs
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ runner.os }}-${{ join(matrix.targets, '-') }}
+          workspaces: |
+            . -> target
+          cache-on-failure: true
+      - name: Install dist
+        run: ${{ matrix.install_dist.run }}
+      - name: Fetch local artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Install dependencies
+        run: |
+          ${{ matrix.packages_install }}
+      - name: Build artifacts
+        run: |
+          dist build --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          echo "dist ran successfully"
+      # Signed as a release is (operator, 2026-10-04): an unsigned joy.exe
+      # is likely to be blocked on a managed Windows machine, which is the
+      # machine a nightly is for. Sign in place, check, then let dist
+      # re-archive the signed binaries (see release.yml for why twice).
+      - name: Sign Windows binaries (Artifact Signing)
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        uses: ./.github/actions/sign-windows-exe
+        with:
+          files-folder: target/${{ join(matrix.targets, '_') }}/dist
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      # Only Valid passes; see release.yml for what the other states mean.
+      - name: Check the signed Windows binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        shell: pwsh
+        run: |
+          $dir = "target/${{ join(matrix.targets, '_') }}/dist"
+          $failed = $false
+          foreach ($name in @("joy.exe", "joy-forge.exe")) {
+            $path = Join-Path $dir $name
+            if (-not (Test-Path $path)) {
+              Write-Host "::error::$path is missing, the archive would ship without it"
+              $failed = $true
+              continue
+            }
+            $sig = Get-AuthenticodeSignature $path
+            if ($sig.Status -ne "Valid") {
+              Write-Host "::error::$name has signature status $($sig.Status): $($sig.StatusMessage)"
+              $failed = $true
+              continue
+            }
+            Write-Host "$name is signed and valid, by $($sig.SignerCertificate.Subject)"
+          }
+          if ($failed) { exit 1 }
+      - name: Re-archive signed Windows binaries
+        if: ${{ needs.plan.outputs.publishing == 'true' && contains(join(matrix.targets, ','), 'windows') }}
+        run: |
+          dist build --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+      # The macOS binaries are NOT Developer ID signed here. They are ad
+      # hoc signed, so to the macOS keychain a nightly connector is a
+      # different program from the released one (release.yml, JOY-02A8-F4)
+      # and asks again for a stored forge token.
+      - id: cargo-dist
+        name: Post-build
+        shell: bash
+        run: |
+          echo "paths<<EOF" >> "$GITHUB_OUTPUT"
+          dist print-upload-files-from-manifest --manifest dist-manifest.json >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          cp dist-manifest.json "$BUILD_MANIFEST_NAME"
+      - name: "Upload artifacts"
+        uses: actions/upload-artifact@v6
+        with:
+          name: artifacts-build-local-${{ join(matrix.targets, '_') }}
+          path: |
+            ${{ steps.cargo-dist.outputs.paths }}
+            ${{ env.BUILD_MANIFEST_NAME }}
+
+  # Everything is built before anything is published: replacing an asset
+  # deletes it first, so a build that fails halfway must not have touched
+  # the release yet.
+  publish:
+    needs:
+      - plan
+      - build
+    if: ${{ needs.plan.outputs.publishing == 'true' && needs.build.result == 'success' }}
+    runs-on: "ubuntu-22.04"
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Fetch the built archives
+        uses: actions/download-artifact@v7
+        with:
+          pattern: artifacts-build-local-*
+          path: built/
+          merge-multiple: true
+      # Archives and their checksums, and nothing else. No installer
+      # script (there is none among the local artifacts, and the check
+      # below keeps it that way), no dist-manifest.json, no `-update`
+      # helper: those are what makes a release installable to joy update.
+      - name: Select what a nightly carries
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir nightly
+          find built -type f \( -name 'joy-cli-*.tar.xz' -o -name 'joy-cli-*.zip' \
+            -o -name 'joy-cli-*.tar.xz.sha256' -o -name 'joy-cli-*.zip.sha256' \) \
+            -exec cp {} nightly/ \;
+          ls -l nightly
+          archives=$(find nightly -type f \( -name '*.tar.xz' -o -name '*.zip' \) | wc -l)
+          if [ "$archives" -lt 1 ]; then
+            echo "::error::no archive was built, there is nothing to publish"
+            exit 1
+          fi
+          if ls nightly | grep -qi 'installer'; then
+            echo "::error::an installer script is among the nightly files; joy update could take the release for installable"
+            exit 1
+          fi
+      # The tag is moved to the built commit BEFORE the release is
+      # touched, so the release page never names another commit than the
+      # one its archives were built from.
+      - name: Move the nightly tag to the built commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/$GH_REPO/git/ref/tags/nightly" >/dev/null 2>&1; then
+            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/nightly" \
+              -f sha="${{ github.sha }}" -F force=true >/dev/null
+          else
+            gh api -X POST "repos/$GH_REPO/git/refs" \
+              -f ref="refs/tags/nightly" -f sha="${{ github.sha }}" >/dev/null
+          fi
+      - name: Create or update the nightly prerelease
+        shell: bash
+        run: |
+          set -euo pipefail
+          short=$(printf '%s' "${{ github.sha }}" | cut -c1-8)
+          today=$(date -u +%Y-%m-%d)
+          cat > notes.md <<EOF
+          The current \`main\` of joy, built on $today from commit $short.
+
+          This is not a release. \`joy update\`, winget and the installer scripts never install it; it is here for a machine that needs the current state and cannot build it. Download the archive for your platform, unpack it, and put \`joy\` and \`joy-forge\` on your PATH.
+
+          The Windows binaries are signed. The macOS binaries are not Developer ID signed.
+          EOF
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --prerelease --latest=false \
+              --title "Nightly ($today, $short)" --notes-file notes.md
+          else
+            gh release create nightly --prerelease --latest=false --verify-tag \
+              --title "Nightly ($today, $short)" --notes-file notes.md
+          fi
+          gh release upload nightly nightly/* --clobber
+      # The four things the header names, checked on the release as it
+      # now stands. A run that fails here has published something joy
+      # update might see, and says so loudly instead of quietly.
+      - id: guard
+        name: Guard, joy update must not see the nightly
+        shell: bash
+        run: |
+          set -euo pipefail
+          failed=0
+          prerelease=$(gh api "repos/$GH_REPO/releases/tags/nightly" -q .prerelease)
+          if [ "$prerelease" != "true" ]; then
+            echo "::error::the nightly release is not marked as a prerelease"
+            failed=1
+          fi
+          if gh api "repos/$GH_REPO/releases/tags/nightly" -q '.assets[].name' | grep -qi 'installer'; then
+            echo "::error::the nightly release carries an installer asset"
+            failed=1
+          fi
+          latest=$(gh api "repos/$GH_REPO/releases/latest" -q .tag_name)
+          if ! printf '%s' "$latest" | grep -Eq '^v?[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "::error::the latest release is '$latest', which is not a version tag"
+            failed=1
+          fi
+          if [ "$failed" != 0 ]; then exit 1; fi
+          echo "nightly is a prerelease without an installer; the latest release is $latest"

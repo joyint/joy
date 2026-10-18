@@ -818,7 +818,7 @@ fn welcome_and_maybe_init(cwd: &std::path::Path) -> Result<()> {
     let acronym = prompt::ask_text("Acronym", Some(&acronym_default))?;
 
     // A person is at the terminal and is being asked, so git config may
-    // offer an address; it decides nothing (D3.9).
+    // offer an address; it decides nothing.
     let git_email = joy_core::identity::git_config_prefill();
     let user = prompt::ask_text("User", git_email.as_deref())?;
     let language = prompt::ask_text("Language (e.g. en, de)", Some("en"))?;

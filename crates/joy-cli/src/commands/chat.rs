@@ -14,9 +14,9 @@ use anyhow::Result;
 use crate::color;
 use clap::{Args, Subcommand};
 
-// No `Vcs` and no `contact::Failure` import is left here: J6 retired this
-// file's own stderr classifier in favour of `contact::as_joy_error`, and
-// J11 took the last `user_email()` call off the `Vcs` trait (D3.9). The
+// No `Vcs` and no `contact::Failure` import is left here: this
+// file's own stderr classifier went in favour of `contact::as_joy_error`, and
+// the last `user_email()` call is off the `Vcs` trait. The
 // test module below imports the `Failure` words it names itself.
 
 #[derive(Args)]
@@ -91,8 +91,8 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 /// fast-forward / message-union merge), push when the local ref is
 /// ahead.
 ///
-/// The transfer runs through the git2 engine, like every other host's
-/// (D3.2): the CLI used to spawn `git fetch` and `git push` here, which
+/// The transfer runs through the git2 engine, like every other host's:
+/// the CLI used to spawn `git fetch` and `git push` here, which
 /// was the last git process on the chat write path and the one thing a
 /// machine without a git binary could not do. The chat SEMANTICS were
 /// never this file's - they live in `joy_chat_store::chat_ref` and every
@@ -100,13 +100,13 @@ fn acting_member(root: &std::path::Path) -> Result<joy_core::member_ref::MemberR
 ///
 /// NEVER fatal: a chat is committed locally before any network I/O, so a
 /// failed sync only delays visibility. What the failure MEANS comes from
-/// the engine's classifier (D1.8a) and is said in the one vocabulary of
-/// D3.8; the four substring rules that used to read git's stderr here
+/// the engine's classifier and is said in the one vocabulary;
+/// the four substring rules that used to read git's stderr here
 /// are gone with the git process that wrote it.
 fn chat_auth() -> joy_core::vcs::forge::Auth {
     // The machine's own credentials, for the host kind `cli_main`
-    // decided (D1.1). An agent under JOY_SESSION is `Delegated`, so
-    // nothing below can raise a prompt (D1.10).
+    // decided. An agent under JOY_SESSION is `Delegated`, so
+    // nothing below can raise a prompt.
     joy_core::vcs::forge::Auth::LocalAs(joy_core::host::process_host())
 }
 
@@ -116,7 +116,7 @@ fn chat_auth() -> joy_core::vcs::forge::Auth {
 ///
 /// The probe asks the question the transfer that follows really asks.
 /// `chat_ref::sync_with_forge` and `forge::push_ref` contact the remote
-/// `origin_or_first` picks (D1.1), which is what
+/// `origin_or_first` picks, which is what
 /// `forge::default_remote_name` names. This used to read
 /// `sync.remote` (default `origin`) instead, the only reader of that key
 /// in the product, and the two questions disagreed in both directions:
@@ -174,8 +174,8 @@ fn sync_ref(root: &std::path::Path) {
 }
 
 /// Which way the refused transfer went. It no longer decides what the
-/// failure MEANS - the engine's classifier reads the direction itself
-/// (D1.8a), so the same HTTP status can mean two things there - it
+/// failure MEANS - the engine's classifier reads the direction itself,
+/// so the same HTTP status can mean two things there - it
 /// decides only what this command says did not happen.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Way {
@@ -201,9 +201,9 @@ impl Way {
     }
 }
 
-/// What a refused chat sync says, in the one vocabulary of D3.8: the
+/// What a refused chat sync says, in the one vocabulary: the
 /// state's sentence, the state WORD an agent reads, the ONE next step
-/// (for `needs_sign_in` the door this CLI now has, D3.10), and the
+/// (for `needs_sign_in` the door this CLI now has), and the
 /// engine's detail line.
 ///
 /// A sync is never this command's answer, so it never writes to stdout
@@ -382,7 +382,15 @@ fn establish_reader_seed(root: &std::path::Path) -> Result<()> {
 pub fn run(args: ChatArgs) -> Result<()> {
     let root = joy_core::store::find_project_root(&std::env::current_dir()?)
         .ok_or_else(|| anyhow::anyhow!("not inside a Joy project"))?;
-    establish_reader_seed(&root)?;
+    // The listing asks for nothing it cannot use: it fetches first, and
+    // only when a sealed chat is there does it go through the gate. A
+    // project with no chat at all answered "Passphrase:" before it could
+    // say "No chats.". Every other verb opens or writes a chat and needs
+    // the seed at the door.
+    let is_ls = matches!(args.command, ChatCommand::Ls { .. });
+    if !is_ls {
+        establish_reader_seed(&root)?;
+    }
     // EVERY verb pulls first (JOY-022A-4D): reads see replies from the
     // platform and other members, and writes append on the ADOPTED
     // remote state — sealing under the chat's existing crypt epoch. A
@@ -402,6 +410,9 @@ pub fn run(args: ChatArgs) -> Result<()> {
     // the common case instead of three.
     if is_read {
         sync_ref(&root);
+    }
+    if is_ls && joy_chat_store::chat_store::any_sealed(&root) {
+        establish_reader_seed(&root)?;
     }
     let is_show = matches!(args.command, ChatCommand::Show { .. });
     let result = run_command(&root, args.command);
@@ -597,16 +608,13 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             // session and no turn host, so an AI it addresses would never
             // answer - and the sender would never learn why (JOY-0270-40,
             // Horst 2026-08-30: refuse, do not send into the void).
-            let members: Vec<String> = joy_core::store::load_project(root)?
-                .members()
-                .map(|(id, _)| id.clone())
-                .collect();
+            let project = joy_core::store::load_project(root)?;
+            let members: Vec<String> = project.member_keys().cloned().collect();
             let addressed = joy_chat::mentions::leading_mentions(&text, &members);
-            if let Some(ai) = addressed.iter().find(|id| id.starts_with("ai:")) {
+            if let Some(ai) = addressed.iter().find(|id| project.is_ai(id)) {
                 anyhow::bail!(
                     "@{} answers only when addressed from the app (an AI turn runs under the sender's chat session there); nothing sent. Address {} in the app, or send the message without the mention.",
-                    joy_chat::mentions::alias(ai),
-                    joy_chat::mentions::alias(ai)
+                    ai, ai
                 );
             }
             // An @name at the START takes that member into the chat (Horst
@@ -794,12 +802,13 @@ mod sync_tests {
             action: None,
             next_try: None,
             self_imposed: false,
+            renew_hint: false,
         }))
     }
 
     /// The vocabulary is the classifier's, and this file only decides
     /// what did not happen. The four substring rules that used to read
-    /// git's stderr here are gone with the git process (D3.8).
+    /// git's stderr here are gone with the git process.
     #[test]
     fn the_words_of_the_classifier_are_the_words_of_this_file() {
         let error = refused(Failure::NoPushRights, "You can read this repository.");

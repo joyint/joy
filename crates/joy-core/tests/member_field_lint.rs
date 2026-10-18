@@ -17,6 +17,10 @@
 //! struct field to be `MemberRef`, so this test does, for the model files that
 //! are serialized into the `.joy` working tree.
 
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
+
 use std::path::Path;
 
 /// Field names that denote a project member (an identity) and therefore must be

@@ -450,6 +450,27 @@ pub fn load(root: &std::path::Path, id: &str, seed: &[u8; 32]) -> Result<Option<
 }
 
 /// Every new-format chat the reader can open, folded (unsorted).
+/// Whether the store holds any sealed chat at all, asked WITHOUT a key:
+/// a listing uses it to decide whether there is anything a passphrase
+/// could open before it asks a person for one.
+pub fn any_sealed(root: &std::path::Path) -> bool {
+    let Ok(repo) = chat_ref::open_repo(root) else {
+        return false;
+    };
+    let Ok(Some(commit)) = chat_ref::ref_commit(&repo) else {
+        return false;
+    };
+    let Ok(root_tree) = commit.tree() else {
+        return false;
+    };
+    let found = root_tree.iter().any(|e| {
+        e.to_object(&repo)
+            .and_then(|o| o.peel_to_tree())
+            .is_ok_and(|chat_tree| is_new_format(&repo, &chat_tree))
+    });
+    found
+}
+
 pub fn load_all(root: &std::path::Path, seed: &[u8; 32]) -> Result<Vec<Chat>, JoyError> {
     let repo = chat_ref::open_repo(root)?;
     let Some(commit) = chat_ref::ref_commit(&repo)? else {
@@ -558,7 +579,7 @@ mod tests {
                 .public_key()
                 .to_hex(),
         );
-        let mut anna = Member::new(MemberCapabilities::All);
+        let mut anna = Member::person(MemberCapabilities::All);
         anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
         project.register_member("anna@example.com", anna).unwrap();
         joy_core::store::write_yaml(
@@ -738,14 +759,14 @@ mod tests {
     #[test]
     fn a_chat_whose_first_message_mentions_an_ai_stays_readable_to_its_creator() {
         let (dir, horst, _anna) = project();
-        // add an AI member with its own key (like ai:vibe@joy)
+        // add an AI member with its own key (like vibe)
         let ai_seed = [9u8; 32];
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
-        let mut vibe = joy_core::model::project::Member::new(
-            joy_core::model::project::MemberCapabilities::All,
+        let mut vibe = joy_core::model::project::Member::ai(
+            joy_core::model::project::MemberCapabilities::all_for_ai(),
         );
         vibe.verify_key = Some(IdentityKeypair::from_seed(&ai_seed).public_key().to_hex());
-        project.register_member("ai:vibe@joy", vibe).unwrap();
+        project.register_member("vibe", vibe).unwrap();
         joy_core::store::write_yaml(
             &joy_core::store::joy_dir(dir.path()).join(joy_core::store::PROJECT_FILE),
             &project,
@@ -777,7 +798,7 @@ mod tests {
         crate::chats::add_participant(
             dir.path(),
             &mut reloaded,
-            MemberRef::new("ai:vibe@joy"),
+            MemberRef::new("vibe"),
             &MemberRef::new("horst@example.com"),
             ts(2),
         )

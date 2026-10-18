@@ -64,6 +64,22 @@ pub struct SessionClaims {
     /// behind the AI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegated_by: Option<String>,
+    /// What the token this session was redeemed from says its delegator
+    /// allows the AI member (JI-019D-46): the hash of their signed
+    /// grant, or `none`. The guard holds the delegator's entry against
+    /// it on every action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant: Option<String>,
+}
+
+/// The person an AI session acts for, as its token names them.
+#[derive(Debug, Clone, Default)]
+pub struct Delegator {
+    /// Their member id, as it is written at rest.
+    pub member: Option<String>,
+    /// What the token says they allow the AI member
+    /// ([`SessionClaims::grant`]).
+    pub grant: Option<String>,
 }
 
 /// A session token: claims + Ed25519 signature.
@@ -155,8 +171,12 @@ pub fn create_session_for_ai(
     ttl: Option<Duration>,
     delegation_key: &str,
     token_expires: Option<DateTime<Utc>>,
-    delegated_by: Option<String>,
+    delegator: Delegator,
 ) -> SessionToken {
+    let Delegator {
+        member: delegated_by,
+        grant,
+    } = delegator;
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
     let session_expiry = now + ttl;
@@ -179,6 +199,7 @@ pub fn create_session_for_ai(
         // now travels in the signed claims so `delegated-by:` is correct
         // wherever the session runs.
         delegated_by,
+        grant,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
@@ -211,6 +232,7 @@ fn create_session_with_delegation_key(
         session_public_key: None,
         tty,
         delegated_by: None,
+        grant: None,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = keypair.sign(claims_json.as_bytes());
@@ -562,7 +584,7 @@ pub fn list_project_sessions(project_id: &str) -> Result<Vec<SessionToken>, JoyE
         let Ok(token) = serde_json::from_str::<SessionToken>(&json) else {
             continue;
         };
-        if token.claims.project_id == project_id {
+        if token.claims.project_id == project_id && !from_before(&token) {
             sessions.push(token);
         }
     }
@@ -648,7 +670,15 @@ pub fn load_session_by_id(id: &str) -> Result<Option<SessionToken>, JoyError> {
     })?;
     let token: SessionToken =
         serde_json::from_str(&json).map_err(|e| JoyError::AuthFailed(format!("{e}")))?;
-    Ok(Some(token))
+    Ok((!from_before(&token)).then_some(token))
+}
+
+/// Whether a session was made for an AI member under its legacy form
+/// ([`joy_model::migrations::ai_member_name`]). Its claims are signed as they stand, so
+/// they cannot be rewritten; a session is ephemeral, and such a one
+/// counts as none: the next `joy auth` makes one under the name.
+fn from_before(token: &SessionToken) -> bool {
+    joy_model::migrations::ai_member_name::is_legacy(&token.claims.member)
 }
 
 /// Whether a non-expired session for `member` exists on disk for this project.
@@ -851,8 +881,15 @@ mod tests {
     fn ai_session_carries_ephemeral_public_key() {
         let ephemeral = IdentityKeypair::from_random();
         let ephemeral_pk = ephemeral.public_key().to_hex();
-        let token =
-            create_session_for_ai(&ephemeral, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let token = create_session_for_ai(
+            &ephemeral,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         assert_eq!(
             token.claims.session_public_key.as_deref(),
             Some(ephemeral_pk.as_str())
@@ -870,12 +907,12 @@ mod tests {
         let token_expires = Utc::now() + Duration::minutes(30);
         let token = create_session_for_ai(
             &ephemeral,
-            "ai:claude@joy",
+            "claude",
             "TST",
             None,
             "dkey",
             Some(token_expires),
-            None,
+            Delegator::default(),
         );
         // Session expiry should equal token_expires (within a tiny window).
         let delta = (token.claims.expires - token_expires).num_seconds().abs();
@@ -888,12 +925,12 @@ mod tests {
         let token_expires = Utc::now() + Duration::days(7);
         let token = create_session_for_ai(
             &ephemeral,
-            "ai:claude@joy",
+            "claude",
             "TST",
             Some(Duration::hours(1)),
             "dkey",
             Some(token_expires),
-            None,
+            Delegator::default(),
         );
         // Session expiry should be ~1h, not 7 days.
         let session_ttl = token.claims.expires - token.claims.created;
@@ -926,7 +963,7 @@ mod tests {
         // instead of being quietly honored.
         let json = r#"{
             "claims": {
-                "member": "ai:claude@joy",
+                "member": "claude",
                 "project_id": "TST",
                 "created": "2026-01-01T00:00:00Z",
                 "expires": "2099-01-02T00:00:00Z",
@@ -1000,10 +1037,24 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first =
-            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
-        let second =
-            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let first = create_session_for_ai(
+            &first_kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
+        let second = create_session_for_ai(
+            &second_kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 
@@ -1024,18 +1075,13 @@ mod tests {
             second.claims.session_public_key
         );
 
-        assert_eq!(
-            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
-            2
-        );
-        assert!(has_active_session("TST", "ai:claude@joy"));
+        assert_eq!(list_member_sessions("TST", "claude").unwrap().len(), 2);
+        assert!(has_active_session("TST", "claude"));
 
         // remove_session signs the member out everywhere.
-        remove_session("TST", "ai:claude@joy").unwrap();
-        assert!(list_member_sessions("TST", "ai:claude@joy")
-            .unwrap()
-            .is_empty());
-        assert!(!has_active_session("TST", "ai:claude@joy"));
+        remove_session("TST", "claude").unwrap();
+        assert!(list_member_sessions("TST", "claude").unwrap().is_empty());
+        assert!(!has_active_session("TST", "claude"));
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_STATE_HOME") };
@@ -1051,21 +1097,28 @@ mod tests {
         let expired_kp = IdentityKeypair::from_random();
         let expired = create_session_for_ai(
             &expired_kp,
-            "ai:claude@joy",
+            "claude",
             "TST",
             Some(Duration::seconds(-1)),
             "dkey",
             None,
-            None,
+            Delegator::default(),
         );
         save_session("TST", &expired).unwrap();
 
         let fresh_kp = IdentityKeypair::from_random();
-        let fresh =
-            create_session_for_ai(&fresh_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let fresh = create_session_for_ai(
+            &fresh_kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         save_session("TST", &fresh).unwrap();
 
-        let sessions = list_member_sessions("TST", "ai:claude@joy").unwrap();
+        let sessions = list_member_sessions("TST", "claude").unwrap();
         assert_eq!(sessions.len(), 1, "expired session swept on save");
         assert_eq!(
             sessions[0].1.claims.session_public_key,
@@ -1114,10 +1167,18 @@ mod tests {
         unsafe { std::env::set_var("XDG_STATE_HOME", tmp.path()) };
 
         let kp = IdentityKeypair::from_random();
-        let token = create_session_for_ai(&kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let token = create_session_for_ai(
+            &kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         let dir = session_dir().unwrap();
         std::fs::create_dir_all(&dir).unwrap();
-        let legacy_sid = session_id("TST", "ai:claude@joy");
+        let legacy_sid = session_id("TST", "claude");
         std::fs::write(
             dir.join(format!("{legacy_sid}.json")),
             serde_json::to_string(&token).unwrap(),
@@ -1125,15 +1186,12 @@ mod tests {
         .unwrap();
 
         assert!(load_session_by_id(&legacy_sid).unwrap().is_some());
-        assert_eq!(
-            list_member_sessions("TST", "ai:claude@joy").unwrap().len(),
-            1
-        );
-        assert!(has_active_session("TST", "ai:claude@joy"));
+        assert_eq!(list_member_sessions("TST", "claude").unwrap().len(), 1);
+        assert!(has_active_session("TST", "claude"));
 
-        remove_session("TST", "ai:claude@joy").unwrap();
+        remove_session("TST", "claude").unwrap();
         assert!(load_session_by_id(&legacy_sid).unwrap().is_none());
-        assert!(!has_active_session("TST", "ai:claude@joy"));
+        assert!(!has_active_session("TST", "claude"));
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_STATE_HOME") };
@@ -1148,10 +1206,24 @@ mod tests {
 
         let first_kp = IdentityKeypair::from_random();
         let second_kp = IdentityKeypair::from_random();
-        let first =
-            create_session_for_ai(&first_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
-        let second =
-            create_session_for_ai(&second_kp, "ai:claude@joy", "TST", None, "dkey", None, None);
+        let first = create_session_for_ai(
+            &first_kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
+        let second = create_session_for_ai(
+            &second_kp,
+            "claude",
+            "TST",
+            None,
+            "dkey",
+            None,
+            Delegator::default(),
+        );
         save_session("TST", &first).unwrap();
         save_session("TST", &second).unwrap();
 
@@ -1160,17 +1232,17 @@ mod tests {
         // SAFETY: env mutation serialized via ENV_LOCK
         unsafe { std::env::set_var("JOY_SESSION", &env_value) };
 
-        let resolved = current_env_session("TST", "ai:claude@joy").unwrap();
+        let resolved = current_env_session("TST", "claude").unwrap();
         assert_eq!(
             resolved.claims.session_public_key, second.claims.session_public_key,
             "env resolves to the session the env points at, not the newest"
         );
-        assert!(current_env_session("TST", "ai:other@joy").is_none());
-        assert!(current_env_session("OTHER", "ai:claude@joy").is_none());
+        assert!(current_env_session("TST", "other").is_none());
+        assert!(current_env_session("OTHER", "claude").is_none());
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("JOY_SESSION") };
-        assert!(current_env_session("TST", "ai:claude@joy").is_none());
+        assert!(current_env_session("TST", "claude").is_none());
 
         // SAFETY: test cleanup
         unsafe { std::env::remove_var("XDG_STATE_HOME") };

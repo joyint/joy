@@ -1,13 +1,13 @@
 [package]
 name = "joy-chat-store"
-version = "0.21.0"
+version = "0.23.1"
 edition = "2021"
 license = "MIT"
 description = "Git storage for Joy's sealed chats: blobs, trees and the chats ref"
 repository = "https://github.com/joyint/joy"
 homepage = "https://joyint.com/en/joy"
 
-# Not a cargo-dist App: only joy-cli is (design D2.1). Why every
+# Not a cargo-dist App: only joy-cli is. Why every
 # publishable crate beside it carries this key is written once, in the
 # "Check the release shape" step of .github/workflows/release.yml, which
 # is also what fails when a crate loses it.
@@ -15,8 +15,8 @@ homepage = "https://joyint.com/en/joy"
 dist = false
 
 [dependencies]
-joy-chat = { version = "0.21.0", path = "../joy-chat" }
-joy-core = { version = "0.21.0", path = "../joy-core" }
+joy-chat = { version = "0.23.1", path = "../joy-chat" }
+joy-core = { version = "0.23.1", path = "../joy-core" }
 joy-model = { workspace = true }
 joy-crypt = { workspace = true }
 serde = { workspace = true }
@@ -36,6 +36,9 @@ git2 = { version = "0.21", default-features = false, features = ["vendored-libgi
 ts = ["joy-chat/ts", "joy-core/ts"]
 
 [dev-dependencies]
+# What a test never inherits from the person's shell and session, said
+# once (JOY-02BB-C7). Path only, so a publish drops it.
+joy-test-env = { path = "../joy-test-env" }
 tempfile = "3"
 # The maintenance cases age the store the way the operator's store is
 # aged, so the shipped 14 day window can be asserted instead of a zero

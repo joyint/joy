@@ -64,21 +64,17 @@ mod tests {
         let (out, changed) = migrate(yaml(
             r#"
 members:
-  ai:claude@joy:
+  claude:
     adapter: claude-code
-  ai:qwen@joy:
+  qwen:
     adapter: qwen-code
-  ai:vibe@joy:
+  vibe:
     adapter: mistral-vibe
 "#,
         ));
         assert!(changed);
         let members = out.get("members").unwrap();
-        for (member, tool) in [
-            ("ai:claude@joy", "claude"),
-            ("ai:qwen@joy", "qwen"),
-            ("ai:vibe@joy", "vibe"),
-        ] {
+        for (member, tool) in [("claude", "claude"), ("qwen", "qwen"), ("vibe", "vibe")] {
             assert_eq!(
                 members.get(member).unwrap().get("adapter").unwrap(),
                 &Value::String(tool.into())
@@ -90,11 +86,11 @@ members:
     fn leaves_migrated_custom_and_absent_pins_alone_and_is_idempotent() {
         let source = r#"
 members:
-  ai:vibe@joy:
+  vibe:
     adapter: vibe
-  ai:claude@joy:
+  claude:
     adapter: something-custom
-  ai:mock@joy:
+  mock:
     adapter: mock
   horst@example.com:
     capabilities: all
@@ -113,7 +109,7 @@ members:
         let (backfilled, _) = super::super::m_2026_07_ai_member_adapter::migrate(yaml(
             r#"
 members:
-  ai:vibe@joy:
+  vibe:
     capabilities: all
 "#,
         ));
@@ -122,7 +118,7 @@ members:
         assert_eq!(
             out.get("members")
                 .unwrap()
-                .get("ai:vibe@joy")
+                .get("vibe")
                 .unwrap()
                 .get("adapter")
                 .unwrap(),

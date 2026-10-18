@@ -2,11 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 //! The founding step from the command line on a machine with no git
-//! identity (D3.9 of the forge connection NG design, JOY-0297-1A).
+//! identity (JOY-0297-1A).
 //!
 //! These drive the real binary, because the question is what the CLI does
 //! at its entry point: it decides the host kind once, and everything that
 //! follows hangs off that decision.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::path::Path;
 use std::process::Output;
@@ -21,7 +25,7 @@ use std::process::Output;
 /// still found the machine's own `.gitconfig` - and the windows-latest
 /// CI job writes an identity into it on purpose.
 fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
-    joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(args)
         .current_dir(root)
         .env("HOME", home)
@@ -31,10 +35,6 @@ fn joy(root: &Path, home: &Path, args: &[&str]) -> Output {
         .env("XDG_STATE_HOME", home.join(".state"))
         .env("XDG_CONFIG_HOME", home.join(".config"))
         .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("JOY_SESSION")
-        .env_remove("GIT_AUTHOR_EMAIL")
-        .env_remove("GIT_COMMITTER_EMAIL")
-        .env_remove("EMAIL")
         .output()
         .expect("joy runs")
 }
@@ -57,7 +57,7 @@ fn machine() -> (tempfile::TempDir, std::path::PathBuf, std::path::PathBuf) {
     (dir, root, home)
 }
 
-/// The acceptance of J9: `joy init --user a@b.c` in a repository with no
+/// `joy init --user a@b.c` in a repository with no
 /// git config succeeds, and the enrolment that follows enrols `a@b.c`
 /// without reading git config, given the same `--user` explicitly. A
 /// later addition to the operator's 2026-09-19 correction (JOY-02AE-1A)
@@ -77,7 +77,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         &["init", "--name", "No Config", "--user", "a@b.c"],
     );
     assert!(init.status.success(), "{}", text(&init));
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(project.contains("a@b.c"), "{project}");
 
     // The enrolment takes the member from `--user`, not from a git
@@ -100,7 +100,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
         "{}",
         text(&auth)
     );
-    let project = std::fs::read_to_string(root.join(".joy/project.yaml")).unwrap();
+    let project = joy_test_env::project_text(&root);
     assert!(
         project.contains("verify-key") || project.contains("verify_key"),
         "{project}"
@@ -148,7 +148,7 @@ fn init_user_founds_and_auth_init_enrols_without_a_git_config() {
     );
 }
 
-/// D3.9: with no git config and nobody at the terminal (the test harness
+/// With no git config and nobody at the terminal (the test harness
 /// is a pipe, not a terminal), `joy init` refuses with the named sentence
 /// and leaves nothing behind.
 #[test]
@@ -177,7 +177,7 @@ fn init_without_an_identity_and_without_a_person_refuses_by_name() {
 #[test]
 fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     let (_dir, root, home) = machine();
-    let init = joy_process::command(env!("CARGO_BIN_EXE_joy"))
+    let init = joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
         .args(["init", "--name", "Delegated"])
         .current_dir(&root)
         .env("HOME", &home)
@@ -200,7 +200,7 @@ fn init_with_a_stale_session_value_refuses_like_a_background_host() {
     assert!(!root.join(".joy").exists());
 }
 
-/// The acceptance of J9 in the product: a commit joy writes in an
+/// A commit joy writes in an
 /// anonymous mode project carries the opaque `m-<hex>` id in BOTH
 /// signature fields. The git config of this checkout names a person by
 /// name and address, and none of it may reach the commit (ADR-042).

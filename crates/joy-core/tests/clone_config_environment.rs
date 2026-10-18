@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 //! A clone decides its proxy only AFTER git's own system config rule is
-//! applied (JOY-028D-46, D1.11).
+//! applied (JOY-028D-46).
 //!
 //! libgit2 always adds the system-wide gitconfig; git skips it when
 //! `GIT_CONFIG_NOSYSTEM` is true, and the one place that takes the
@@ -22,6 +22,10 @@
 //! Its own test binary: it changes the process environment and
 //! libgit2's search path, both process state, and it has to be the
 //! first git action of its process.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::fs;
 

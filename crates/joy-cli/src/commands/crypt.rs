@@ -86,7 +86,7 @@ struct RmArgs {
 
 #[derive(Args)]
 struct MemberRefArgs {
-    /// Member ID (email or ai:tool@joy).
+    /// Member (email, or the name of an AI member).
     member: String,
 }
 
@@ -153,7 +153,7 @@ pub fn run(args: CryptArgs) -> Result<()> {
 /// The root, the project, and the at-rest key of the member acting here.
 /// The member comes from [`joy_core::identity::acting_human_key`] and
 /// therefore from the session, then this device's pin, then git config as
-/// a prefill (D3.9); it is a member map key, so every lookup below is by
+/// a prefill; it is a member map key, so every lookup below is by
 /// key and an anonymous project (ADR-042) needs no special case.
 ///
 /// The HUMAN, not the AI: every caller here unwraps a zone with a
@@ -163,8 +163,7 @@ pub fn run(args: CryptArgs) -> Result<()> {
 fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let project = store::read_project(&project_path)?;
+    let project = store::load_project(&root)?;
     let acting = joy_core::identity::acting_human_key(&root)?;
     Ok((root, project, acting))
 }
@@ -179,7 +178,7 @@ fn load_context() -> Result<(std::path::PathBuf, Project, String)> {
 /// whatever its capability list says, and a human without `manage` is
 /// refused too.
 ///
-/// Identity and rights are two questions (D3.9). J11 answered the first
+/// Identity and rights are two questions. Identity resolution answered the first
 /// one from the session and the device pin, which is why this one has to
 /// be asked out loud here: before it, a machine with no git config
 /// refused these verbs by accident, with git2's "user.email is empty",
@@ -259,8 +258,7 @@ impl UnlockedZone {
         let m = self.project.member_by_key_mut(&self.acting_member).unwrap();
         m.crypt_wraps.insert(self.zone.clone(), wrap_hex);
 
-        let project_path = store::joy_dir(&self.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &self.project)?;
+        store::save_project(&self.root, &self.project)?;
         Ok(())
     }
 
@@ -321,8 +319,7 @@ fn run_add(zone: &str, target: &str) -> Result<()> {
         // Re-write project.yaml after we've added the path to the
         // zones registry. Wrap was already persisted above; this
         // adds the registry entry.
-        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        store::save_project(&unlocked.root, &unlocked.project)?;
         unlocked.install_zone_key();
         for file in &resolved {
             encrypt_file_in_place(file, zone, &unlocked.zone_key)?;
@@ -462,8 +459,7 @@ fn unlock_for_file(
 ) -> Result<(std::path::PathBuf, String, joy_crypt::zone::ZoneKey)> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let project = store::read_project(&project_path)?;
+    let project = store::load_project(&root)?;
     let acting_key = joy_core::identity::acting_human_key(&root)?;
     let acting = project
         .member_by_key(&acting_key)
@@ -741,8 +737,7 @@ fn run_rm(zone: &str, target: &str) -> Result<()> {
         }
         joy_core::crypt::clear_active_zone_keys();
         // Persist the registry change.
-        let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-        store::write_yaml_preserve(&project_path, &unlocked.project)?;
+        store::save_project(&unlocked.root, &unlocked.project)?;
         if removed_from_registry {
             println!("Removed path '{}' from zone '{}'.", target, zone);
         }
@@ -803,8 +798,7 @@ fn run_rm_all(zone: &str) -> Result<()> {
         updated += 1;
     }
     joy_core::crypt::clear_active_zone_keys();
-    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &unlocked.project)?;
+    store::save_project(&unlocked.root, &unlocked.project)?;
     println!("Decrypted {} item(s) in zone '{}'.", updated, zone);
     unlocked.finalize(&format!("crypt rm --all (zone {zone})"))
 }
@@ -877,17 +871,13 @@ fn run_zone_rm(name: &str) -> Result<()> {
         );
     }
     project.crypt.zones.remove(name);
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
     joy_core::git_ops::auto_git_post_command(&root, &format!("crypt zone rm {name}"), &acting);
     println!("Removed zone '{}'.", name);
     Ok(())
 }
 
 fn run_grant(zone: &str, target_member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     // Who acts here, then whether they may: the refusal comes before the
     // passphrase prompt, so a member without `manage` is not asked for a
     // secret it will not use.
@@ -895,10 +885,10 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     enforce_zone_rights()?;
     let unlocked = unlock_zone(zone, false)?;
     // `target_member` is a user-supplied identifier that is polymorphic by
-    // kind: an `ai:` synthetic id for AI tools (always the at-rest map key),
+    // kind: the name of an AI member (always the at-rest map key),
     // or a git e-mail for humans (privacy-dependent map key). Resolve each via
     // the matching accessor so anonymous-mode lookups stay correct (ADR-042).
-    let target = if is_ai_member(target_member) {
+    let target = if unlocked.project.is_ai(target_member) {
         unlocked.project.member_by_key(target_member)
     } else {
         unlocked.project.member_by_email(target_member)
@@ -916,10 +906,9 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     // stored zone-major under crypt.zones.<zone>.delegations.<ai>.<op>.
     // Human grants stay member-major under members.<who>.crypt_wraps as
     // before; the wrap layouts coexist in the same `project.yaml`.
-    let target_is_ai = is_ai_member(target_member);
+    let target_is_ai = unlocked.project.is_ai(target_member);
 
-    let project_path = store::joy_dir(&unlocked.root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&unlocked.root)?;
     project
         .crypt
         .zones
@@ -936,7 +925,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
         let _ = target; // target lookup was for existence check; not used further on AI path
         let mut wraps: Vec<(String, String)> = Vec::new();
         for (operator_email, member) in project.members() {
-            let Some(entry) = member.ai_delegations.get(ai_id) else {
+            let Some(entry) = member.delegation_to(ai_id) else {
                 continue;
             };
             let delegation_pk = joy_core::auth::PublicKey::from_hex(&entry.delegation_verifier)?;
@@ -979,9 +968,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
             .entry(unlocked.zone.clone())
             .or_insert(granter_wrap);
 
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+        store::save_project(&unlocked.root, &project)?;
         joy_core::git_ops::auto_git_post_command(
             &unlocked.root,
             &format!(
@@ -1032,9 +1019,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
         .entry(unlocked.zone.clone())
         .or_insert(granter_wrap);
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&unlocked.root, &[&rel]);
+    store::save_project(&unlocked.root, &project)?;
     joy_core::git_ops::auto_git_post_command(
         &unlocked.root,
         &format!("crypt grant {target_member} (zone {})", unlocked.zone),
@@ -1049,12 +1034,11 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
 }
 
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     let (root, mut project, acting) = load_context()?;
     enforce_zone_rights()?;
     // `target_member` is polymorphic (see run_grant): resolve AI ids by at-rest
     // key, human identifiers by privacy-aware e-mail lookup (ADR-042).
-    let target_exists = if is_ai_member(target_member) {
+    let target_exists = if project.is_ai(target_member) {
         project.has_member_key(target_member)
     } else {
         project.member_by_email(target_member).is_some()
@@ -1066,7 +1050,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     // ADR-041 §5: AI Tool revoke removes the entire delegations.<ai> map
     // under the zone (all operator-keyed wraps for that AI). Human
     // revoke continues to remove from members.<who>.crypt_wraps.
-    let removed = if is_ai_member(target_member) {
+    let removed = if project.is_ai(target_member) {
         let zone_entry = project.crypt.zones.get_mut(zone);
         match zone_entry {
             Some(z) => z.delegations.remove(target_member).is_some(),
@@ -1086,10 +1070,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
         );
         return Ok(());
     }
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
     joy_core::git_ops::auto_git_post_command(
         &root,
         &format!("crypt revoke {target_member} (zone {zone})"),

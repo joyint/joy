@@ -11,6 +11,7 @@
 mod m_2026_04_rename_auth_fields;
 mod m_2026_07_adapter_tool_names;
 mod m_2026_07_ai_member_adapter;
+mod m_2026_10_ai_member_names;
 
 use serde_yaml_ng::Value;
 
@@ -22,6 +23,12 @@ use serde_yaml_ng::Value;
 pub fn apply(value: Value) -> (Value, bool) {
     let mut value = value;
     let mut changed = false;
+
+    // First of all: the migrations after it see AI members by their
+    // names, whatever the file still says.
+    let (v, c) = m_2026_10_ai_member_names::migrate(value);
+    value = v;
+    changed |= c;
 
     let (v, c) = m_2026_04_rename_auth_fields::migrate(value);
     value = v;
@@ -52,7 +59,7 @@ members:
     kdf_nonce: bb
     enrollment_verifier: cc
     ai_delegations:
-      ai:claude@joy:
+      claude:
         delegation_verifier: dd
         created: 2026-04-15T10:00:00Z
 "#;

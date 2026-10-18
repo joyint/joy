@@ -6,7 +6,7 @@
 //! name (`vibe`), exactly; recorded pins are kept current by the
 //! official silent project.yaml migration. Every surface that derives a
 //! member from an adapter goes through these helpers, never a string
-//! split (the platform once derived `ai:mistral@joy` from
+//! split (the platform once derived a member `mistral` from
 //! `mistral-vibe` that way).
 
 /// The tool id an adapter string belongs to: the id itself for a
@@ -22,11 +22,11 @@ pub fn tool_adapter(tool_id: &str) -> Option<&'static str> {
     crate::adapters::by_adapter(tool_id).map(|spec| spec.adapter)
 }
 
-/// The canonical member id registered for an adapter (`ai:vibe@joy` for
-/// `vibe`); adapters outside the registry (e.g. the test mock) use the
-/// adapter name itself.
-pub fn canonical_member_id(adapter: &str) -> String {
-    format!("ai:{}@joy", adapter_tool_id(adapter).unwrap_or(adapter))
+/// The member a tool is registered as: the tool's name (`vibe`,
+/// JI-019D-46). Adapters outside the registry (the test mock) use the
+/// adapter name itself as the name.
+pub fn member_id(adapter: &str) -> String {
+    adapter_tool_id(adapter).unwrap_or(adapter).to_string()
 }
 
 #[cfg(test)]
@@ -34,10 +34,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_canonical_member_follows_the_registered_tool_id() {
-        assert_eq!(canonical_member_id("vibe"), "ai:vibe@joy");
-        assert_eq!(canonical_member_id("claude"), "ai:claude@joy");
-        assert_eq!(canonical_member_id("mock"), "ai:mock@joy");
+    fn the_member_of_a_tool_is_the_tools_name() {
+        assert_eq!(member_id("vibe"), "vibe");
+        assert_eq!(member_id("claude"), "claude");
+        assert_eq!(member_id("mock"), "mock");
     }
 
     #[test]

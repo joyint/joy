@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! joy on a machine with no git binary (JOY-01FD-ED, design D3.2).
+//! joy on a machine with no git binary (JOY-01FD-ED).
 //!
 //! The operator's reason is mobile: the app must work where there is no
 //! git to spawn. A layer that is "mostly git2" fails there on the one
@@ -13,6 +13,10 @@
 //! PATH is stripped of every directory that carries a `git`, and the
 //! test refuses to pass if one is still reachable: a green run against a
 //! machine that still has git would prove nothing at all.
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -71,7 +75,7 @@ impl Machine {
 
     /// Run `joy` with no git anywhere on PATH.
     fn joy(&self, args: &[&str]) -> Output {
-        joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&self.root)
             .env("PATH", &self.path)
@@ -79,20 +83,19 @@ impl Machine {
             .env("XDG_STATE_HOME", self.home.join(".state"))
             .env("XDG_CONFIG_HOME", self.home.join(".config"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
-            .env_remove("JOY_SESSION")
             .output()
             .expect("joy runs")
     }
 
     /// The same, as an agent: under a delegation session, with nothing
-    /// on stdin to read (D3.8).
+    /// on stdin to read.
     ///
     /// The session has to be a live one. A `JOY_SESSION` that merely
     /// exists leaves the host as interactive as it was
     /// (host.rs:119-133), so a value joy cannot load would prove nothing
     /// about the delegated host this case is about.
     fn joy_as_agent(&self, session: &str, args: &[&str]) -> Output {
-        joy_process::command(env!("CARGO_BIN_EXE_joy"))
+        joy_test_env::command(env!("CARGO_BIN_EXE_joy"))
             .args(args)
             .current_dir(&self.root)
             .env("PATH", &self.path)
@@ -111,7 +114,7 @@ impl Machine {
     /// handle. Every step of it runs on this machine without git, so the
     /// enrolment an agent needs is part of what this file proves.
     fn a_live_session(&self) -> String {
-        let member = "ai:claude@joy";
+        let member = "claude";
         let added = self.joy(&[
             "project",
             "member",
@@ -245,7 +248,7 @@ fn joy_works_end_to_end_on_a_machine_without_git() {
     );
 }
 
-/// D3.8: an agent under a delegation session is never asked anything,
+/// An agent under a delegation session is never asked anything,
 /// and what it reads is a stable word. The remote here is a path that
 /// does not exist, so the contact fails for certain; the run must still
 /// end by itself and name the state rather than waiting for somebody to
@@ -314,11 +317,11 @@ fn an_agent_under_a_delegation_is_never_asked_and_reads_a_stable_state_word() {
     );
 }
 
-/// D3.10 on the fatal path: with `--json`, stdout carries exactly one
+/// The fatal path: with `--json`, stdout carries exactly one
 /// object and nothing else. `joy release publish` printed its progress
 /// there as well, so the whole answer an agent got was
 /// `Pushing to origin...{"version":1,...}`, which parses as nothing.
-/// The progress is still said, on stderr, where D3.10 puts progress and
+/// The progress is still said, on stderr, where the rule puts progress and
 /// diagnostics anyway.
 #[test]
 fn the_json_answer_of_a_refused_publish_is_one_object_and_nothing_else() {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Joy hook chaining (design D3.5).
+# Joy hook chaining.
 #
 # joy OWNS core.hooksPath, because git's core.hooksPath REPLACES the
 # hook location entirely: not setting it would leave joy's commit-msg

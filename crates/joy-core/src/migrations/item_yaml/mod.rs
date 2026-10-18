@@ -9,6 +9,7 @@
 //! delete the module file and its line in [`apply`].
 
 mod m_2026_07_drop_stored_history;
+mod m_2026_10_job_until;
 
 use serde_yaml_ng::Value;
 
@@ -17,6 +18,8 @@ use serde_yaml_ng::Value;
 pub fn apply(value: Value) -> (Value, bool) {
     let mut changed = false;
     let (value, c) = m_2026_07_drop_stored_history::migrate(value);
+    changed |= c;
+    let (value, c) = m_2026_10_job_until::migrate(value);
     changed |= c;
     (value, changed)
 }

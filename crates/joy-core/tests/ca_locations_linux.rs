@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! The Linux only certificate authority escape hatch of D1.12.
+//! The Linux only certificate authority escape hatch.
 //!
 //! Four things are proven here, and one is stated rather than proven.
 //!
@@ -33,6 +33,10 @@
 //! option it sets are process state.
 
 #![cfg(target_os = "linux")]
+
+// Nothing of the developer's shell and session reaches this binary
+// (JOY-02BB-C7).
+joy_test_env::isolate!();
 
 use std::sync::{Arc, Mutex};
 

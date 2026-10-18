@@ -88,7 +88,7 @@ impl GitignoreBlockItem {
     /// holds the full fixed set (base entries plus every tool's ignore
     /// entries), so `joy update` stops stripping the per-tool lines
     /// `joy ai init` writes; with no AI member it stays the base-only set
-    /// `joy init` produces (JOY-01FE-98). The signal is `ai:*` membership in
+    /// `joy init` produces (JOY-01FE-98). The signal is an AI member in
     /// `.joy/project.yaml`, not the machine-local marker files: those are
     /// git-ignored, so a fresh checkout would otherwise read "nothing
     /// configured" and strip the committed tool lines (JOY-0264-89).
@@ -209,17 +209,16 @@ impl AiMemberAdapterItem {
         project
             .members()
             .filter(|(key, m)| {
-                key.starts_with("ai:")
+                m.kind == joy_core::model::project::MemberKind::Ai
                     && m.adapter.as_deref().unwrap_or("").trim().is_empty()
                     && Self::adapter_for(key).is_some()
             })
             .map(|(key, _)| key.clone())
             .collect()
     }
-    /// The adapter for an `ai:<tool>@joy` member key, if the tool is known.
+    /// The adapter of the tool an AI member is named after, if it is one.
     fn adapter_for(member_key: &str) -> Option<&'static str> {
-        let tool = member_key.strip_prefix("ai:")?.split('@').next()?;
-        joy_ai::naming::tool_adapter(tool)
+        joy_ai::naming::tool_adapter(member_key)
     }
 }
 
@@ -250,10 +249,7 @@ impl UpdateItem for AiMemberAdapterItem {
                     m.adapter = Some(adapter.to_string());
                 }
             }
-            joy_core::store::write_yaml_preserve(
-                &joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE),
-                &project,
-            )?;
+            joy_core::store::save_project(root, &project)?;
         }
         Ok(vec![RefreshRow {
             name: "AI member adapters".into(),
@@ -277,7 +273,7 @@ impl AiToolItem {
         ai::tool_display_name(self.id).unwrap_or(self.id)
     }
     fn member_id(&self) -> String {
-        format!("ai:{}@joy", self.id)
+        joy_ai::naming::member_id(self.id)
     }
 }
 
@@ -414,7 +410,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         seed_project_yaml(
             tmp.path(),
-            "members:\n  \"ai:claude@joy\":\n    capabilities: all\n",
+            "members:\n  \"claude\":\n    capabilities: all\n",
         );
         let entries = GitignoreBlockItem::expected_entries(tmp.path());
         assert_eq!(entries, joy_ai::ai_setup::managed_gitignore_entries());

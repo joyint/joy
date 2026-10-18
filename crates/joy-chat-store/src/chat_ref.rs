@@ -26,9 +26,9 @@
 //!
 //! ```text
 //! ai_sessions:
-//!   ai:claude@joy: acp-session-42
+//!   claude: acp-session-42
 //! interaction-levels:
-//!   ai:claude@joy:
+//!   claude:
 //!     horst@example.com: confirmed
 //! ```
 //!
@@ -53,8 +53,8 @@ use joy_core::error::JoyError;
 /// appears in `git log`, `git branch`, or a plain `git pull`.
 ///
 /// Declared in the engine and re-exported here, because the engine sets
-/// the tracking ref below itself after a push of this one (design
-/// D1.5): two copies of the name would be two chances to drift, and the
+/// the tracking ref below itself after a push of this one:
+/// two copies of the name would be two chances to drift, and the
 /// one that drifts is the one nobody reads.
 pub const CHATS_REF: &str = joy_core::vcs::forge::CHATS_REF;
 
@@ -166,7 +166,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
     read_chat_tree(repo, &chat_tree)
 }
 
-/// Pack and sweep this store when it is worth it (design D3.7).
+/// Pack and sweep this store when it is worth it.
 ///
 /// Every chat write is a commit, and these go through libgit2, which
 /// never runs the auto-gc the git binary runs after its own commits.
@@ -186,9 +186,8 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// because a person's own git may be writing objects joy cannot see.
 ///
 /// The window is the one for a checkout joy does not own, on every host,
-/// and that is a DEVIATION from D3.7, reported at the package level
-/// because the design document is the shared contract of J0..J11 and no
-/// package edits it. D3.7 asks for 24 hours where joy is the sole writer
+/// and that is a DEVIATION, reported as one.
+/// The rule asks for 24 hours where joy is the sole writer
 /// (the platform's project clone, a desktop only store), and the chat
 /// store cannot tell the two apart from here: the same function serves a
 /// person's own checkout, where another git may be writing objects joy
@@ -196,7 +195,7 @@ fn read_chat_at(repo: &Repository, root_tree: &Tree, id: &str) -> Result<Option<
 /// store 13 days of garbage it could have freed (the 38.89 MiB of
 /// JOY-023C-1E held longer); the other mistake would cost somebody
 /// else's objects. When the write path learns which kind of store it is
-/// writing (P8 for the platform's clone, the desktop's own packaging for
+/// writing (the platform's clone, the desktop's own packaging for
 /// the other), it selects `Options::owned_store()` and nothing else
 /// about this changes.
 ///
@@ -210,7 +209,7 @@ fn maintain_occasionally(repo: &Repository) {
     // than left for a caller to notice. The counters that go nowhere
     // here (`skipped_unfreshenable` above all, which is every object an
     // agent's container wrote as another uid) belong to the maintenance
-    // owner D5 names, the platform's sync worker lane, and that lane
+    // owner, the platform's sync worker lane, and that lane
     // does not exist yet.
     let _ = joy_core::vcs::maintenance::maintain_if_due(
         repo,
@@ -238,9 +237,9 @@ pub(crate) fn commit_root(
 ) -> Result<Option<Oid>, JoyError> {
     // The swap needs the commit's id, so the object cannot be written
     // after it, but it can be left unwritten when the ref has ALREADY
-    // moved, and taken back out when the swap loses anyway. D3.7 asks
+    // moved, and taken back out when the swap loses anyway. The rule asks
     // for the ordering; the two protections on the discard below are
-    // this package's reading of what makes that safe. Both halves
+    // what makes that safe. Both halves
     // matter: the losing attempt used to leave its commit and its trees
     // in the store for ever, and up to eight attempts per write is how
     // the sandbox got 505 orphans out of 761 commits.
@@ -514,7 +513,7 @@ fn union_chat_subtrees(
 /// never the working branch, so `git log`/`git pull` ignore them.
 ///
 /// A failed contact comes back as [`JoyError::Contact`] and carries the
-/// classifier's verdict with it (D1.8b, JOY-02A3-E4): the state, the
+/// classifier's verdict with it (JOY-02A3-E4): the state, the
 /// sentence, the detail line and the moment the forge serves again. A
 /// surface therefore names the state and offers its one action instead
 /// of reading prose joy flattened on the way up.
@@ -533,6 +532,18 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
     // comes back from the SECOND push with its state. Only a failure
     // the road below heals is dropped here, which is what "the forge
     // moved meanwhile" means.
+    //
+    // And no push at all when the forge already has what this checkout
+    // has (JP-0169-C8): the tracking ref is where the last fetch or the
+    // last push left the forge's ref, and a local ref that stands there
+    // carries nothing the forge still needs. The push lane of the
+    // platform runs after EVERY write to a project, item writes
+    // included, and pushed the unchanged chat ref each time: three
+    // requests of the forge's budget for nothing, while every read of
+    // the project waited behind it.
+    if in_step_with_tracking(root)? {
+        return Ok(());
+    }
     if open_repo(root)?.refname_to_id(CHATS_REF).is_ok()
         && joy_core::vcs::forge::push_ref(root, auth, CHATS_REF).is_ok()
     {
@@ -543,6 +554,39 @@ pub fn sync_with_forge(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result
             .map_err(|e| joy_core::vcs::contact::as_joy_error("chats push", e))?;
     }
     Ok(())
+}
+
+/// Whether the local chats ref and the tracking ref stand on one
+/// commit: then the forge has what this checkout has, as far as this
+/// checkout can know, and a sync has nothing to send. A checkout with no
+/// chats ref yet is NOT in step: it still has to adopt the forge's.
+pub fn in_step_with_tracking(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    Ok(
+        match (
+            repo.refname_to_id(CHATS_REF).ok(),
+            repo.refname_to_id(CHATS_TRACKING_REF).ok(),
+        ) {
+            (Some(local), Some(tracking)) => local == tracking,
+            _ => false,
+        },
+    )
+}
+
+/// Whether the local chats ref carries anything the tracking ref does
+/// not: nothing to push when both stand on one commit, or when there is
+/// no local ref at all. A tracking ref the local ref has moved away
+/// from, or none, means the forge may still need something, and only a
+/// contact can tell (JP-0169-C8).
+pub fn needs_push(root: &Path) -> Result<bool, JoyError> {
+    let repo = open_repo(root)?;
+    let local = repo.refname_to_id(CHATS_REF).ok();
+    let tracking = repo.refname_to_id(CHATS_TRACKING_REF).ok();
+    Ok(match (local, tracking) {
+        (None, _) => false,
+        (Some(local), Some(tracking)) => local != tracking,
+        (Some(_), None) => true,
+    })
 }
 
 /// ONE inbound poll pass (JAPP-01A3-4A / JP-00E6-3D), the same algorithm
@@ -592,11 +636,11 @@ pub fn poll_once(root: &Path, auth: &joy_core::vcs::forge::Auth) -> Result<bool,
 /// The one log line for a chat contact that failed where no caller can
 /// be told: the detached delivery and the healing push of a poll.
 ///
-/// It names the classifier's STATE and never guesses one (D1.8a): the
+/// It names the classifier's STATE and never guesses one: the
 /// old line said "(offline?)" for every failure, so a spent login, a
 /// throttle and a real outage all read as a network fault. The detail
 /// line follows, because that is where the operation ("chats push") and
-/// libgit2's own words live (D1.8b); the sentence itself stays the
+/// libgit2's own words live; the sentence itself stays the
 /// plain one a person reads.
 fn log_failed_contact(error: &JoyError) {
     let state = error.failure().reason();
@@ -1331,7 +1375,7 @@ mod tests {
         assert!(load_chat(root, "old").unwrap().is_none());
     }
 
-    // ---- maintenance of the store (design D3.7) ------------------------
+    // ---- maintenance of the store ------------------------
 
     /// Loose objects in a store, counted the way the sweep enumerates
     /// them: the two-hex fanout directories under `objects/`.
@@ -1416,7 +1460,7 @@ mod tests {
             .unwrap();
     }
 
-    /// The sweep of D3.7 on the shape this store actually has: chats on
+    /// The sweep on the shape this store actually has: chats on
     /// `refs/joy/chats`, which gets no reflog, plus the orphans of lost
     /// races. The orphans go, every chat stays readable, and the store
     /// shrinks.
@@ -1460,7 +1504,7 @@ mod tests {
         );
         let after = loose_count(dir.path());
         assert!(after < before / 4, "the store shrinks: {before} -> {after}");
-        // D3.7's two acceptance numbers, and what this case does NOT
+        // the two acceptance numbers, and what this case does NOT
         // prove about them: after the sweep this store holds on the
         // order of forty objects and a hundred kilobytes, so both
         // assertions pass by a factor of a hundred and neither is a
@@ -1536,7 +1580,7 @@ mod tests {
         assert!(!path_of(orphan).exists());
     }
 
-    /// The other half of D3.7's root-cause fix: a write that sees the ref
+    /// The other half of the root-cause fix: a write that sees the ref
     /// already moved writes no object at all, so there is nothing for the
     /// sweep to reclaim later.
     #[test]
@@ -1571,7 +1615,7 @@ mod forge_sync_tests {
     use super::*;
 
     /// A clone of the whole history with nobody watching it: the depth and
-    /// the progress callback a clone grew for the desktop (D4.3) are of no
+    /// the progress callback a clone grew for the desktop are of no
     /// use here, because the local transport these tests clone over
     /// refuses any depth at all.
     fn clone_full(
@@ -1627,6 +1671,81 @@ mod forge_sync_tests {
         std::fs::remove_dir_all(&base).ok();
     }
 
+    /// A sync whose chats ref stands where the forge's does contacts
+    /// nobody (JP-0169-C8). The platform's push lane ran a chat sync
+    /// after every write to a project and pushed the unchanged ref each
+    /// time: a round trip the forge queue charged while every read of
+    /// the project waited. Observed here through a forge that is taken
+    /// away: a sync that reaches for it fails, one that does not
+    /// succeeds.
+    #[test]
+    fn a_sync_in_step_with_the_forge_contacts_nobody() {
+        let base = std::env::temp_dir().join(format!("jp-chatref-instep-{}", std::process::id()));
+        std::fs::remove_dir_all(&base).ok();
+        let forge = base.join("forge.git");
+        std::fs::create_dir_all(&forge).unwrap();
+        git2::Repository::init_bare(&forge).unwrap();
+        let clone = base.join("clone");
+        let repo = git2::Repository::init(&clone).unwrap();
+        repo.remote("origin", forge.to_str().unwrap()).unwrap();
+        let sig = git2::Signature::now("t", "t@t").unwrap();
+        let tree = {
+            let oid = repo.index().unwrap().write_tree().unwrap();
+            repo.find_tree(oid).unwrap()
+        };
+        let first = repo
+            .commit(Some(CHATS_REF), &sig, &sig, "a chat", &tree, &[])
+            .unwrap();
+        let auth = joy_core::vcs::forge::Auth::token("x");
+
+        // the first sync delivers, and notes the delivery in the tracking ref
+        assert!(!in_step_with_tracking(&clone).unwrap());
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            first
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
+        assert!(!needs_push(&clone).unwrap());
+
+        // the forge is taken away: a sync in step still succeeds, because
+        // it has nothing to say and says nothing
+        let away = base.join("forge-away.git");
+        std::fs::rename(&forge, &away).unwrap();
+        sync_with_forge(&clone, &auth).expect("nothing to send, nobody asked");
+
+        // a chats ref that moved reaches for the forge, and finds none
+        let parent = repo.find_commit(first).unwrap();
+        let second = repo
+            .commit(
+                Some(CHATS_REF),
+                &sig,
+                &sig,
+                "another chat",
+                &tree,
+                &[&parent],
+            )
+            .unwrap();
+        assert!(needs_push(&clone).unwrap());
+        sync_with_forge(&clone, &auth).expect_err("a moved ref has to be delivered");
+
+        // the forge is back: delivered, in step again
+        std::fs::rename(&away, &forge).unwrap();
+        sync_with_forge(&clone, &auth).unwrap();
+        assert_eq!(
+            git2::Repository::open(&forge)
+                .unwrap()
+                .refname_to_id(CHATS_REF)
+                .unwrap(),
+            second
+        );
+        assert!(in_step_with_tracking(&clone).unwrap());
+        std::fs::remove_dir_all(&base).ok();
+    }
+
     /// Chats sync on their own ref (refs/joy/chats), never the working
     /// branch: write a chat, sync it, and see the message land on
     /// refs/joy/chats on the bare forge while the branch stays chat-free.
@@ -1646,7 +1765,7 @@ mod forge_sync_tests {
         let seed_repo = git2::Repository::init(&seed).unwrap();
         std::fs::create_dir_all(seed.join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        let mut m = joy_core::model::project::Member::new(
+        let mut m = joy_core::model::project::Member::person(
             joy_core::model::project::MemberCapabilities::All,
         );
         m.verify_key = Some(
@@ -1737,7 +1856,7 @@ mod forge_sync_tests {
         // chats are always sealed now: the writing member needs an
         // identity, and this thread needs its seed
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        let mut m = joy_core::model::project::Member::new(
+        let mut m = joy_core::model::project::Member::person(
             joy_core::model::project::MemberCapabilities::All,
         );
         m.verify_key = Some(
@@ -1891,7 +2010,7 @@ mod forge_sync_tests {
     /// The state that arrives is a DISTINGUISHING one and not the
     /// `error` every JoyError carries anyway (JOY-02A3-E4): nobody
     /// answers on this port, so the verdict is `offline`, and a banner
-    /// can say "no connection" and offer the one action D1.8b names
+    /// can say "no connection" and offer the one action the rule names
     /// instead of showing a sentence and guessing at the rest.
     ///
     /// The forge is a port on THIS machine that nothing listens on: a

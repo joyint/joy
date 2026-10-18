@@ -8,7 +8,7 @@ use chrono::Utc;
 use clap::{Args, Subcommand};
 
 use joy_core::auth::{
-    delegation, derive_key, generate_salt, seed as seed_mod, session, token, validate_passphrase,
+    accept_passphrase, delegation, derive_key, generate_salt, seed as seed_mod, session, token,
     IdentityKeypair, PublicKey, Salt,
 };
 use joy_core::store;
@@ -52,7 +52,7 @@ enum AuthCommand {
 struct RecoverArgs {
     /// Recover identity using the recovery key after passphrase loss.
     /// Prompts for the recovery key (or reads it from --recovery), then
-    /// asks for a new passphrase and re-wraps seed_wrap_passphrase.
+    /// asks for a new passphrase and re-wraps seed_wrap.
     #[arg(long, conflicts_with = "regenerate_key")]
     recovery_key: bool,
 
@@ -118,14 +118,14 @@ enum DelegationCommand {
 
 #[derive(Args)]
 struct DelegationRotateArgs {
-    /// AI member ID (e.g. ai:claude@joy)
+    /// AI member (e.g. claude)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 }
 
 #[derive(Args)]
 struct DelegationLsArgs {
-    /// Optional AI member ID (e.g. ai:claude@joy). Without it, every AI
+    /// Optional AI member (e.g. claude). Without it, every AI
     /// member with at least one operator delegation is listed.
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: Option<String>,
@@ -133,7 +133,7 @@ struct DelegationLsArgs {
 
 #[derive(Args)]
 struct TokenAddArgs {
-    /// AI member ID (e.g. ai:claude@joy)
+    /// AI member (e.g. claude)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(crate::complete::complete_ai_member))]
     member: String,
 
@@ -172,14 +172,34 @@ pub fn run(args: AuthArgs) -> Result<()> {
 /// Resolve the member-selector for this invocation. `--user` always
 /// wins; otherwise this repository's own git config (local before
 /// global), then the account the forge tool for the remote's host
-/// reports (JOY-02AE-1A, correcting D3.9). Centralised here so every
+/// reports (JOY-02AE-1A). Centralised here so every
 /// auth path uses the same rule (JOY-00F3-AE), and the same rule `joy
 /// auth init` uses.
 fn resolve_user(root: &Path, user_flag: Option<&str>) -> Result<String> {
     let project = store::load_project(root)?;
-    Ok(joy_core::identity::acting_member(
-        root, &project, user_flag,
-    )?)
+    name_the_member(root, &project, user_flag)
+}
+
+/// The member this auth command is for, and the question a person is
+/// asked when nothing names one. `joy auth` is the command that signs
+/// in, so it may not answer "run `joy auth`": at a terminal it asks for
+/// the address, and where nobody can be asked it names the one way left.
+fn name_the_member(
+    root: &Path,
+    project: &joy_core::model::project::Project,
+    user_flag: Option<&str>,
+) -> Result<String> {
+    match joy_core::identity::acting_member(root, project, user_flag) {
+        Ok(member) => Ok(member),
+        Err(joy_core::error::JoyError::UnknownActingMember) => {
+            if crate::prompt::is_interactive() {
+                Ok(crate::prompt::ask_text("Your member address:", None)?)
+            } else {
+                anyhow::bail!("not signed in: pass `--user <address>`")
+            }
+        }
+        Err(other) => Err(other.into()),
+    }
 }
 
 /// Resolve token from --token flag or JOY_TOKEN env var.
@@ -203,6 +223,35 @@ fn resolve_token(flag: Option<&str>) -> Option<String> {
 /// pipelines that keep the secret out of the process listing,
 /// JOY-018E-21), else the terminal.
 pub(crate) fn read_passphrase(prompt: &str) -> Result<String> {
+    read_passphrase_with(prompt, hidden_line)
+}
+
+/// A passphrase the person CHOOSES (auth init, the OTP redeem, init
+/// --anonymous): the same sources as [`read_passphrase`], and at the
+/// terminal the prompt with the strength line above it (JOY-02CC-46).
+pub(crate) fn read_chosen_passphrase(prompt: &str) -> Result<String> {
+    read_passphrase_with(prompt, crate::passphrase_meter::prompt)
+}
+
+/// The hidden line rpassword reads, with the prompt erased afterwards so
+/// the lingering "Passphrase:" does not read as if Joy had echoed the
+/// secret. rpassword emits a trailing CR+LF after the hidden input, so
+/// the cursor is on the line *below* the prompt: move up one line, to
+/// column 0, and clear it.
+fn hidden_line(prompt: &str) -> Result<String> {
+    use std::io::IsTerminal;
+    let passphrase = rpassword::prompt_password(prompt)?;
+    if std::io::stderr().is_terminal() {
+        eprint!("\x1b[1A\r\x1b[2K");
+        let _ = std::io::Write::flush(&mut std::io::stderr());
+    }
+    Ok(passphrase)
+}
+
+fn read_passphrase_with(
+    prompt: &str,
+    at_the_terminal: impl FnOnce(&str) -> Result<String>,
+) -> Result<String> {
     use std::io::{BufRead, IsTerminal};
     let flag = crate::auth_gate::passphrase_flag();
     let from_stdin = crate::auth_gate::passphrase_from_stdin();
@@ -233,23 +282,15 @@ pub(crate) fn read_passphrase(prompt: &str) -> Result<String> {
              or pass --passphrase <value> or --passphrase-stdin"
         );
     }
-    let passphrase = rpassword::prompt_password(prompt)?;
-    // Erase the prompt line so the lingering "Passphrase:" does not read as if
-    // Joy had echoed the secret. rpassword emits a trailing CR+LF after the
-    // hidden input, so the cursor is on the line *below* the prompt: move up
-    // one line, to column 0, and clear it. Only in the interactive terminal
-    // case; piped and --passphrase-stdin paths returned earlier and never
-    // printed a prompt.
-    if std::io::stderr().is_terminal() {
-        eprint!("\x1b[1A\r\x1b[2K");
-        let _ = std::io::Write::flush(&mut std::io::stderr());
-    }
-    Ok(passphrase)
+    // Only here is a prompt printed; piped and --passphrase-stdin paths
+    // returned earlier.
+    at_the_terminal(prompt)
 }
 
 /// A NEW passphrase (`joy auth passphrase`, `joy auth recover`): the
-/// `--new-passphrase` flag, else asked at the terminal. Never the global
-/// `--passphrase`, which is the current one.
+/// `--new-passphrase` flag, else asked at the terminal with the strength
+/// line above the prompt. Never the global `--passphrase`, which is the
+/// current one.
 fn read_new_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
     use std::io::IsTerminal;
     if let Some(p) = flag {
@@ -258,7 +299,7 @@ fn read_new_passphrase(flag: Option<&str>, prompt: &str) -> Result<String> {
     if !std::io::stdin().is_terminal() {
         anyhow::bail!("new passphrase required: pass --new-passphrase <value> or use a terminal");
     }
-    Ok(rpassword::prompt_password(prompt)?)
+    crate::passphrase_meter::prompt(prompt)
 }
 
 /// `joy auth init` — first-time setup for the current member.
@@ -277,15 +318,14 @@ pub(crate) fn run_init(
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
-    // Determine who we are. The member is NAMED here (JOY-02AE-1A,
-    // correcting D3.9): `--user`, else this repository's own git config,
+    // Determine who we are. The member is NAMED here (JOY-02AE-1A):
+    // `--user`, else this repository's own git config,
     // else the forge account. The project is never guessed from, not
     // even when it has exactly one member: the project file travels
     // with every clone.
-    let email = joy_core::identity::acting_member(&root, &project, user_flag)?;
+    let email = name_the_member(&root, &project, user_flag)?;
     let member = project.member_by_email(&email);
     if member.is_none() {
         anyhow::bail!(
@@ -306,14 +346,14 @@ pub(crate) fn run_init(
     let interactive = !crate::auth_gate::passphrase_given();
     if interactive {
         eprintln!("Setting up authentication for {}.", color::id(&email));
-        eprintln!("Choose a passphrase (minimum 3 words, e.g. Diceware):");
+        eprintln!("Choose a passphrase:");
     }
-    let passphrase = read_passphrase("  Passphrase: ")?;
-    validate_passphrase(&passphrase)?;
+    let passphrase = read_chosen_passphrase("  Passphrase: ")?;
+    accept_passphrase(&passphrase)?;
 
     // Confirm (only in interactive mode)
     if interactive {
-        let confirm = rpassword::prompt_password("  Confirm:    ")?;
+        let confirm = crate::passphrase_meter::confirm("  Confirm:    ")?;
         if passphrase != confirm {
             anyhow::bail!("passphrases do not match");
         }
@@ -343,7 +383,7 @@ pub(crate) fn run_init(
         joy_core::auth::enroll::EnrollmentMaterial {
             verify_key: public_key.to_hex(),
             kdf_nonce: salt.to_hex(),
-            seed_wrap_passphrase: wrap_passphrase,
+            seed_wrap: wrap_passphrase,
             seed_wrap_recovery: wrap_recovery,
         },
     )?;
@@ -354,7 +394,7 @@ pub(crate) fn run_init(
     // Determine the on-disk member key. In anonymous mode (ADR-042) the founder
     // is rekeyed to an opaque id before the project file is persisted, so the
     // git e-mail never lands in a written -- let alone committed -- project.yaml.
-    // switch_to_anonymous performs the rekey and writes the email_match verifier
+    // switch_to_anonymous performs the rekey and writes the email_tag verifier
     // plus the encrypted members.yaml; in open mode we just persist as-is.
     let session_member = if anonymous {
         let renamed = joy_core::privacy::switch_to_anonymous(&root, &mut project, seed.as_bytes())?;
@@ -371,9 +411,7 @@ pub(crate) fn run_init(
             .map(|(_, id)| id)
             .unwrap_or_else(|| email.clone())
     } else {
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        store::save_project(&root, &project)?;
         email.clone()
     };
 
@@ -486,7 +524,7 @@ fn auth_with_passphrase(
     // the interactive recovery-key printout; the shared core login below
     // then finds a wrapped seed. JOY-01EA: the flow itself lives in
     // joy_core::auth::login so the desktop app runs the exact same code.
-    if member.seed_wrap_passphrase.is_none() {
+    if member.seed_wrap.is_none() {
         let key = derive_key(&passphrase, &salt)?;
         let kp = IdentityKeypair::from_derived_key(&key);
         if kp.public_key() != public_key {
@@ -503,7 +541,7 @@ fn auth_with_passphrase(
     // an opaque `m-<hex>` id in an anonymous project (`--user` can pass
     // one directly) or a forge alias git config still carries, and
     // telling somebody they are either is not what ADR-042 or the alias
-    // resolution of D3.9 ask for. The login resolved the real address on
+    // resolution ask for. The login resolved the real address on
     // its way through members.yaml and hands it back.
     println!(
         "Authenticated as {}. Session active (24h).",
@@ -542,8 +580,7 @@ fn migrate_to_wrapped_seed(
     kdf_nonce: &Salt,
     _passphrase: &str,
 ) -> Result<()> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(root)?;
 
     let seed = seed_mod::Seed::from_derived_key(derived_key);
     let recovery = seed_mod::RecoveryKey::generate();
@@ -556,12 +593,10 @@ fn migrate_to_wrapped_seed(
     let m = project
         .member_by_email_mut(email)
         .ok_or_else(|| anyhow::anyhow!("member {} disappeared mid-migration", email))?;
-    m.seed_wrap_passphrase = Some(wrap_passphrase);
+    m.seed_wrap = Some(wrap_passphrase);
     m.seed_wrap_recovery = Some(wrap_recovery);
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &project)?;
 
     println!();
     println!("Auth schema upgraded to the wrapped-seed identity model.");
@@ -600,6 +635,15 @@ fn auth_with_token(
 
     // Output session handle for eval (stdout) -- SSH-agent pattern.
     // Status message goes to stderr so `eval $(joy auth --token ...)` works.
+    // What this AI member may do for the person it acts for, said with
+    // the session, so it knows its level and its capabilities from the
+    // first moment and has nothing to look up or guess (JI-019D-46). A
+    // project from before the member files has no such answer.
+    let may = joy_core::auth::grants::applies(project)
+        .then(|| {
+            joy_core::auth::grants::shown(project, &redeemed.member, Some(&redeemed.delegated_by))
+        })
+        .filter(|may| may.problem.is_empty());
     if crate::output::is_json() {
         #[derive(serde::Serialize)]
         struct TokenAuthPayload<'a> {
@@ -607,12 +651,22 @@ fn auth_with_token(
             member: &'a str,
             delegated_by: &'a str,
             project_id: &'a str,
+            /// The level this AI member works at for its delegator.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            level: Option<&'a str>,
+            /// What it may do for them.
+            #[serde(skip_serializing_if = "Option::is_none")]
+            capabilities: Option<&'a [String]>,
         }
         crate::output::emit(TokenAuthPayload {
             session_env: env_value.clone(),
             member: &redeemed.member,
             delegated_by: &redeemed.delegated_by,
             project_id,
+            level: may.as_ref().map(|may| may.effective_level.as_str()),
+            capabilities: may
+                .as_ref()
+                .map(|may| may.effective_capabilities.as_slice()),
         })?;
     } else {
         println!("export JOY_SESSION={env_value}");
@@ -620,6 +674,13 @@ fn auth_with_token(
             "Authenticated as {} (delegated by {}). Session active (24h).",
             redeemed.member, redeemed.delegated_by
         );
+        if let Some(may) = &may {
+            eprintln!(
+                "Level: {}. Capabilities: {}.",
+                may.effective_level,
+                may.effective_capabilities.join(", ")
+            );
+        }
     }
 
     // Record the delegating operator by their at-rest member key (opaque id in
@@ -644,7 +705,7 @@ fn auth_with_token(
 }
 
 /// Where `joy auth status` got the member it just named (operator
-/// decision 2026-09-19, JOY-02AE-1A, correcting D3.9), in the words a
+/// decision 2026-09-19, JOY-02AE-1A), in the words a
 /// person can act on.
 ///
 /// The order is `resolve_identity`'s own: a delegation session names the
@@ -696,7 +757,7 @@ fn run_status() -> Result<()> {
         joy_core::identity::resolve_identity(&root).map_err(|e| anyhow::anyhow!("{e}"))?;
     // Nothing says who acts here: no delegation session, no git config
     // naming a member, and no forge account naming one either (operator
-    // decision 2026-09-19, JOY-02AE-1A, correcting D3.9). Say the
+    // decision 2026-09-19, JOY-02AE-1A). Say the
     // sentence that names the remedy instead of printing "No active
     // session for " with an empty name in it.
     if identity.member.id().trim().is_empty() {
@@ -885,8 +946,7 @@ fn run_reset(args: ResetArgs) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
     // The acting member is resolve_identity's own answer (the delegation
     // session, then git config, then the forge account, since the
     // operator's 2026-09-19 correction, JOY-02AE-1A), and it is already
@@ -928,13 +988,11 @@ fn run_reset(args: ResetArgs) -> Result<()> {
     let m = project.member_by_key_mut(target).unwrap();
     m.verify_key = None;
     m.kdf_nonce = None;
-    m.seed_wrap_passphrase = None;
+    m.seed_wrap = None;
     m.seed_wrap_recovery = None;
     m.enrollment_verifier = None;
 
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project)?;
 
     // Remove own session if resetting self
     let project_id = session::project_id(&root)?;
@@ -1000,13 +1058,22 @@ fn run_token_add(args: TokenAddArgs, user_flag: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// The refusal for an id that is no AI member's (JOY-02D1-21): an AI
+/// member is known by its name, so the sentence asks for no prefix.
+fn not_an_ai_member(id: &str) -> String {
+    format!(
+        "{id} is not an AI member: an AI member is known by its name, \
+         for example claude, and a person by an address"
+    )
+}
+
 /// Create a delegation token for `ai_member` issued by the human
 /// `operator`. Returns `(encoded_token, ttl_hours)`.
 ///
 /// `operator` names the issuing human in EITHER of the two forms a
 /// caller can hold: an address a person typed (`joy auth token add
 /// --user`), or their at-rest member key, which is what identity
-/// resolution answers with since package J11 (D3.9) and what `joy
+/// resolution answers with and what `joy
 /// project member add --with-token` has always passed. It is not an
 /// e-mail: in an anonymous project the key is the opaque `m-<hex>` id
 /// (ADR-042). The first thing this function does is resolve it to the
@@ -1022,12 +1089,10 @@ pub(crate) fn create_delegation_token(
     ai_member: &str,
     ttl_hours_override: Option<i64>,
 ) -> Result<(String, i64)> {
-    use joy_core::model::project::is_ai_member;
-
     let project = store::load_project(root)?;
 
-    if !is_ai_member(ai_member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", ai_member);
+    if !project.is_ai(ai_member) {
+        anyhow::bail!(not_an_ai_member(ai_member));
     }
     if !project.has_member_key(ai_member) {
         anyhow::bail!(
@@ -1057,6 +1122,7 @@ pub(crate) fn create_delegation_token(
         member: member_key.clone().into(),
         delegated_by: None,
         authenticated: true,
+        grant: None,
     };
     joy_core::guard::Guard::load(root)?
         .check(&joy_core::guard::Action::ManageProject, &identity)
@@ -1070,7 +1136,8 @@ pub(crate) fn create_delegation_token(
     //     project.yaml write. Verifier double-checked.
     //   - entry has no delegation_salt (legacy random keypair) -> bail
     //     with a rotate-first message; the original seed is unrecoverable.
-    let existing_entry = member.ai_delegations.get(ai_member);
+    let token_grant = joy_core::auth::grants::token_grant(member, ai_member);
+    let existing_entry = member.delegation_to(ai_member);
     let existing_public = existing_entry.map(|e| e.delegation_verifier.clone());
     let existing_salt = existing_entry.and_then(|e| e.delegation_salt.clone());
 
@@ -1155,14 +1222,16 @@ pub(crate) fn create_delegation_token(
             human: &member_key,
             project_id: &project_id,
             ttl,
+            // What this person allows the AI member right now, so the
+            // grant cannot be dropped behind the token's back.
+            grant: Some(&token_grant),
         },
     );
 
     // Persist the delegation public key on first issuance. Subsequent
     // issuances for the same (human, AI) pair produce no project.yaml
     // write since the key is stable (ADR-033).
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project_mut = store::read_project(&project_path)?;
+    let mut project_mut = store::load_project(root)?;
     if new_entry {
         // By the operator's at-rest KEY, the one resolved at the top of
         // this function, and never by their address again. The lookup
@@ -1170,8 +1239,8 @@ pub(crate) fn create_delegation_token(
         // string, which resolves an ADDRESS through the member map's
         // e-mail matcher. It found the operator while the acting member
         // was still a git config address; once identity resolution
-        // started answering with an at-rest member KEY instead (D3.9,
-        // package J11), an anonymous project handed this function the
+        // started answering with an at-rest member KEY instead,
+        // an anonymous project handed this function the
         // operator's opaque `m-<hex>` id, no address matched it, and the
         // `if let` wrote NOTHING. The token was printed all the same, and
         // redeeming it then failed with "no delegation registered for
@@ -1182,13 +1251,15 @@ pub(crate) fn create_delegation_token(
         let m = project_mut
             .member_by_key_mut(&member_key)
             .ok_or_else(|| anyhow::anyhow!("{member_key} is not a registered project member."))?;
-        m.ai_delegations.insert(
+        m.put_delegation(
             ai_member.to_string(),
             joy_core::model::project::AiDelegationEntry {
                 delegation_verifier: delegation_keypair.public_key().to_hex(),
                 delegation_salt: delegation_salt_hex.clone(),
                 created: chrono::Utc::now(),
                 rotated: None,
+                grant: None,
+                model: None,
             },
         );
     }
@@ -1212,9 +1283,7 @@ pub(crate) fn create_delegation_token(
     }
 
     if new_entry || set_ai_verify {
-        store::write_yaml_preserve(&project_path, &project_mut)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(root, &[&rel]);
+        store::save_project(root, &project_mut)?;
     }
 
     let encoded = token::encode_token(&token_obj);
@@ -1228,14 +1297,13 @@ pub(crate) fn create_delegation_token(
 /// row per registered (operator, AI) pair. With a member id, the output
 /// is filtered to that AI; without, every (operator, AI) pair is shown.
 fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project = store::load_project(&root)?;
 
     if let Some(m) = filter_member {
-        if !is_ai_member(m) {
-            anyhow::bail!("{m} is not an AI member (must start with ai:)");
+        if !project.is_ai(m) {
+            anyhow::bail!(not_an_ai_member(m));
         }
     }
 
@@ -1315,8 +1383,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
     let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
@@ -1338,10 +1405,10 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let current_pass = read_passphrase("Current passphrase: ")?;
 
     // ADR-039: in the wrapped-seed model the seed and keypair are stable
-    // across passphrase rotation; we only re-wrap seed_wrap_passphrase.
+    // across passphrase rotation; we only re-wrap seed_wrap.
     // Legacy entries (no seed_wrap_*) are migrated transparently first
     // and then re-wrapped under the new passphrase.
-    let seed = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
+    let seed = if let Some(wrap_hex) = member.seed_wrap.as_deref() {
         seed_mod::unwrap_seed_with_passphrase(wrap_hex, &current_pass, &current_salt)?
     } else {
         let current_key = derive_key(&current_pass, &current_salt)?;
@@ -1354,7 +1421,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
         let migrated_seed = seed_mod::Seed::from_derived_key(&current_key);
         let recovery = seed_mod::RecoveryKey::generate();
         let m = project.member_by_key_mut(&acting).unwrap();
-        m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
+        m.seed_wrap = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
         m.seed_wrap_recovery = Some(seed_mod::wrap_seed_with_recovery(
             &migrated_seed,
             &recovery,
@@ -1376,12 +1443,9 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     // line carries one secret, not two. Use --new-passphrase or the
     // interactive prompt for the new one.
     let new_pass = read_new_passphrase(new_flag, "New passphrase:     ")?;
-    if new_pass == current_pass {
-        anyhow::bail!("new passphrase must differ from the current one");
-    }
-    validate_passphrase(&new_pass)?;
+    joy_core::auth::check_new_passphrase(&current_pass, &new_pass)?;
     if new_flag.is_none() {
-        let confirm = rpassword::prompt_password("Confirm:            ")?;
+        let confirm = crate::passphrase_meter::confirm("Confirm:            ")?;
         if confirm != new_pass {
             anyhow::bail!("passphrases do not match");
         }
@@ -1394,10 +1458,8 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &current_salt)?;
 
     let m = project.member_by_key_mut(&acting).unwrap();
-    m.seed_wrap_passphrase = Some(new_wrap_passphrase);
-    store::write_yaml_preserve(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    m.seed_wrap = Some(new_wrap_passphrase);
+    store::save_project(&root, &project)?;
 
     let project_id = session::project_id(&root)?;
     let _ = session::remove_session(&project_id, &acting);
@@ -1430,8 +1492,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
 
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(&root)?;
 
     let acting = joy_core::identity::acting_human_key(&root)?;
     let member = project
@@ -1460,9 +1521,9 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         let seed = seed_mod::unwrap_seed_with_recovery(wrap_recovery_hex, &recovery, &salt)?;
 
         let new_pass = read_new_passphrase(args.new_passphrase.as_deref(), "New passphrase: ")?;
-        validate_passphrase(&new_pass)?;
+        accept_passphrase(&new_pass)?;
         if args.new_passphrase.is_none() {
-            let confirm = rpassword::prompt_password("Confirm:        ")?;
+            let confirm = crate::passphrase_meter::confirm("Confirm:        ")?;
             if confirm != new_pass {
                 anyhow::bail!("passphrases do not match");
             }
@@ -1470,10 +1531,8 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
 
         let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
         let m = project.member_by_key_mut(&acting).unwrap();
-        m.seed_wrap_passphrase = Some(new_wrap_passphrase);
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        m.seed_wrap = Some(new_wrap_passphrase);
+        store::save_project(&root, &project)?;
 
         let project_id = session::project_id(&root)?;
         let _ = session::remove_session(&project_id, &acting);
@@ -1488,7 +1547,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         joy_core::git_ops::auto_git_post_command(&root, "auth recover --recovery-key", &acting);
     } else {
         // --regenerate-key: rotate the recovery wrap.
-        let wrap_passphrase_hex = member.seed_wrap_passphrase.as_ref().ok_or_else(|| {
+        let wrap_passphrase_hex = member.seed_wrap.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "{} has no passphrase wrap. The legacy auth schema needs `joy auth` once first.",
                 acting
@@ -1502,9 +1561,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         let new_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &new_recovery, &salt)?;
         let m = project.member_by_key_mut(&acting).unwrap();
         m.seed_wrap_recovery = Some(new_wrap_recovery);
-        store::write_yaml_preserve(&project_path, &project)?;
-        let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-        joy_core::git_ops::auto_git_add(&root, &[&rel]);
+        store::save_project(&root, &project)?;
 
         println!("Recovery key rotated for {}.", color::user(&acting));
         println!();
@@ -1531,7 +1588,7 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
-    // Who redeems is the host's answer, not git config's (D3.9). When
+    // Who redeems is the host's answer, not git config's. When
     // nothing here names a member, the OTP still does: it is an identity
     // proof of its own (JOY-0257-FC), so an unresolvable name is no reason
     // to refuse before the redemption was even tried.
@@ -1542,7 +1599,7 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
     // seed, close the founder attestation, open a session) lives in joy-core
     // so the desktop app runs the exact same flow instead of shelling out or
     // re-implementing it; only the I/O below is the CLI's.
-    let passphrase = read_passphrase("Choose passphrase: ")?;
+    let passphrase = read_chosen_passphrase("Choose passphrase: ")?;
     let outcome =
         joy_core::auth::enroll::redeem_with_passphrase(&root, otp, &passphrase, member.as_deref())?;
 
@@ -1575,16 +1632,14 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
 /// `(acting human, member)`. For the initial delegation use
 /// `joy auth token add`, not rotate.
 pub fn run_ai_rotate(member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
-
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
     let acting = joy_core::identity::acting_human_key(&root)?;
 
-    if !is_ai_member(member) {
-        anyhow::bail!("{} is not an AI member (must start with ai:)", member);
+    if !project.is_ai(member) {
+        anyhow::bail!(not_an_ai_member(member));
     }
     if !project.has_member_key(member) {
         anyhow::bail!("{} is not a registered project member.", member);
@@ -1605,7 +1660,7 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     // Rotation requires an existing delegation. Bootstrap (first-time
     // setup) goes through `joy auth token add`, where project.yaml writes
     // happen lazily on the very first issuance.
-    if !human.ai_delegations.contains_key(member) {
+    if human.delegation_to(member).is_none() {
         anyhow::bail!(
             "No delegation for {m} is recorded in project.yaml under {acting}. \
              Rotation replaces an existing keypair; to create the initial \
@@ -1632,18 +1687,15 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     // this point. Legacy entries (no delegation_salt under ADR-033 §1) gain
     // the salt here, which unblocks future multi-machine bootstrap on
     // every machine downstream.
-    let project_path = store::joy_dir(&root).join(store::PROJECT_FILE);
-    let mut project_mut = store::read_project(&project_path)?;
+    let mut project_mut = store::load_project(&root)?;
     let entry = project_mut
         .member_by_key_mut(&acting)
-        .and_then(|m| m.ai_delegations.get_mut(member))
+        .and_then(|m| m.delegation_to_mut(member))
         .expect("delegation entry exists -- validated above");
     entry.delegation_verifier = new_kp.public_key().to_hex();
     entry.delegation_salt = Some(new_salt.to_hex());
     entry.rotated = Some(Utc::now());
-    store::write_yaml_preserve(&project_path, &project_mut)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    joy_core::git_ops::auto_git_add(&root, &[&rel]);
+    store::save_project(&root, &project_mut)?;
 
     // Clear any local session file for the AI member. If the AI runs on a
     // different machine this is a no-op; if it shares the machine, the
@@ -1659,4 +1711,22 @@ pub fn run_ai_rotate(member: &str) -> Result<()> {
     joy_core::git_ops::auto_git_post_command(&root, &format!("ai rotate {}", member), &acting);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// An AI member is known by its name and a person by an address: the
+    /// refusal says that, and asks for no prefix (JOY-02D1-21).
+    #[test]
+    fn the_refusal_says_what_an_ai_member_is_known_by() {
+        let refusal = not_an_ai_member("dev@example.com");
+        assert_eq!(
+            refusal,
+            "dev@example.com is not an AI member: an AI member is known by its name, \
+             for example claude, and a person by an address"
+        );
+        assert!(!refusal.contains("must start with"), "{refusal}");
+    }
 }

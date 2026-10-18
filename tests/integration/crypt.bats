@@ -85,7 +85,7 @@ setup_bob_with_crypt() {
     # Bob (still the member acting here) registers Alice, capturing her
     # invitation OTP; Alice then redeems it herself, which enrols her.
     # Naming her in this repository's git config is what makes the bare
-    # commands below act as her (JOY-02AE-1A, correcting D3.9).
+    # commands below act as her (JOY-02AE-1A).
     ALICE_OTP=$(joy project member add alice@example.com --passphrase "$PASS_BOB" | extract_otp)
     joy auth --otp "$ALICE_OTP" --user alice@example.com --passphrase "$PASS_ALICE" >/dev/null
     git config user.email alice@example.com

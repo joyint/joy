@@ -140,6 +140,26 @@ mod tests {
         );
     }
 
+    /// A passphrase is not held to a minimum, and what a person sees
+    /// while typing one is an estimate: a project's SECURITY.md has to
+    /// say so, or the sync writes the sentence out of the file again
+    /// (JOY-02D2-42).
+    #[test]
+    fn the_template_says_how_a_passphrase_is_judged() {
+        let body: String = rendered_body()
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(
+            body.contains("No minimum is enforced on the passphrase"),
+            "{body}"
+        );
+        assert!(body.contains("zxcvbn estimate"), "{body}");
+        assert!(body.contains("in bits and five levels"), "{body}");
+        // rendered into every project: no name of one of ours
+        assert!(!body.contains("workspace"), "{body}");
+    }
+
     #[test]
     fn render_is_idempotent() {
         let dir = tempdir().unwrap();

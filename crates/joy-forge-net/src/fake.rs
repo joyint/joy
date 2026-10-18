@@ -3,7 +3,7 @@
 
 //! An in process fake forge API, for the connector's own tests.
 //!
-//! The connectors now speak HTTP themselves (D2.8), so their tests need
+//! The connectors now speak HTTP themselves, so their tests need
 //! a forge to speak to. This is one: a tiny HTTP/1.1 server on the
 //! loopback interface that answers whatever the test's handler says and
 //! records every request it saw, so a test can assert on the URL a
@@ -80,7 +80,7 @@ impl Reply {
     /// Answer nothing at all and close the connection: the fake's way
     /// of being a name that does not resolve, a connection that is
     /// refused or a network that drops. The client sees a transport
-    /// failure and no status, which is the evidence D1.8a insists on
+    /// failure and no status, which is the evidence the rule insists on
     /// keeping apart from a refusal.
     pub fn hang_up() -> Self {
         Reply {
@@ -267,18 +267,18 @@ fn reason(status: u16) -> &'static str {
     }
 }
 
-// -- a forge to drive the sign in verbs against (package J3) ------------------
+// -- a forge to drive the sign in verbs against ------------------
 
 /// A forge whose every endpoint is the in process fake, for the tests
 /// of `auth::verbs`.
 ///
 /// It exists so that `login`, `token`, `token-store` and `logout` can
 /// be proved without a real forge and without the three connector
-/// crates: the shapes of D2.4, the event stream, the refresh lock and
-/// the login order of D4.1c are the connector's own business, and this
+/// crates: the shapes, the event stream, the refresh lock and
+/// the login order are the connector's own business, and this
 /// is the forge that stands still while they are checked.
 ///
-/// Its id is `github`, so the scope tables of D2.7a apply unchanged.
+/// Its id is `github`, so the scope tables apply unchanged.
 pub struct TestForge {
     /// The fake's base URL, e.g. `http://127.0.0.1:34567`.
     pub base: String,
@@ -286,13 +286,13 @@ pub struct TestForge {
     pub client_id: String,
     /// What a forge CLI would report as signed in on this host.
     pub foreign: Vec<String>,
-    /// Whether this forge knows the organisation wall of D2.7c, which
+    /// Whether this forge knows the organisation wall, which
     /// is a GitHub behaviour and not a GitLab or Gitea one.
     pub walls_orgs: bool,
 }
 
 /// Whether the OWNER's own organisation record is refused with the
-/// restriction named, which is the paid reading of D2.7c and the only
+/// restriction named, which is the paid reading and the only
 /// one: the forge itself says the wall exists (JOY-02A9-48).
 fn owner_record_is_walled(
     host: &str,
@@ -347,7 +347,7 @@ impl TestForge {
         self
     }
 
-    /// A forge that knows GitHub's organisation wall (D2.7c).
+    /// A forge that knows GitHub's organisation wall.
     pub fn with_org_walls(mut self) -> TestForge {
         self.walls_orgs = true;
         self
@@ -477,7 +477,7 @@ impl crate::forge::Forge for TestForge {
                         .collect()
                 })
                 .unwrap_or_default(),
-            // The granted set, space separated, as D2.7c asks for it.
+            // The granted set, space separated, as the rule asks for it.
             scopes: answer
                 .header("x-oauth-scopes")
                 .map(|raw| crate::scope::parse_granted(raw).join(" ")),
@@ -498,7 +498,7 @@ impl crate::forge::Forge for TestForge {
             .call()
             .ok()?;
         if !answer.ok() {
-            // The cheap reading of D2.7c, the way the GitHub connector
+            // The cheap reading, the way the GitHub connector
             // reads it: the forge names the restriction in the body of
             // its own 403, and that costs no request.
             if self.walls_orgs

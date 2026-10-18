@@ -105,39 +105,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
         println!("{} {}", color::label("Capabilities:"), caps.join(", "));
     }
 
-    // Show the item-level interaction-level override (only if explicitly set)
     if let Some(ref level) = item.interaction_level {
-        // Check if clamped by max-interaction-level of first assignee
-        let clamped = item.assignees.first().and_then(|a| {
-            let project = joy_core::store::load_project(&root).ok()?;
-            let member = project.member_by_key(a.member.id())?;
-            match &member.capabilities {
-                joy_core::model::project::MemberCapabilities::Specific(map) => {
-                    // Find the capability for the current status
-                    item.capabilities.iter().find_map(|cap| {
-                        let config = map.get(cap)?;
-                        let max = config.max_interaction_level?;
-                        if level < &max {
-                            Some((max, *level))
-                        } else {
-                            None
-                        }
-                    })
-                }
-                _ => None,
-            }
-        });
-
-        if let Some((effective, original)) = clamped {
-            println!(
-                "{} {} {}",
-                color::label("Interaction level:"),
-                effective,
-                color::inactive(&format!("[project max, item: {original}]"))
-            );
-        } else {
-            println!("{} {}", color::label("Interaction level:"), level);
-        }
+        println!("{} {}", color::label("Interaction level:"), level);
     }
 
     if !item.deps.is_empty() {
@@ -207,8 +176,8 @@ pub fn run(args: ShowArgs) -> Result<()> {
                     not_before.format("%Y-%m-%d %H:%M")
                 ));
             }
-            if let Some(deadline) = window.deadline {
-                parts.push(format!("deadline {}", deadline.format("%Y-%m-%d %H:%M")));
+            if let Some(until) = window.until {
+                parts.push(format!("until {}", until.format("%Y-%m-%d %H:%M")));
             }
             if !parts.is_empty() {
                 println!("{} {}", color::label("Window:  "), parts.join(", "));
@@ -345,8 +314,16 @@ pub fn run(args: ShowArgs) -> Result<()> {
         let date = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
             .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
             .unwrap_or_else(|_| entry.timestamp.clone());
+        // a status step says its statuses, and the reason where the
+        // platform had one; every other entry stays the line it was
+        let what = entry
+            .details
+            .as_deref()
+            .filter(|d| !d.is_empty() && entry.event_type.ends_with("status_changed"))
+            .map(|d| format!(" ({d})"))
+            .unwrap_or_default();
         println!(
-            "{} {} by {}",
+            "{} {} by {}{what}",
             color::label("Updated:"),
             color::label(&date),
             color::user(&entry.user),

@@ -36,7 +36,9 @@ The repository documents are README.md, VISION.md, ARCHITECTURE.md, and this fil
 - **README is user-facing only.** No technical detail; link to ARCHITECTURE.md where needed.
 - **No code duplication in docs.** Do not copy code, signatures, or config schemas; reference the concrete files instead.
 - **Describe what exists.** Document the actual code and the real relationships (for example, that AI agents invoke the `joy` CLI); do not document absent or unimplemented features. Ground every concrete claim (crates, commands, models) in the code and the concept docs, not in older docs or crate names.
+- **Items first.** What can live in a Joy item belongs there: designs, decisions and above all ADRs. A further document under `docs/` is the exception: write one only where it really earns its place, and link it from one of the main documents.
 - **Cite Joy items** in text by id and title (for example `JOY-01CC-94 - ADR: Git as sync backend`).
+- **Code cites items.** Comments, test messages and commit messages refer to Joy items by id, not to sections of a document.
 - **External documents** are not scattered inline; collect them in a closing `## References` section.
 - **No emoji** in technical docs or commit messages (README and user-facing materials may use them sparingly). The CLI's emoji are a runtime feature, configurable and deactivatable.
 - **No ASCII diagrams or box-drawing.** Use Mermaid. File-tree listings with standard tree characters are fine, since they show real filesystem structure.
@@ -75,6 +77,8 @@ Every source file starts with an [SPDX](https://spdx.dev/learn/handling-license-
 - **Snapshot tests** (`crates/joy-cli/tests/cmd/`, `trycmd`): CLI output as `.toml` cases (command, args, expected stdout, exit code); use `...` for varying output. For formatting changes and exit-code contracts.
 - **Integration tests** (`tests/integration/`, `bats`): the real `joy` binary against real `.joy/` directories, each test setting up a temp project. For new commands/flags and multi-step workflows.
 
+A test inherits nothing of the developer's shell and session (JOY-02BB-C7 - One list of the variables a test never inherits from the person's shell): no `JOY_` variable, no git identity variable, no forge CLI token or signed-in `gh`, `glab` or `tea`, and on Linux no session bus, so no test reaches the person's keychain. `crates/joy-test-env` says the rule once. The root of every Rust test binary says `joy_test_env::isolate!();` (each file directly under a `tests` directory, and under `#[cfg(test)]` each crate root; joy-process, which joy-test-env is built on, is left out), a test starts a process with `joy_test_env::command`, and `tests/integration/setup.bash` holds the same rule for bats. `just guard-test-env` refuses a test binary without the line and a plain command under a `tests` directory. A case that needs a home directory brings its own: the person's HOME is not taken away.
+
 Every new CLI command or flag gets at least one integration test; output-critical commands also get a snapshot test. Tests are part of "done", written with the implementation, not deferred. When closing a bug, reference the covering test in a comment.
 
 Run `just test` (all layers) before closing any implementation item; all must pass. Aim for over 80% line coverage in core libraries (a signal, not a gate).
@@ -94,18 +98,21 @@ Every push and pull request runs the same checks in CI (format check, lint, full
 
 Releases are cut locally with the `justfile`, not from CI. `just release [patch|minor|major]` bumps the version, refreshes `Cargo.lock`, runs `just check` (and rolls the bump back if it fails), records the release, and tags the commit locally; `just publish` then publishes the crates to crates.io (idempotent, safe to re-run) and creates the forge release. Pushing the tag triggers the CI release build for the target binaries. Secrets such as `CARGO_REGISTRY_TOKEN` come from the environment, never from vendor-locked CI logic.
 
+Between releases, `.github/workflows/nightly.yml` builds the current `main` for the same targets every night (and on demand) and replaces the archives of one rolling prerelease with the tag `nightly`. It is for a machine that needs the current state and cannot build it. `joy update`, winget and the installer scripts never install a nightly: it is a prerelease, its tag carries no version, and it holds no installer script; the workflow checks all three after every run.
+
 ## Commit Messages
 
 Conventional commits: `type(scope): description`. Types: `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `ci`. Scopes: `core`, `cli`, `tui`, `ai`, `docs`.
 
 Every commit subject references at least one Joy item id (for example `JOY-0042-AB`), or `[no-item]` for infrastructure commits with no logical backlog item. A `commit-msg` hook enforces this. No emoji.
 
-AI members end every commit with two trailers:
+AI members end delegated commits with this trailer:
 
 ```
-Co-Authored-By: <Tool> <tool-email>
 Delegated-By: <operator email from the token redemption>
 ```
+
+The acting Joy identity is `data.member` from token redemption; `data.session_env` authorizes writes. `Co-Authored-By` is optional and may be supplied by the AI tool itself.
 
 Examples:
 

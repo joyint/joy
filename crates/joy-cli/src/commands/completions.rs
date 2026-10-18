@@ -16,8 +16,7 @@ Recommended setup (add the line to the shell's startup file):
   Elvish:      eval (COMPLETE=elvish joy | slurp)                # rc.elv
 
 The COMPLETE= forms (zsh, fish, elvish) and the bash wrapper are dynamic:
-they complete item/milestone IDs and member IDs (including 'ai:tool@joy'
-values that bash would otherwise split at the colon). 'joy completions
+they complete item/milestone IDs and member IDs. 'joy completions
 <shell>' emits a static script instead (subcommands and flags only); on
 Windows that is the simplest route for a PowerShell profile.
 
@@ -65,7 +64,7 @@ pub fn run(args: CompletionsArgs, cmd: &mut clap::Command) -> Result<()> {
 
 /// Bash dynamic completion that:
 /// 1. Pre-merges tokens that bash split on `:` (default COMP_WORDBREAKS)
-///    so values like `ai:claude@joy` look like one word to clap_complete.
+///    so a value with a colon in it looks like one word to clap_complete.
 /// 2. Calls the clap_complete bash protocol against the joy binary.
 /// 3. Strips the `prefix:` portion from each candidate so bash inserts
 ///    only the post-colon suffix (the standard COMP_WORDBREAKS workaround).
@@ -123,7 +122,7 @@ const BASH_DYNAMIC_COLON_AWARE: &str = r#"_joy_complete() {
     fi
 
     # Strip the colon-prefix from candidates so bash's already-typed
-    # 'ai:' prefix is not duplicated when inserting.
+    # prefix is not duplicated when inserting.
     COMPREPLY=()
     local _strip=""
     if [[ "$_cur_word" == *:* ]]; then

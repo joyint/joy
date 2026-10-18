@@ -1,0 +1,68 @@
+name: aur
+
+# The AUR package joyint-joy-bin (Arch Linux) follows the published release.
+# release.yml calls this once the release is public; for a release that is
+# out already it is dispatched by hand with its version. The recipe comes
+# from main and the version from the input, so a fix to the packaging
+# reaches a release cut before it. makepkg needs Arch, which no hosted
+# runner is, so this runs in the Arch container. The key is a CI-only key
+# of the AUR account; without it the job says so and skips, it does not
+# fail.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+    secrets:
+      AUR_SSH_PRIVATE_KEY:
+        required: false
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published release to push to the AUR (for example 0.23.1)
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Skip without the AUR key
+        if: env.AUR_SSH_PRIVATE_KEY == ''
+        run: echo "::warning::AUR_SSH_PRIVATE_KEY is not set, joyint-joy-bin was not pushed"
+
+      - name: Install the build tools
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        run: pacman -Syu --noconfirm --needed git openssh just curl
+
+      - uses: actions/checkout@v5
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        with:
+          ref: main
+
+      # makepkg refuses to run as root. The host key is pinned to the
+      # ed25519 key aur.archlinux.org publishes on its front page
+      # (SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4), never scanned.
+      - name: Push joyint-joy-bin to the AUR
+        if: env.AUR_SSH_PRIVATE_KEY != ''
+        shell: bash
+        run: |
+          [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "not a version: $VERSION"; exit 1; }
+          useradd -m builder
+          chown -R builder: "$GITHUB_WORKSPACE"
+          ssh=/home/builder/.ssh
+          install -d -m 700 -o builder -g builder "$ssh"
+          printf '%s\n' "$AUR_SSH_PRIVATE_KEY" > "$ssh/aur"
+          printf '%s\n' 'aur.archlinux.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEuBKrPzbawxA/k2g6NcyV5jmqwJ2s+zpgZGZ7tpLIcN' > "$ssh/known_hosts"
+          printf 'Host aur.archlinux.org\n  User aur\n  IdentityFile ~/.ssh/aur\n  IdentitiesOnly yes\n' > "$ssh/config"
+          chown builder: "$ssh"/*; chmod 600 "$ssh/aur" "$ssh/config"
+          su builder -c 'git config --global user.name "github-actions[bot]" && git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"'
+          su builder -c "cd '$GITHUB_WORKSPACE' && just publish-aur '$VERSION'"

@@ -13,6 +13,9 @@ pub const CONFIG_FILE: &str = "config.yaml";
 pub const CONFIG_DEFAULTS_FILE: &str = "config.defaults.yaml";
 pub const PROJECT_FILE: &str = "project.yaml";
 pub const PROJECT_DEFAULTS_FILE: &str = "project.defaults.yaml";
+/// joy's recommendation as it is written to [`PROJECT_DEFAULTS_FILE`] at
+/// init, for a checkout that has no such file.
+const EMBEDDED_PROJECT_DEFAULTS: &str = include_str!("../data/project.defaults.yaml");
 pub const CREDENTIALS_FILE: &str = "credentials.yaml";
 pub const ITEMS_DIR: &str = "items";
 /// Job items live apart from product items: deletable without touching
@@ -430,6 +433,15 @@ pub fn read_yaml<T: DeserializeOwned>(path: &Path) -> Result<T, JoyError> {
         path: path.to_path_buf(),
         source: e,
     })?;
+    yaml_from_bytes(path, bytes)
+}
+
+/// The second half of [`read_yaml`], for a caller that already holds the
+/// file's bytes: `path` only names the file in an error.
+pub(crate) fn yaml_from_bytes<T: DeserializeOwned>(
+    path: &Path,
+    bytes: Vec<u8>,
+) -> Result<T, JoyError> {
     // ADR-040: item / file content can be a JOYCRYPT blob on disk.
     // The active session's zone keys live in a thread-local context
     // populated by joy-cli after passphrase verification. If the
@@ -464,7 +476,17 @@ pub fn read_project(
         path: project_path.to_path_buf(),
         source: e,
     })?;
-    parse_project(&content, project_path)
+    let (mut project, listed) = parse_project_and_member_ids(&content, project_path)?;
+    if let Some(ids) = listed {
+        // `<root>/.joy/project.yaml`: the member files sit next to it.
+        let root = project_path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        let shape = project.member_file_shape();
+        project.replace_members(crate::member_files::read(root, &ids, shape)?);
+    }
+    Ok(project)
 }
 
 /// Parse the content of a project.yaml that did not come from a file on
@@ -475,11 +497,136 @@ pub fn parse_project(
     content: &str,
     origin: &Path,
 ) -> Result<crate::model::project::Project, crate::error::JoyError> {
-    let value: serde_yaml_ng::Value =
-        serde_yaml_ng::from_str(content).map_err(|e| JoyError::YamlParse {
-            path: origin.to_path_buf(),
+    parse_project_and_member_ids(content, origin).map(|(project, _)| project)
+}
+
+/// [`parse_project`], and the member ids project.yaml lists when the
+/// members are kept in files of their own (JI-019D-46). The project then
+/// comes back without members: reading the files is the caller's part,
+/// because only a caller with a checkout has them.
+/// The format of `.joy` this joy reads and writes, said in project.yaml
+/// as `format`. A project without the field is format 1.
+///
+/// 1: the member map inside project.yaml (joy up to 0.22).
+/// 2: one file per member under `.joy/members/`, project.yaml lists them
+///    (JI-019D-46).
+/// 3: a job's window ends at `until`, no longer at `deadline`
+///    (JOY-02C9-70).
+/// 4: a member file says its `type` and keeps the name its member goes
+///    by as the one key under `identity` (JOY-02DB-09).
+///
+/// Raise it whenever a change makes a project unreadable for the joy
+/// before, in any file under `.joy`, OR lets that joy read it wrong. An
+/// older joy then meets the number before it meets the change, and says
+/// one sentence instead of a parse error or a silent loss: 0.22 died on
+/// "invalid type: sequence, expected a map" when a project shared on a
+/// forge was brought over to member files by a newer joy (2026-10-09);
+/// and the joy that read 2 showed a job without its `until` and dropped
+/// the end at its next write of the job (JOY-02CA-EE). Nothing is read
+/// before this number is checked.
+///
+/// This constant is the highest format this joy reads. What a
+/// project.yaml SAYS is what the project's data needs, and no more: 2
+/// once its members are in files, 3 from the first job that says
+/// `until`, 4 once its member files say their type. So a project is
+/// closed to an older joy exactly when it holds something that joy would
+/// get wrong, and not because a newer joy touched it.
+pub const PROJECT_FORMAT: u32 = 4;
+
+/// The format a project needs once its members are in files.
+const FORMAT_MEMBER_FILES: u32 = 2;
+
+/// The format a project needs once its member files say their type.
+const FORMAT_MEMBER_IDENTITY: u32 = 4;
+
+/// The format a project needs from the first job that says `until`.
+pub const FORMAT_JOB_UNTIL: u32 = 3;
+
+/// The `format` a project.yaml says, 1 when it says none.
+fn format_of(value: &serde_yaml_ng::Value) -> u32 {
+    value
+        .get("format")
+        .and_then(serde_yaml_ng::Value::as_u64)
+        .and_then(|n| u32::try_from(n).ok())
+        .unwrap_or(1)
+}
+
+/// Say `format` in a project.yaml, as its first key, so that whoever
+/// opens the file reads it first too.
+fn put_format_first(value: &mut serde_yaml_ng::Value, format: u32) {
+    if let Some(map) = value.as_mapping_mut() {
+        let rest = std::mem::take(map);
+        map.insert("format".into(), serde_yaml_ng::Value::from(format));
+        for (key, val) in rest {
+            if key.as_str() != Some("format") {
+                map.insert(key, val);
+            }
+        }
+    }
+}
+
+/// Lift the format project.yaml says to `needed`, when it says less, and
+/// stage the file. Called BEFORE the write that needs it (a job that
+/// says `until`, [`FORMAT_JOB_UNTIL`]), so the number and what it stands
+/// for land in the same commit and reach the forge together: there is no
+/// moment at which an older joy finds the new field under the old number.
+/// A project.yaml that already says enough is left alone.
+pub fn raise_format(root: &Path, needed: u32) -> Result<(), crate::error::JoyError> {
+    let project_path = joy_dir(root).join(PROJECT_FILE);
+    // No project file: nothing to mark (a bare store in a test).
+    let Ok(text) = std::fs::read_to_string(&project_path) else {
+        return Ok(());
+    };
+    let mut value: serde_yaml_ng::Value =
+        serde_yaml_ng::from_str(&text).map_err(|e| JoyError::YamlParse {
+            path: project_path.clone(),
             source: e,
         })?;
+    if format_of(&value) >= needed {
+        return Ok(());
+    }
+    put_format_first(&mut value, needed);
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(&project_path, yaml).map_err(|e| JoyError::WriteFile {
+        path: project_path.clone(),
+        source: e,
+    })?;
+    crate::git_ops::auto_git_add(root, &[&format!("{JOY_DIR}/{PROJECT_FILE}")]);
+    Ok(())
+}
+
+fn parse_project_and_member_ids(
+    content: &str,
+    origin: &Path,
+) -> Result<(crate::model::project::Project, Option<Vec<String>>), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
+    let yaml_err = |e| JoyError::YamlParse {
+        path: origin.to_path_buf(),
+        source: e,
+    };
+    let mut value: Value = serde_yaml_ng::from_str(content).map_err(yaml_err)?;
+    // Before anything is read: a project from a newer joy is not read
+    // at all, it is named.
+    let format = format_of(&value);
+    if format > PROJECT_FORMAT {
+        return Err(JoyError::NewerFormat {
+            format,
+            reads: PROJECT_FORMAT,
+        });
+    }
+    // A list under `members` is the ids of the member files; a map is
+    // the members themselves, as every older project has them.
+    let listed: Option<Vec<String>> = match value.get("members") {
+        Some(Value::Sequence(_)) => {
+            let list = value
+                .as_mapping_mut()
+                .and_then(|map| map.remove("members"))
+                .unwrap_or(Value::Null);
+            Some(serde_yaml_ng::from_value(list).map_err(yaml_err)?)
+        }
+        _ => None,
+    };
     // Migrations run implicitly and SILENTLY (JOY-0240-97): the person is
     // never sent to project.yaml — they are not supposed to see that file
     // at all. `joy update` persists the migrated form when it runs; until
@@ -488,17 +635,114 @@ pub fn parse_project(
     // merely got its adapter pin backfilled, nagging about "legacy auth
     // field names" that never existed.
     let (value, _migrated) = crate::migrations::project_yaml::apply(value);
-    serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
-        path: origin.to_path_buf(),
-        source: e,
-    })
+    let mut project: crate::model::project::Project =
+        serde_yaml_ng::from_value(value).map_err(yaml_err)?;
+    if listed.is_some() {
+        project.set_member_layout(crate::model::project::MemberLayout::Files);
+        project.set_member_file_shape(if format >= FORMAT_MEMBER_IDENTITY {
+            crate::model::project::MemberFileShape::Identity
+        } else {
+            crate::model::project::MemberFileShape::Flat
+        });
+    }
+    Ok((project, listed))
 }
 
 /// Load the full project metadata from project.yaml under the given
 /// project root. Applies migrations via [`read_project`].
 pub fn load_project(root: &Path) -> Result<crate::model::project::Project, crate::error::JoyError> {
+    read_project(&joy_dir(root).join(PROJECT_FILE))
+}
+
+/// The top-level keys of project.yaml that [`Project`] models. What it
+/// says about them is the whole truth: one it leaves out is gone from
+/// the file. Every other top-level key (gates, defaults a newer joy
+/// wrote) is carried over untouched.
+///
+/// [`Project`]: crate::model::project::Project
+const MODELED_PROJECT_KEYS: &[&str] = &[
+    "format",
+    "name",
+    "acronym",
+    "description",
+    "language",
+    "forge",
+    "privacy",
+    "docs",
+    "members",
+    "crypt",
+    "created",
+];
+
+/// Write the project back and stage what was written.
+///
+/// THE way a changed [`Project`](crate::model::project::Project) reaches
+/// the disk: every caller hands over the root and the project, and where
+/// the project lives under `.joy/` is this module's business alone. The
+/// written paths are staged like every other joy write (`auto_git_add`,
+/// which the `workflow.auto-git` setting governs).
+pub fn save_project(
+    root: &Path,
+    project: &crate::model::project::Project,
+) -> Result<(), crate::error::JoyError> {
+    use serde_yaml_ng::Value;
+
     let project_path = joy_dir(root).join(PROJECT_FILE);
-    read_project(&project_path)
+    let mut value = serde_yaml_ng::to_value(project)?;
+    let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
+    let existing: Option<Value> = std::fs::read_to_string(&project_path)
+        .ok()
+        .and_then(|text| serde_yaml_ng::from_str(&text).ok());
+    // What the file says already stays said (a job with `until` lifted it
+    // to 3, and saving the project must not take that back); member files
+    // need 2, and 4 once they say their type. A project in format 1 says
+    // nothing, as it always did.
+    let said = existing.as_ref().map(format_of).unwrap_or(1);
+    let shape = project.member_file_shape();
+    let needed = match (in_files, shape) {
+        (false, _) => said,
+        (true, crate::model::project::MemberFileShape::Flat) => said.max(FORMAT_MEMBER_FILES),
+        (true, crate::model::project::MemberFileShape::Identity) => {
+            said.max(FORMAT_MEMBER_IDENTITY)
+        }
+    };
+    if in_files {
+        let ids = crate::member_files::write(root, project.member_map(), shape)?;
+        if let Some(map) = value.as_mapping_mut() {
+            map.remove("members");
+            if !ids.is_empty() {
+                map.insert("members".into(), serde_yaml_ng::to_value(ids)?);
+            }
+        }
+    }
+    if needed > 1 {
+        put_format_first(&mut value, needed);
+    }
+    if let Some(map) = value.as_mapping_mut() {
+        if let Some(Value::Mapping(existing)) = existing {
+            for (key, val) in existing {
+                let modeled = key
+                    .as_str()
+                    .is_some_and(|k| MODELED_PROJECT_KEYS.contains(&k));
+                if !modeled && !map.contains_key(&key) {
+                    map.insert(key, val);
+                }
+            }
+        }
+    }
+    let yaml = serde_yaml_ng::to_string(&value)?;
+    std::fs::write(&project_path, yaml).map_err(|e| JoyError::WriteFile {
+        path: project_path.clone(),
+        source: e,
+    })?;
+    let rel = format!("{JOY_DIR}/{PROJECT_FILE}");
+    let members = format!("{JOY_DIR}/{}", crate::member_files::MEMBERS_DIR);
+    if in_files {
+        crate::git_ops::auto_git_add(root, &[&rel, &members]);
+    } else {
+        crate::git_ops::auto_git_add(root, &[&rel]);
+    }
+    Ok(())
 }
 
 /// Load interaction-level defaults by merging project.defaults.yaml with the
@@ -522,23 +766,17 @@ pub fn load_interaction_level_defaults(
     serde_json::from_value(base).unwrap_or_default()
 }
 
-/// Load the raw interaction-level defaults from project.defaults.yaml (before
-/// the project.yaml merge). Used for source tracking in resolve_interaction_level().
-pub fn load_raw_interaction_level_defaults(
-    root: &Path,
-) -> crate::model::project::InteractionLevelDefaults {
-    let path = project_defaults_path(root);
-    read_yaml_value(&path)
-        .and_then(|v| v.get("interaction-level").cloned())
-        .and_then(|v| serde_json::from_value(v).ok())
-        .unwrap_or_default()
-}
-
 /// Load AI defaults (capabilities granted to AI members) from project.defaults.yaml,
 /// with project.yaml ai-defaults overlay.
 pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
+    // The defaults file is joy's own recommendation, written at `joy
+    // init` and not committed. A checkout that never saw an init (a
+    // clone, the platform's) has none, and gets the same recommendation
+    // from the copy joy carries: an AI member registered there may do
+    // what one registered at home may, create and assign included.
     let defaults_path = project_defaults_path(root);
     let mut base = read_yaml_value(&defaults_path)
+        .or_else(|| serde_yaml_ng::from_str::<serde_json::Value>(EMBEDDED_PROJECT_DEFAULTS).ok())
         .and_then(|v| v.get("ai-defaults").cloned())
         .unwrap_or(serde_json::json!({}));
 
@@ -554,8 +792,7 @@ pub fn load_ai_defaults(root: &Path) -> crate::model::project::AiDefaults {
 
 /// Load the project acronym from project.yaml.
 pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
-    let project_path = joy_dir(root).join(PROJECT_FILE);
-    let project = read_project(&project_path)?;
+    let project = load_project(root)?;
     project.acronym.ok_or_else(|| {
         crate::error::JoyError::Other(
             "project acronym not set -- run: joy project --acronym <ACRONYM>".to_string(),
@@ -565,7 +802,201 @@ pub fn load_acronym(root: &Path) -> Result<String, crate::error::JoyError> {
 
 #[cfg(test)]
 mod tests {
+    /// A project from a joy newer than this one is named before it is
+    /// read, in one sentence that says what to do.
+    #[test]
+    fn a_project_from_a_newer_joy_says_so_before_anything_is_read() {
+        let newer = format!(
+            "format: {}\nname: Later\nmembers:\n- m-aaaaaaaaaa\nsomething_new: [1, 2]\n",
+            PROJECT_FORMAT + 1
+        );
+        let err = parse_project(&newer, std::path::Path::new("project.yaml")).unwrap_err();
+        assert!(matches!(
+            err,
+            JoyError::NewerFormat { format, reads } if format == PROJECT_FORMAT + 1 && reads == PROJECT_FORMAT
+        ));
+        assert_eq!(
+            err.to_string(),
+            "this project needs a newer joy: install the update"
+        );
+        // the formats this joy knows read as ever
+        let created = "created: 2026-10-10T00:00:00Z\n";
+        for format in [FORMAT_MEMBER_FILES, FORMAT_JOB_UNTIL] {
+            parse_project(
+                &format!("format: {format}\nname: Now\nmembers: []\n{created}"),
+                std::path::Path::new("p"),
+            )
+            .unwrap();
+        }
+        parse_project(
+            &format!("name: Before\n{created}"),
+            std::path::Path::new("p"),
+        )
+        .unwrap();
+    }
+
+    /// A project kept in member files says its format, first thing in
+    /// the file; one kept the old way says nothing, as it always did.
+    #[test]
+    fn a_project_in_member_files_says_its_format_first() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::init::init(crate::init::InitOptions {
+            root: dir.path().to_path_buf(),
+            name: Some("Now".into()),
+            acronym: Some("NW".into()),
+            user: Some("founder@example.com".into()),
+            language: None,
+            host: crate::host::HostKind::Background,
+            ask: None,
+        })
+        .unwrap();
+        let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
+        // what member files of format 4 need, and no more
+        assert!(
+            text.starts_with(&format!("format: {FORMAT_MEMBER_IDENTITY}\n")),
+            "{text}"
+        );
+        assert_eq!(text.matches("format:").count(), 1);
+        let again = load_project(dir.path()).unwrap();
+        save_project(dir.path(), &again).unwrap();
+        let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
+        assert_eq!(text.matches("format:").count(), 1, "{text}");
+    }
+
+    /// The number a project says is what its data needs (JOY-02CA-EE). A
+    /// job that says `until` is read wrong by a joy before (no end, and
+    /// the end gone at its next write), so writing one lifts the number
+    /// to 3 in the same write. Nothing else does: a job without an end
+    /// leaves the project at 2, open to the joy that reads 2. And once
+    /// lifted the number stays, also when the project itself is saved.
+    #[test]
+    fn a_job_that_says_until_lifts_the_projects_format() {
+        use crate::model::item::{ItemType, JobSpec, JobWindow};
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        crate::init::init(crate::init::InitOptions {
+            root: root.to_path_buf(),
+            name: Some("Now".into()),
+            acronym: Some("NW".into()),
+            user: Some("founder@example.com".into()),
+            language: None,
+            host: crate::host::HostKind::Background,
+            ask: None,
+        })
+        .unwrap();
+        let said = || {
+            let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+            assert_eq!(text.matches("format:").count(), 1, "{text}");
+            format_of(&serde_yaml_ng::from_str(&text).unwrap())
+        };
+        let job = |id: &str, window: Option<JobWindow>| {
+            let mut job = crate::templates::render_item(&ItemType::Job, id, "A job").unwrap();
+            job.job = Some(JobSpec {
+                scope: vec!["NW-0001-AA".into()],
+                budget: None,
+                window,
+                feedback: None,
+                activity: Vec::new(),
+                base_branch: None,
+                result_branch: None,
+            });
+            job
+        };
+        // a project of joy 0.23: member files without a type, format 2
+        let mut project = load_project(root).unwrap();
+        project.set_member_file_shape(crate::model::project::MemberFileShape::Flat);
+        let path = joy_dir(root).join(PROJECT_FILE);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace("format: 4\n", "format: 2\n")).unwrap();
+        save_project(root, &project).unwrap();
+        assert_eq!(said(), FORMAT_MEMBER_FILES);
+
+        // a job without an end, and one with a start only: nothing new
+        crate::items::save_item(root, &job("NW-JOB-0001-AA", None)).unwrap();
+        let start_only = JobWindow {
+            not_before: Some(chrono::Utc::now()),
+            until: None,
+        };
+        crate::items::save_item(root, &job("NW-JOB-0002-AA", Some(start_only))).unwrap();
+        assert_eq!(said(), FORMAT_MEMBER_FILES);
+
+        // the first job that says `until`
+        let ends = JobWindow {
+            not_before: None,
+            until: Some(chrono::Utc::now()),
+        };
+        crate::items::save_item(root, &job("NW-JOB-0003-AA", Some(ends))).unwrap();
+        assert_eq!(said(), FORMAT_JOB_UNTIL);
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
+
+        // saving the project does not take the number back, and the
+        // project reads as before
+        let project = load_project(root).unwrap();
+        save_project(root, &project).unwrap();
+        assert_eq!(said(), FORMAT_JOB_UNTIL);
+        assert_eq!(load_project(root).unwrap().name, "Now");
+    }
+
+    /// A project still kept the old way (members inside project.yaml)
+    /// says the number too once a job says `until`, and keeps it when it
+    /// is saved in that layout.
+    #[test]
+    fn a_project_kept_the_old_way_is_lifted_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(joy_dir(root)).unwrap();
+        std::fs::write(
+            joy_dir(root).join(PROJECT_FILE),
+            "name: Before\nacronym: BF\ncreated: 2026-10-10T00:00:00Z\n",
+        )
+        .unwrap();
+        raise_format(root, FORMAT_JOB_UNTIL).unwrap();
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
+        assert!(text.contains("name: Before"), "{text}");
+        // a second lift changes nothing
+        raise_format(root, FORMAT_JOB_UNTIL).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap(),
+            text
+        );
+        let project = load_project(root).unwrap();
+        save_project(root, &project).unwrap();
+        let text = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(text.starts_with("format: 3\n"), "{text}");
+    }
+
     use super::*;
+
+    /// What the project says about its own keys is the whole truth, and
+    /// what it does not model is left alone: a cleared description is
+    /// gone from the file, a gate written by hand stays.
+    #[test]
+    fn save_project_drops_a_cleared_modeled_key_and_keeps_an_unmodeled_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(joy_dir(root)).unwrap();
+        let mut project = crate::model::project::Project::new("Shop".into(), Some("SH".into()));
+        project.description = Some("sells things".into());
+        save_project(root, &project).unwrap();
+
+        let path = joy_dir(root).join(PROJECT_FILE);
+        let mut raw = std::fs::read_to_string(&path).unwrap();
+        raw.push_str("status_rules:\n  review -> closed:\n    allow_ai: false\n");
+        std::fs::write(&path, raw).unwrap();
+
+        let mut reread = load_project(root).unwrap();
+        assert_eq!(reread.description.as_deref(), Some("sells things"));
+        reread.description = None;
+        save_project(root, &reread).unwrap();
+
+        let written = std::fs::read_to_string(&path).unwrap();
+        assert!(!written.contains("description"), "{written}");
+        assert!(written.contains("review -> closed"), "{written}");
+        assert_eq!(load_project(root).unwrap(), reread);
+    }
     use crate::model::Config;
     use tempfile::tempdir;
 
@@ -785,37 +1216,27 @@ interaction-level:
         );
     }
 
+    /// A checkout that never saw `joy init` (a clone, the platform's) has
+    /// no defaults file; an AI member registered there gets joy's own
+    /// recommendation all the same, create and assign included, so it
+    /// can write an item or a comment like one registered at home.
     #[test]
-    fn load_raw_interaction_level_defaults_ignores_project_overrides() {
+    fn load_ai_defaults_without_a_file_is_joys_own_recommendation() {
+        use crate::model::item::Capability;
         let dir = tempdir().unwrap();
         setup_project_dir(dir.path());
-
-        let defaults_content = r#"
-interaction-level:
-  implement: proposing
-"#;
-        std::fs::write(
-            dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE),
-            defaults_content,
-        )
-        .unwrap();
-
-        let project_content = r#"
-name: test
-acronym: TST
-language: en
-created: "2026-01-01T00:00:00+00:00"
-members: {}
-interaction-level:
-  implement: confirmed
-"#;
-        std::fs::write(dir.path().join(JOY_DIR).join(PROJECT_FILE), project_content).unwrap();
-
-        let raw = load_raw_interaction_level_defaults(dir.path());
-        assert_eq!(
-            raw.capabilities[&Capability::Implement],
-            InteractionLevel::Proposing
-        );
+        let _ = std::fs::remove_file(dir.path().join(JOY_DIR).join(PROJECT_DEFAULTS_FILE));
+        let defaults = load_ai_defaults(dir.path());
+        for cap in [
+            Capability::Implement,
+            Capability::Review,
+            Capability::Create,
+            Capability::Assign,
+        ] {
+            assert!(defaults.capabilities.contains(&cap), "{cap}");
+        }
+        assert!(!defaults.capabilities.contains(&Capability::Manage));
+        assert!(!defaults.capabilities.contains(&Capability::Delete));
     }
 
     #[test]

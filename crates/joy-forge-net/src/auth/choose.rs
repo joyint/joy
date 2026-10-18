@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! Which login answers for a remote (D4.1c).
+//! Which login answers for a remote.
 //!
 //! This is not academic. gh keeps several accounts per host and
 //! documents the trap itself: "Without the --user flag, the active
@@ -61,7 +61,7 @@ pub fn probe_order(own: &[String], foreign: &[String]) -> Vec<String> {
     order
 }
 
-/// The answer of step 5, with the sentence D4.1c writes: "None of your
+/// The answer of step 5, with the sentence the rule writes: "None of your
 /// GitHub logins (work, scotty) can reach acme/widgets. Sign in with
 /// the login that can."
 ///
@@ -90,7 +90,7 @@ pub fn no_login_for_repo(
     answer
 }
 
-/// The answer of D2.7c when no login can reach the repository because
+/// The answer when no login can reach the repository because
 /// the OWNER organisation has not approved Joy.
 ///
 /// This is not step 5 and must never be dressed as one: "None of your

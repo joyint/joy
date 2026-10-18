@@ -22,7 +22,7 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[
         target: "hooks/prepare-commit-msg",
         executable: true,
     },
-    // The tail of every joy hook (design D3.5): joy owns
+    // The tail of every joy hook: joy owns
     // `core.hooksPath`, so it runs what was there before.
     EmbeddedFile {
         content: include_str!("../data/hooks/joy-chain"),
@@ -35,7 +35,7 @@ pub const HOOK_FILES: &[EmbeddedFile] = &[
 /// the working tree, so it is the same value in every clone.
 pub const JOY_HOOKS_PATH: &str = ".joy/hooks";
 
-/// Where joy remembers the hook path it replaced (design D3.5).
+/// Where joy remembers the hook path it replaced.
 ///
 /// A file joy writes, not a git config key, so it travels with the
 /// checkout of the person who has it and never with the team:
@@ -84,7 +84,7 @@ pub struct InitOptions {
     pub user: Option<String>,
     /// Project language code (ISO 639-1, e.g. "en", "de"). Defaults to "en".
     pub language: Option<String>,
-    /// Who is behind this process. Decided by the host, never here (D1.1).
+    /// Who is behind this process. Decided by the host, never here.
     pub host: HostKind,
     /// How an [`HostKind::Interactive`] host asks for the founder's address
     /// when neither `user` nor git config knows one. `None` means "do not
@@ -124,7 +124,7 @@ impl Default for InitOptions {
     }
 }
 
-/// How a host asks a person for the founding address (D3.9). Implemented
+/// How a host asks a person for the founding address. Implemented
 /// by the CLI over the terminal and by the desktop over its setup mask;
 /// a test implements it over a scripted answer.
 pub trait AskFounderAddress {
@@ -240,7 +240,7 @@ pub struct InitResult {
     pub git_existed: bool,
     /// The founding member this init registered. The caller's next step
     /// (setting up authentication) takes it from here instead of asking
-    /// git config a second time (D3.9).
+    /// git config a second time.
     pub founder: String,
 }
 
@@ -248,7 +248,7 @@ pub struct OnboardResult {
     pub hooks_installed: bool,
     pub hooks_already_set: bool,
     /// The hook path joy took over and now chains to, when there was
-    /// one (design D3.5). `None` when `core.hooksPath` was unset, in
+    /// one. `None` when `core.hooksPath` was unset, in
     /// which case joy's hooks chain to git's own `$GIT_DIR/hooks`.
     pub chained: Option<String>,
 }
@@ -272,7 +272,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     let founder_email = match resolve_founder_email(root, options.user.as_deref())? {
         Some(email) => email,
         // Nothing on file and nothing given. A host with a person in front
-        // of it asks; every other host refuses by name (D3.9) instead of
+        // of it asks; every other host refuses by name instead of
         // telling a server to run `git config`.
         None => ask_for_founder_address(root, options.host, options.ask.as_deref_mut())?,
     };
@@ -320,6 +320,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     embedded::sync_files(root, PROJECT_FILES)?;
 
     let mut project = Project::new(name, Some(acronym));
+    project.set_member_layout(crate::model::project::MemberLayout::Files);
     if let Some(lang) = options.language.filter(|s| !s.is_empty()) {
         project.language = lang;
     }
@@ -329,14 +330,13 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // migrates afterwards via switch_to_anonymous.
     project.register_member(
         &founder_email,
-        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+        crate::model::project::Member::person(crate::model::project::MemberCapabilities::All),
     )?;
 
-    store::write_yaml(&joy_dir.join(store::PROJECT_FILE), &project)?;
+    store::save_project(root, &project)?;
 
-    let project_rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
     let defaults_rel = format!("{}/{}", store::JOY_DIR, store::CONFIG_DEFAULTS_FILE);
-    crate::git_ops::auto_git_add(root, &[&project_rel, &defaults_rel]);
+    crate::git_ops::auto_git_add(root, &[&defaults_rel]);
 
     // Ensure .joy/credentials.yaml is in .gitignore
     ensure_gitignore(root)?;
@@ -373,7 +373,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
 }
 
 /// The founding address from the person at this terminal, or the named
-/// refusal of D3.9. An `Interactive` host without an ask (a `--json` run,
+/// refusal. An `Interactive` host without an ask (a `--json` run,
 /// a piped stdin) refuses like a background host: there is nobody to answer.
 ///
 /// A typed address passes the same alias guard as `--user`, and a refused
@@ -433,7 +433,7 @@ fn resolve_founder_email(
 
 /// The capture guard itself, applied to EVERY founding address: the one
 /// from git config, the one `--user` names, and the one a person types at
-/// the ask. Decided this way on purpose (D4.4): an explicit override is
+/// the ask. Decided this way on purpose: an explicit override is
 /// not a reason to let a forge alias become a member key, because the
 /// split identity it produces is the same in both cases, and the person
 /// who typed it cannot see that their forge handed them an alias. The
@@ -471,7 +471,7 @@ pub enum FounderHeal {
 /// Idempotent: does nothing when the project already has members.
 ///
 /// `host` and `ask` are the same two the fresh path takes, and for the
-/// same reason (D3.9): this is the command a person runs to repair a
+/// same reason: this is the command a person runs to repair a
 /// project, so a person at a terminal is asked for the address here too
 /// instead of being sent to `git config`. A background host answers
 /// [`FounderHeal::NoIdentity`] as before.
@@ -481,8 +481,7 @@ pub fn ensure_founder(
     host: HostKind,
     ask: Option<&mut (dyn AskFounderAddress + 'static)>,
 ) -> Result<FounderHeal, JoyError> {
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut project = store::read_project(&project_path)?;
+    let mut project = store::load_project(root)?;
     if project.has_members() {
         return Ok(FounderHeal::AlreadyPresent);
     }
@@ -498,11 +497,9 @@ pub fn ensure_founder(
     };
     project.register_member(
         &email,
-        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+        crate::model::project::Member::person(crate::model::project::MemberCapabilities::All),
     )?;
-    store::write_yaml(&project_path, &project)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &project)?;
     Ok(FounderHeal::Registered(email))
 }
 
@@ -521,7 +518,7 @@ pub fn onboard(root: &Path) -> Result<OnboardResult, JoyError> {
 }
 
 /// Sync hook files, remember the hook path joy replaces, and set
-/// core.hooksPath (design D3.5).
+/// core.hooksPath.
 fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
     let actions = embedded::sync_files(root, HOOK_FILES)?;
     let hooks_installed = actions.iter().any(|a| a.action != "up to date");
@@ -545,7 +542,7 @@ fn install_hooks(root: &Path) -> Result<OnboardResult, JoyError> {
 }
 
 /// Remember the hook path joy is about to replace, so every joy hook
-/// can run it afterwards (design D3.5), and say so ONCE.
+/// can run it afterwards, and say so ONCE.
 ///
 /// `core.hooksPath` replaces the hook location entirely, so the
 /// alternative - not setting it - means joy's commit-msg check is absent
@@ -708,7 +705,7 @@ pub const CI_GITLAB: CiTemplate = CiTemplate {
     target: ".joy/ci/gitlab.yml",
     content: include_str!("../data/ci/gitlab.yml"),
     note: Some(
-        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nand set the CI variable JOY_PUSH_TOKEN",
+        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nset the CI variable JOY_PUSH_TOKEN, and keep one more job that runs for merge requests",
     ),
 };
 
@@ -861,6 +858,50 @@ pub fn ensure_lazy_activation(root: &Path) -> Result<(), JoyError> {
     Ok(())
 }
 
+/// What every joy invocation asks of this clone before it runs, read
+/// with one open of the repository: the version that last synced it and
+/// whether the merge driver is registered as this binary writes it.
+/// Asked one by one through [`last_sync_version`] and
+/// [`ensure_lazy_activation`], the same answers opened the repository
+/// eight times before the command had started (JOY-02BA-45).
+pub struct CloneState {
+    pub last_sync_version: Option<String>,
+    merge_driver_registered: bool,
+}
+
+/// The [`CloneState`] of the repository that holds `root`; `None` when
+/// `root` is in no working tree, where there is no clone to sync.
+pub fn clone_state(root: &Path) -> Option<CloneState> {
+    let mut values = crate::vcs::forge::local_config_values(
+        root,
+        &[
+            LAST_SYNC_VERSION_KEY,
+            MERGE_DRIVER_NAME_KEY,
+            MERGE_DRIVER_CMD_KEY,
+        ],
+    )?
+    .into_iter();
+    let last_sync_version = values.next().flatten();
+    let name = values.next().flatten();
+    let cmd = values.next().flatten();
+    Some(CloneState {
+        last_sync_version,
+        merge_driver_registered: name.as_deref() == Some(MERGE_DRIVER_NAME_VALUE)
+            && cmd.as_deref() == Some(MERGE_DRIVER_CMD_VALUE),
+    })
+}
+
+/// [`ensure_lazy_activation`] for a caller that already holds the
+/// clone's state: the merge driver is only written when the state says
+/// it is missing or stale, and nothing is asked of the repository again.
+pub fn ensure_lazy_activation_for(root: &Path, state: &CloneState) -> Result<(), JoyError> {
+    ensure_gitattributes(root)?;
+    if !state.merge_driver_registered {
+        register_merge_driver(root)?;
+    }
+    Ok(())
+}
+
 /// Per-clone git config key recording the joy version that last synced
 /// this repo. Compared against `env!("CARGO_PKG_VERSION")` to drive the
 /// auto-sync hook. See JOY-0164-B5.
@@ -945,6 +986,95 @@ mod ci_template_tests {
         }
     }
 
+    /// A forge starts no `pull_request` job for a pull request it already
+    /// shows as conflicting, and the conflict it sees in the Joy files is
+    /// the one this job merges (JOY-02CE-55).
+    #[test]
+    fn the_job_starts_for_a_pull_request_that_already_conflicts() {
+        for template in [CI_GITHUB, CI_GITEA] {
+            assert!(
+                template.content.contains("\n  pull_request_target:\n"),
+                "{} does not listen on pull_request_target",
+                template.target
+            );
+            assert!(
+                !template.content.contains("\n  pull_request:\n"),
+                "{} still listens on pull_request",
+                template.target
+            );
+        }
+    }
+
+    /// Under `pull_request_target` the job's token may write for a fork's
+    /// pull request too, so nothing of a fork is checked out or run: every
+    /// step but the one that asks the contributor is bound to a branch of
+    /// this repository (JOY-02CE-55).
+    #[test]
+    fn a_fork_is_asked_and_never_checked_out() {
+        const OWN: &str = "if: github.event.pull_request.head.repo.full_name == github.repository";
+        const FORK: &str = "if: github.event.pull_request.head.repo.full_name != github.repository";
+        for template in [CI_GITHUB, CI_GITEA] {
+            let steps = template
+                .content
+                .split("    steps:\n")
+                .nth(1)
+                .expect("the steps");
+            let steps: Vec<&str> = steps
+                .split("\n      - ")
+                .filter(|step| step.contains("uses:") || step.contains("name:"))
+                .collect();
+            assert_eq!(steps.len(), 4, "{}: {steps:#?}", template.target);
+            for step in &steps {
+                if step.contains("Ask the contributor") {
+                    assert!(step.contains(FORK), "{}: {step}", template.target);
+                    assert!(
+                        step.contains("GH_REPO: ${{ github.repository }}"),
+                        "{}: the question names no repository: {step}",
+                        template.target
+                    );
+                } else {
+                    assert!(step.contains(OWN), "{}: {step}", template.target);
+                }
+            }
+        }
+    }
+
+    /// What a GitLab told us when it ran the job (JOY-02D0-A1): the
+    /// installer unpacks a .tar.xz, which the slim image cannot; the push
+    /// has to go where the server is, on http or another port as well;
+    /// and GitLab starts no pipeline for a job of the .pre stage alone,
+    /// which the person has to be told.
+    #[test]
+    fn the_gitlab_job_runs_as_a_gitlab_ran_it() {
+        let job = CI_GITLAB.content;
+        assert!(
+            job.contains("apt-get install -y -qq curl ca-certificates git xz-utils"),
+            "{job}"
+        );
+        assert!(
+            job.contains(
+                "\"${CI_SERVER_PROTOCOL}://oauth2:${JOY_PUSH_TOKEN}@${CI_SERVER_HOST}:${CI_SERVER_PORT}/${CI_MERGE_REQUEST_SOURCE_PROJECT_PATH}.git\""
+            ),
+            "{job}"
+        );
+        assert!(!job.contains("https://oauth2"), "{job}");
+        // a merge request that conflicts gets its pipeline all the same,
+        // so the rule stays the plain one
+        assert!(
+            job.contains("- if: $CI_PIPELINE_SOURCE == \"merge_request_event\""),
+            "{job}"
+        );
+        let note = CI_GITLAB.note.expect("the note");
+        assert!(
+            note.contains("one more job that runs for merge requests"),
+            "{note}"
+        );
+        assert!(
+            job.contains("one more job that runs for merge requests"),
+            "{job}"
+        );
+    }
+
     #[test]
     fn a_file_of_someone_else_is_never_overwritten() {
         let dir = std::env::temp_dir().join(format!("joy-ci-tpl-{}", std::process::id()));
@@ -975,6 +1105,20 @@ mod ci_template_tests {
 
 #[cfg(test)]
 mod tests {
+    /// The GitHub job publishes the merge with joy's own git connection,
+    /// which reads GH_TOKEN, not the credentials actions/checkout leaves
+    /// in the git config: without it every merge that has to be pushed
+    /// fails with "Sign in to GitHub to sync".
+    #[test]
+    fn the_github_merge_step_gets_the_jobs_token() {
+        let step = CI_GITHUB
+            .content
+            .split("- name: Merge the target branch in")
+            .nth(1)
+            .expect("the merge step");
+        assert!(step.contains("GH_TOKEN: ${{ github.token }}"), "{step}");
+    }
+
     use super::*;
     use tempfile::tempdir;
 
@@ -1068,7 +1212,7 @@ mod tests {
         );
     }
 
-    /// D3.9: a host with a person in front of it takes the typed address.
+    /// A host with a person in front of it takes the typed address.
     #[test]
     fn an_interactive_host_takes_the_address_the_person_types() {
         let dir = tempdir().unwrap();
@@ -1079,7 +1223,7 @@ mod tests {
         assert_eq!(ask.asked, 1);
     }
 
-    /// D3.9: a background or delegated host refuses with the named
+    /// A background or delegated host refuses with the named
     /// sentence and asks nobody, even when an ask is at hand.
     #[test]
     fn a_host_with_nobody_at_it_refuses_by_name() {
@@ -1156,8 +1300,7 @@ mod tests {
         })
         .unwrap();
 
-        let project: Project =
-            store::read_yaml(&store::joy_dir(dir.path()).join(store::PROJECT_FILE)).unwrap();
+        let project: Project = store::load_project(dir.path()).unwrap();
         assert_eq!(project.name, "My App");
         assert_eq!(project.acronym.as_deref(), Some("MA"));
     }
@@ -1173,8 +1316,7 @@ mod tests {
         })
         .unwrap();
 
-        let project: Project =
-            store::read_yaml(&store::joy_dir(dir.path()).join(store::PROJECT_FILE)).unwrap();
+        let project: Project = store::load_project(dir.path()).unwrap();
         // tempdir names vary, just check it's not empty
         assert!(!project.name.is_empty());
         assert!(project.acronym.is_some());
@@ -1280,6 +1422,43 @@ mod tests {
 
         assert_eq!(first, second);
         assert_eq!(second.matches(GITATTRIBUTES_BLOCK_START).count(), 1);
+    }
+
+    /// JOY-02BA-45: the clone's state is read with one open and says
+    /// what the single reads say: the sync marker, and whether the merge
+    /// driver is registered as this binary writes it.
+    #[test]
+    fn the_clone_state_answers_what_the_single_reads_answer() {
+        let dir = tempdir().unwrap();
+        // No repository: no clone to sync, as `last_sync_version` says.
+        assert!(clone_state(dir.path()).is_none());
+        assert_eq!(last_sync_version(dir.path()), None);
+
+        git2::Repository::init(dir.path()).unwrap();
+        let state = clone_state(dir.path()).expect("a working tree has a state");
+        assert_eq!(state.last_sync_version, None);
+        assert!(!state.merge_driver_registered);
+
+        // A fresh clone gets the driver, and `.gitattributes`.
+        ensure_lazy_activation_for(dir.path(), &state).unwrap();
+        set_last_sync_version(dir.path(), "1.2.3").unwrap();
+        let state = clone_state(dir.path()).unwrap();
+        assert_eq!(state.last_sync_version.as_deref(), Some("1.2.3"));
+        assert_eq!(state.last_sync_version, last_sync_version(dir.path()));
+        assert!(state.merge_driver_registered);
+        assert!(dir.path().join(".gitattributes").is_file());
+
+        // A driver an older binary registered is stale, and is rewritten.
+        let vcs = default_vcs();
+        vcs.config_set(dir.path(), MERGE_DRIVER_CMD_KEY, "joy merge old")
+            .unwrap();
+        let state = clone_state(dir.path()).unwrap();
+        assert!(!state.merge_driver_registered);
+        ensure_lazy_activation_for(dir.path(), &state).unwrap();
+        assert_eq!(
+            vcs.config_get(dir.path(), MERGE_DRIVER_CMD_KEY).unwrap(),
+            MERGE_DRIVER_CMD_VALUE
+        );
     }
 
     #[test]

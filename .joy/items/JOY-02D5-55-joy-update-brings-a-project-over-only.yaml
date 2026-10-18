@@ -1,0 +1,22 @@
+id: JOY-02D5-55
+title: joy update brings a project over only when somebody signed in before
+type: bug
+status: closed
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-14T04:54:15.737528378Z
+updated: 2026-10-14T05:50:30.868097023Z
+updated_by: horst.schwarz@joydev.com
+description: 'Operator, 2026-10-14, with joy 0.23: joy update, then joy auth, and the members were still in project.yaml; only a second joy update moved them. JOY-02CC-C1 made joy update the one moment a project is brought over, but only with a session already standing; without one it printed a row and moved nothing. Since the platform and the desktop no longer bring a project over, a project only ever used there never moves at all. Wanted: joy update asks for the passphrase itself when nobody is signed in, with one short sentence that says why, signs in with it as joy auth does, and brings the project over in the same run. It asks only where somebody can answer: at a terminal, or with --passphrase given.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-14T04:57:43.204655932Z
+  text: 'Result: auth_gate::bring_members_over takes whether a terminal is there. With no session it asks for the passphrase where somebody can answer (a terminal on the human path of joy update, or --passphrase / --passphrase-stdin, also in --json), says before the prompt ''Members move to their own files; your passphrase signs that.'', signs in through auth_gate::unlock as joy auth does, and brings the project over in the same run. A wrong passphrase moves nothing and says ''Members not moved: ...''. Without a terminal and without a passphrase the row now says ''still in project.yaml: run joy update at a terminal, or with --passphrase''. Test member_fixtures.rs joy_update_asks_for_the_passphrase_and_brings_the_project_over_at_once (given passphrase moves, wrong one does not). just check green.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-14T05:06:35.420582939Z
+  text: 'Moved under ADR JOY-0244-9E (operator): the bring-over lives in joy-core migrations::m_2026_10_member_files (was member_migration), and the command line''s half (the passphrase, the sentence, the row) in a new joy-cli migrations::m_2026_10_member_files; auth_gate has no migration code any more, joy update calls the module twice. Removing it later is deleting the two dated modules and those two calls. The desktop app follows the new path in its own change. just check green.'

@@ -1,0 +1,49 @@
+id: JOY-02D0-A1
+title: Try the GitLab merge job on a merge request that already conflicts
+type: task
+status: closed
+priority: medium
+parent: JOY-02AC-53
+assignees:
+- member: claude
+capabilities:
+- implement
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T05:59:27.186277426Z
+updated: 2026-10-13T13:32:45.201912876Z
+updated_by: horst.schwarz@joydev.com
+description: |-
+  The GitHub job did not start for a pull request that conflicts (see the bug beside this one under JOY-02AC-53). The GitLab file, .joy/ci/gitlab.yml, runs on merge_request_event. Nobody has tried whether a merge request pipeline starts when the merge request already conflicts in a Joy file, for example .joy/logs/<day>.log written on both sides.
+
+  To do: on a GitLab project with the file included, open a merge request that conflicts only in a Joy file and see whether joy-merge runs and pushes the merge. If it does not, change the file so that it does, with a test that holds the rule.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T08:17:24.157562081Z
+  text: |-
+    Trial, 2026-10-13, on a GitLab CE 19.4.2 started for it in Docker on the operator's machine, with a project runner (docker executor) and the released joy 0.22.0 that the job installs. The repository: a joy project with .joy/ci/gitlab.yml included, one item, and a comment on that item on main and another on the branch. Plain git conflicts in the item file; joy's rules merge it.
+
+    What the question was: GitLab DOES start the merge request pipeline for a merge request it shows as conflicting (has_conflicts true, detailed_merge_status conflict, pipeline source merge_request_event). The trigger needs no change. With the three defects below worked around by hand, joy-merge said 'resolved by Joy's rules: .joy/items/GT-0001-08-...' and 'merged main in and published the result', the branch got the commit 'Merge main into the pull request branch [no-item]' by Joy CI, the item carried both comments, the merge request turned mergeable and merged. The pipeline the job's own push starts finds 'main is already in this branch, nothing to do': no loop.
+
+    What stopped the file from working at all, conflict or not:
+    1. The job fails in every project: debian:stable-slim has no xz, and the installer unpacks a .tar.xz ('tar (child): xz: Cannot exec'). apt-get has to install xz-utils.
+    2. The push address is written as https://...@${CI_SERVER_HOST}/...: an instance on http or on another port is not reached ('No connection to gitlab.trial'). GitLab gives CI_SERVER_PROTOCOL and CI_SERVER_PORT; with both the push arrived.
+    3. The job stands in stage .pre, and GitLab creates no pipeline that holds only jobs of .pre or .post ('The resulting pipeline would have been empty'). In a project with no other job that runs for merge requests, joy-merge never runs. With one ordinary job under the same rule it ran.
+
+    Plan:
+    - gitlab.yml installs xz-utils and builds the push address from CI_SERVER_PROTOCOL, CI_SERVER_HOST and CI_SERVER_PORT.
+    - The head of the file and the note joy init ci prints say that a pipeline needs one more job that runs for merge requests. The stage stays .pre: a job in a named stage breaks the whole configuration of a project that defines its own stages without that name. Whether more is wanted here is the operator's call.
+    - Tests in joy-core init.rs hold the two fixes and the sentence in the note.
+    - The changed file is tried once more on the same GitLab before the pull request.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T08:35:42.784923510Z
+  text: |-
+    Result:
+    [x] The trial is on this item above: GitLab starts the merge request pipeline for a merge request that conflicts; the trigger is unchanged.
+    [x] crates/joy-core/data/ci/gitlab.yml installs xz-utils, builds the push address from CI_SERVER_PROTOCOL, CI_SERVER_HOST and CI_SERVER_PORT, and says in its head that the project needs one more job that runs for merge requests. The stage stays .pre.
+    [x] The note joy init ci prints for GitLab says the same about the one more job.
+    [x] Test in joy-core init.rs: the_gitlab_job_runs_as_a_gitlab_ran_it. It failed before the change.
+    [x] The changed file, copied unchanged into the trial repository, was run on the same GitLab CE 19.4.2 against a fresh merge request that conflicted in an item file: the pipeline started, joy-merge resolved the item by Joy's rules and pushed, the merge request turned mergeable and merged, and the item carried all four comments on main.
+    [x] just check green (1594 Rust tests), just test-int green (645 bats cases).
+    [x] The GitLab, its runner, network, volumes and images are removed from the machine again.
+    Open, the operator's call: a project with no other job for merge requests gets no pipeline for joy-merge alone. The file says so; putting the job in a named stage would start it alone and would break the configuration of every project that defines its own stages without that name.
+    Not tried: gitlab.com itself, and a merge request from a fork.

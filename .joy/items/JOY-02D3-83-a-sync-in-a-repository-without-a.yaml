@@ -1,0 +1,39 @@
+id: JOY-02D3-83
+title: A sync in a repository without a commit writes a first commit that holds only what the sync changed
+type: bug
+status: closed
+priority: high
+parent: JOY-02CF-EE
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-13T08:48:47.321117507Z
+updated: 2026-10-13T13:32:42.288150174Z
+updated_by: horst.schwarz@joydev.com
+description: |-
+  Found by the desktop client's test for JAPP-0319-10 on 2026-10-13: the client founds a project (joy_core::init) and then runs the checkout reconcile, which renders SECURITY.md. Since JOY-02CF-EE the sync commits what it changed, and here that commit is the first one in the repository and carries SECURITY.md alone, while everything else the founding wrote is only staged. The person's own first commit then comes second and holds the rest.
+
+  In a repository without a commit nothing can be taken for a leftover of an earlier state: everything in it is new together and goes into the person's first commit. The CLI does not meet the case by itself, because joy init stamps the marker and the first call runs no sync; joy update in such a repository does.
+
+  To do: commit_project_update writes nothing where the repository has no commit yet and says so in its reason; a test holds it.
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T08:48:49.309189176Z
+  text: |-
+    Plan:
+    1. A test in joy-core git_ops.rs: in a repository with no commit, a sync's changes are not committed, the answer is Left with a reason that names the missing first commit, and the files stay as they are.
+    2. commit_project_update_at asks for HEAD before it stages anything and answers so.
+    3. A bats case in update_command.bats: joy update --force in a freshly founded project, before any commit, writes no commit and says why.
+    4. just check, just test-int.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-13T08:59:18.952404308Z
+  text: |-
+    Result:
+    [x] joy-core git_ops.rs, commit_project_update_at: where the repository has no commit yet it stages nothing and answers Left with 'this repository has no commit yet; the files go into its first one'.
+    [x] Test nothing_is_committed_before_the_persons_first_commit; it failed before the change with a commit written into the empty repository.
+    [x] bats case 'joy update commits nothing before the person's first commit' in tests/integration/update_command.bats: joy update --force in a freshly founded project writes no commit and says why.
+    [x] The desktop client's test for JAPP-0319-10, which found this, runs against this branch: founding a project commits nothing, opening it later commits the reconcile.
+    [x] just check green (1595 Rust tests), just test-int green (646 bats cases).

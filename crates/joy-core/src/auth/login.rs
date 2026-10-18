@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::auth::{attestation, seed as seed_mod, session, IdentityKeypair, PublicKey, Salt};
 use crate::error::JoyError;
-use crate::model::project::{is_ai_member, Attestation, Member, PrivacyMode, Project};
+use crate::model::project::{Attestation, Member, PrivacyMode, Project};
 use crate::store;
 
 /// What a successful login produced.
@@ -26,7 +26,7 @@ pub struct LoginOutcome {
     /// Who just authenticated, as a person reads it. In open mode that is
     /// the address the caller logged in with, which is what they typed.
     /// In anonymous mode the caller is usually holding the opaque `m-`
-    /// id, because that is what the member pin answers with (D3.9), and
+    /// id, because that is what the member pin answers with, and
     /// telling somebody they are an opaque id is the one thing ADR-042
     /// asks every output not to do: there this is the address out of
     /// members.yaml, which this very login opened on its way past the
@@ -67,7 +67,7 @@ pub fn login(root: &Path, email: &str, passphrase: &str) -> Result<LoginOutcome,
     let public_key = PublicKey::from_hex(public_key_hex)?;
     let salt = Salt::from_hex(salt_hex)?;
 
-    let wrap_hex = member.seed_wrap_passphrase.as_deref().ok_or_else(|| {
+    let wrap_hex = member.seed_wrap.as_deref().ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "{email} still uses the legacy auth schema; run `joy auth` in a terminal once to migrate."
         ))
@@ -154,12 +154,12 @@ fn finish_login(
     // rather than taken from whatever the caller came in holding.
     let attested_id = match view.privacy_mode() {
         PrivacyMode::Open => member_key.clone(),
-        // An AI member keeps its synthetic key through the switch to
+        // An AI member keeps its name as its key through the switch to
         // anonymous mode: it gets no members.yaml row, because there is
         // no person behind it to keep out of a committed file, and the
         // key is what an attestation over it signs, exactly as in open
         // mode.
-        _ if is_ai_member(&member_key) => member_key.clone(),
+        _ if view.is_ai(&member_key) => member_key.clone(),
         // A person, in anonymous mode: only members.yaml can say who
         // they are, and if it cannot, this says so. The fallback that
         // used to stand here handed the opaque id to the attestation
@@ -176,7 +176,9 @@ fn finish_login(
         PrivacyMode::Open => email.to_string(),
         _ => attested_id.clone(),
     };
-    if let Some(att) = member.attestation.as_ref() {
+    if view.member_layout() == crate::model::project::MemberLayout::Files {
+        super::vouch::verify_origin(view, &attested_id, &member_key, member)?;
+    } else if let Some(att) = member.attestation.as_ref() {
         verify_member_attestation(view, &attested_id, member, att)?;
     } else if attestation::founder_must_be_attested(view) {
         return Err(JoyError::AuthFailed(format!(
@@ -234,12 +236,12 @@ pub fn cached_members_zone_key(
 ///
 /// An attestation never signs the opaque id (the id is this project's own
 /// invention and says nothing about the person), so the id cannot answer
-/// the binding check. Before package J11 the address arrived with the
+/// the binding check. Earlier the address arrived with the
 /// caller, because `joy auth` resolved its member from `git config
 /// user.email`. Now it arrives as the member this device pinned, which IS
 /// the opaque id, and every returning member of an anonymous project was
 /// told their own entry looked tampered with unless they typed `--user
-/// <address>` again. D3.9 promises the opposite: naming yourself once
+/// <address>` again. The rule promises the opposite: naming yourself once
 /// settles it, and the device remembers.
 ///
 /// `None` when the members file cannot be opened (a member without a
@@ -282,7 +284,25 @@ pub fn verify_member_attestation(
         ))
     })?;
     let attester_pubkey = PublicKey::from_hex(attester_pubkey_hex)?;
-    attestation::verify_attestation(att, &attester_pubkey, email, member).map_err(|e| {
+    // An AI member's attestation from before it was known by its name
+    // was signed over its legacy form, and stands until a person brings
+    // the project over to member files.
+    let signed_before = || {
+        crate::model::project::is_ai_member(email)
+            && attestation::verify_attestation(
+                att,
+                &attester_pubkey,
+                &joy_model::migrations::ai_member_name::legacy_form(email),
+                member,
+            )
+            .is_ok()
+    };
+    let checked = attestation::verify_attestation(att, &attester_pubkey, email, member);
+    let checked = match checked {
+        Err(_) if signed_before() => Ok(()),
+        other => other,
+    };
+    checked.map_err(|e| {
         JoyError::AuthFailed(format!(
             "attestation for {email} is not valid ({e}). The entry appears to have been \
              tampered with. Ask a manage member to remove and re-add {email}."
@@ -299,13 +319,17 @@ pub fn maybe_auto_seal(
     acting_email: &str,
     acting_keypair: &IdentityKeypair,
 ) -> Result<Option<Project>, JoyError> {
+    // Member files carry origins, made when a person is invited; there
+    // is nothing to seal after the fact.
+    if project.member_layout() == crate::model::project::MemberLayout::Files {
+        return Ok(None);
+    }
     let has_any_attestation = project.member_values().any(|m| m.attestation.is_some());
     if has_any_attestation || project.member_count() < 2 {
         return Ok(None);
     }
 
-    let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
-    let mut sealed = store::read_project(&project_path)?;
+    let mut sealed = store::load_project(root)?;
 
     let targets: Vec<String> = sealed
         .member_keys()
@@ -323,9 +347,7 @@ pub fn maybe_auto_seal(
         sealed.member_by_key_mut(&target_email).unwrap().attestation = Some(att);
     }
 
-    store::write_yaml_preserve(&project_path, &sealed)?;
-    let rel = format!("{}/{}", store::JOY_DIR, store::PROJECT_FILE);
-    crate::git_ops::auto_git_add(root, &[&rel]);
+    store::save_project(root, &sealed)?;
 
     Ok(Some(sealed))
 }
@@ -340,7 +362,7 @@ pub fn relock_unlocked_files(
     seed: &[u8; 32],
 ) -> usize {
     // By the at-rest KEY. The lookup was by address, and the caller has
-    // handed it the member this device pinned since package J11 (D3.9),
+    // handed it the member this device pinned,
     // which in an anonymous project is an opaque id that no address
     // matcher resolves: the member was not found, and a login that says
     // it re-locks quietly re-locked nothing.

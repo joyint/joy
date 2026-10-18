@@ -67,7 +67,7 @@ init_and_detect() {
     init_and_detect
 
     [ -f .github/copilot-instructions.md ]
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "copilot"
 }
 
 @test "ai init detects Copilot under gh copilot alone" {
@@ -79,7 +79,7 @@ init_and_detect() {
     init_and_detect
 
     [ -f .github/copilot-instructions.md ]
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "copilot"
 }
 
 @test "ai init detects Copilot when both commands are installed" {
@@ -91,7 +91,7 @@ init_and_detect() {
     init_and_detect
 
     [ -f .github/copilot-instructions.md ]
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "copilot"
 }
 
 @test "a bare gh is not Copilot and registers no member" {
@@ -102,7 +102,7 @@ init_and_detect() {
     init_and_detect
 
     [ ! -f .github/copilot-instructions.md ]
-    ! grep -q "ai:copilot@joy" .joy/project.yaml
+    ! members_grep -q "copilot"
 }
 
 # Copilot is not only a CLI. An editor of the VS Code family has Copilot
@@ -119,7 +119,7 @@ init_and_detect() {
     EDITOR_SIGNAL=vscode init_and_detect
 
     [ -f .github/copilot-instructions.md ]
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "copilot"
 }
 
 # The same run outside such an editor finds nothing: the signal is what
@@ -131,7 +131,7 @@ init_and_detect() {
     EDITOR_SIGNAL=tmux init_and_detect
 
     [ ! -f .github/copilot-instructions.md ]
-    ! grep -q "ai:copilot@joy" .joy/project.yaml
+    ! members_grep -q "copilot"
 }
 
 # The probe must not be mistaken for consent: the real `gh` downloads the
@@ -159,7 +159,7 @@ SH
 
     [ ! -f "$PROBE_MARKER" ]
     # and the honest answer survives the stripping: Copilot IS here
-    grep -q "ai:copilot@joy" .joy/project.yaml
+    members_grep -q "copilot"
 }
 
 # Copilot reads skills now, so joy writes one instead of the `/joy` prompt

@@ -13,10 +13,6 @@
 //! model, no cost, no tokens in the turn-info popover (operator
 //! 2026-07-26). One producer, one shape, no host-specific truth.
 
-use std::path::Path;
-
-use joy_core::model::config::InteractionLevel;
-
 /// What a finished turn reports about itself. Every field is optional:
 /// a host contributes what it can observe, and the rest stays absent
 /// rather than being invented (a local project has no month budget, so
@@ -95,38 +91,6 @@ pub fn augment_details(details: Option<String>, meta: &TurnMeta<'_>) -> Option<S
         obj.insert("cap_cents".into(), serde_json::json!(cap));
     }
     serde_json::to_string(&obj).ok().or(details)
-}
-
-/// Resolve the level `delegator`'s turns of `agent` run under in this
-/// chat (JI-0166-D8 §5): the per-chat, per-delegator override when
-/// stored, else the AGENT MEMBER's default level from project.yaml
-/// (member entry, else the project defaults global).
-///
-/// ONE resolution for every caller — the platform's read path and turn
-/// loop, and the desktop's local turn. They must never disagree. Chat
-/// turns carry no capability context, so the per-capability
-/// max-interaction-level floors do not apply here (they clamp
-/// capability-scoped work).
-pub fn resolve_effective_level(
-    dir: &Path,
-    chat: &joy_chat::model::chat::Chat,
-    agent: &str,
-    delegator: &str,
-    personal: Option<InteractionLevel>,
-) -> InteractionLevel {
-    // ADR-025 order (JP-0099-66): chat override > the caller's personal
-    // overall > member default > project default.
-    let default_level = personal.unwrap_or_else(|| {
-        joy_core::store::load_project(dir)
-            .ok()
-            .and_then(|p| p.member_by_key(agent).and_then(|m| m.interaction_level))
-            .unwrap_or_else(|| joy_core::store::load_interaction_level_defaults(dir).default)
-    });
-    joy_chat::model::effective_level(
-        None,
-        chat.interaction_level_override(agent, delegator),
-        default_level,
-    )
 }
 
 #[cfg(test)]

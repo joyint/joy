@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Joydev GmbH (joydev.com)
 // SPDX-License-Identifier: MIT
 
-//! joy's own credential helper runner (design D1.3).
+//! joy's own credential helper runner.
 //!
 //! `git2::Cred::credential_helper` is not used anywhere in joy, and
 //! this module is the reason. git2 builds the string
@@ -58,11 +58,11 @@ const QUIET_DEADLINE: Duration = Duration::from_secs(30);
 /// the bound is generous, but there is one: this call sits inside
 /// libgit2's credentials callback, and a dialog that opened behind
 /// another window and is never answered would otherwise hang the whole
-/// fetch with no way out (design D1.3, D1.10).
+/// fetch with no way out.
 const PROMPT_DEADLINE: Duration = Duration::from_secs(600);
 
 /// How long an answer is reused without asking the helper again
-/// (design D1.7: a 1 Hz poll must not spawn a .NET process per
+/// (a 1 Hz poll must not spawn a .NET process per
 /// contact).
 const CACHE_TTL: Duration = Duration::from_secs(300);
 
@@ -86,7 +86,7 @@ pub struct Request {
 
 impl Request {
     /// The request for a remote URL; `None` for a transport no helper
-    /// answers for (ssh has its own chain, design D1.2).
+    /// answers for (ssh has its own chain).
     pub fn for_url(url: &str) -> Option<Request> {
         let parsed = RemoteUrl::parse(url)?;
         if !parsed.transport.takes_helper() {
@@ -188,7 +188,7 @@ impl std::error::Error for HelperFailure {}
 /// git resets in config-READ order, where `credential.<exact url>`
 /// normally stands in the repository's own config and is therefore
 /// read after a global `credential.helper`; joy walks the keys most
-/// specific first, as D1.3 lists them, so honouring the reset across
+/// specific first, as the rule lists them, so honouring the reset across
 /// keys would let an empty global `credential.helper` wipe the
 /// entries written for one exact URL. Inside one key the values ARE in
 /// config order, so the empty value resets them the way git does it:
@@ -239,7 +239,7 @@ fn most_specific(config: &git2::Config, request: &Request, name: &str) -> Option
         .find_map(|key| multivar(config, &format!("credential.{key}{name}")).pop())
 }
 
-/// The three key prefixes of D1.3, least specific LAST so that the
+/// The three key prefixes, least specific LAST so that the
 /// chain reads most specific first.
 fn helper_keys(request: &Request) -> Vec<String> {
     let mut keys = vec![format!("{}.", request.url)];
@@ -292,14 +292,14 @@ pub struct Search {
     /// with "Failed to locate git.exe executable on the path" and no
     /// credential is obtained. joy already knows where Git for Windows
     /// keeps it, from the same registry keys it resolves the helper
-    /// with (D1.3), so it hands the child that directory. This is the
+    /// with, so it hands the child that directory. This is the
     /// HELPER spawning git, not joy: joy's own rule is that it never
     /// builds a git command line, and it does not (ADR: git2 only).
     pub child_path: Vec<PathBuf>,
 }
 
 impl Search {
-    /// This machine's places, in the order D1.3 names them.
+    /// This machine's places, in the order the rule names them.
     pub fn of_this_machine() -> Search {
         let mut dirs = Vec::new();
         let mut shell = None;
@@ -696,7 +696,7 @@ pub struct Manner {
     /// `path=` rides on the request (`credential.useHttpPath`).
     pub with_path: bool,
     /// Who is at this machine, which decides whether the helper may
-    /// raise a window of its own (D1.10).
+    /// raise a window of its own.
     pub kind: HostKind,
     /// [`Search::child_path`], for the helper's own bootstrap.
     pub child_path: Vec<PathBuf>,
@@ -736,8 +736,8 @@ pub fn run(
         }
     };
     // Per spawn, never through the process environment: a desktop app
-    // sets these for ONE child, not for every thread it runs
-    // (design D1.3). An interactive host sets none of them, because
+    // sets these for ONE child, not for every thread it runs.
+    // An interactive host sets none of them, because
     // there the helper's own window is the way in.
     if !kind.may_prompt() {
         command.env("GCM_INTERACTIVE", "never");
@@ -799,7 +799,7 @@ pub fn run(
     // A helper that may open its own window is answered by a PERSON,
     // and the wait for that is not silence: joy's own contact bound is
     // held open while this runs, and THIS deadline is the one that
-    // applies (design D1.3, `super::bound`).
+    // applies (`super::bound`).
     let _hold = kind.may_prompt().then(super::bound::hold);
     let status = wait_bounded(&mut child, bound);
     let stdout = out_reader.join().unwrap_or_default();
@@ -851,7 +851,7 @@ fn wait_bounded(
 /// when it said nothing.
 ///
 /// The helper's own sentence stands alone, because it is the one that
-/// names the cause and because design D1.3 names the result exactly:
+/// names the cause and because the rule names the result exactly:
 /// "helper 'manager': fatal: Cannot prompt because user interactivity
 /// has been disabled." An exit code in front of it would add a number
 /// nobody can act on to a sentence that already says everything. The
@@ -913,7 +913,7 @@ struct Remembered {
     /// without looking them up again. Not only the one that answered:
     /// git runs both operations on the whole chain, which is what
     /// fills a `cache` helper standing in front of `manager` and what
-    /// erases a revoked entry a second helper still holds (D1.3).
+    /// erases a revoked entry a second helper still holds.
     chain: Vec<(String, Spawn)>,
     /// How `get` ran, so `store` and `erase` reach the same binaries in
     /// the same way.
@@ -1124,7 +1124,7 @@ pub fn refused(url: &str) {
 /// had nothing to do with the credential (no route, 500, a timeout)
 /// must not be `store`d later because some other contact to the same
 /// host succeeded with another credential. The cached answer itself
-/// stays, so this costs no helper spawn (design D1.3, D1.7).
+/// stays, so this costs no helper spawn.
 pub fn forget_presented(url: &str) {
     let Some(request) = Request::for_url(url) else {
         return;
@@ -1617,7 +1617,7 @@ mod tests {
     /// Every host kind has a bound, the interactive one included. The
     /// call sits inside libgit2's credentials callback, so a dialog a
     /// person never answers would otherwise hang the whole fetch with
-    /// no way out (design D1.3, D1.10). The bound under test is a
+    /// no way out. The bound under test is a
     /// short one; what is pinned is that `wait_bounded` takes a
     /// duration and not an option, so there is no "wait for ever"
     /// branch left to fall into.
@@ -1644,7 +1644,7 @@ mod tests {
     ///
     /// Git Credential Manager is a .NET application: an unhandled
     /// exception arrives as one sentence followed by a stack trace, and
-    /// the detail line a person reads is the sentence (design D1.3).
+    /// the detail line a person reads is the sentence.
     #[test]
     fn a_helpers_stack_trace_stays_out_of_the_detail_line() {
         let gcm = "fatal: Cannot prompt because user interactivity has been disabled.\n\

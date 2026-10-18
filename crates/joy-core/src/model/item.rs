@@ -26,8 +26,9 @@ pub struct Item {
     pub tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub capabilities: Vec<Capability>,
-    /// Item-level interaction-level override (the "item" layer of the
-    /// resolution in [`super::project::resolve_interaction_level`]).
+    /// The level a job runs at (JI-019D-46): what it asks for while it
+    /// is new, and what it runs at once it is open
+    /// (`auth::grants::job_terms`). Other items carry none.
     #[serde(
         default,
         rename = "interaction-level",
@@ -106,7 +107,7 @@ pub enum Capability {
     Review,
     Document,
     /// Direct delegated work: move `job` items through their gates --
-    /// approving a job at triage authorizes its spend, reviewing it
+    /// setting a job to open lets its assignee take it and spend, reviewing it
     /// accepts the delivered work. Deliberately separate from `Review`
     /// so job acceptance and item acceptance can belong to different
     /// people. See JOY-01FE-37.
@@ -128,9 +129,11 @@ impl Capability {
         Capability::Test,
         Capability::Review,
         Capability::Document,
-        Capability::Jobs,
         Capability::Create,
         Capability::Assign,
+        // The three a new AI member does not get by itself, last
+        // (operator 2026-10-08): jobs, manage, delete.
+        Capability::Jobs,
         Capability::Manage,
         Capability::Delete,
     ];
@@ -260,8 +263,12 @@ fn default_currency() -> String {
 pub struct JobWindow {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub not_before: Option<DateTime<Utc>>,
+    /// The latest acceptable end (operator 2026-10-10: `until`, one word
+    /// on every surface). A job file from before says `deadline`; that is
+    /// the item migrations' to read (`m_2026_10_job_until`), not this
+    /// model's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deadline: Option<DateTime<Utc>>,
+    pub until: Option<DateTime<Utc>>,
 }
 
 /// One terminal execution loop of a job. Written once, at the loop's

@@ -9,7 +9,7 @@ MSG_FILE="$1"
 MSG=$(cat "$MSG_FILE")
 
 # joy's own check passed: run the hooks that were here before joy took
-# core.hooksPath (design D3.5). Their exit code is this hook's. A
+# core.hooksPath. Their exit code is this hook's. A
 # checkout whose .joy/hooks predates the chainer simply stops here, so
 # a stale hook directory can never block a commit.
 chain() {

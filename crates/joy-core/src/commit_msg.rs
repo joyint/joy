@@ -17,31 +17,6 @@
 
 use crate::model::item::ItemType;
 
-/// Canonical `Co-Authored-By:` value for an AI member id, or `None` when the
-/// member is not a known tool. Maps `ai:claude@joy` -> the `claude` tool line.
-/// Owned here (not in the AI template layer) so commit-message building stays
-/// AI-free at the crate level (ADR-043). Brand names are allowed in this
-/// trailer and only here; the rest of the project uses the Joy member ID.
-pub fn coauthor_line_for_member(member_id: &str) -> Option<&'static str> {
-    let tool = member_id
-        .strip_prefix("ai:")
-        .and_then(|rest| rest.split('@').next())?;
-    let line = coauthor_line_for_tool(tool);
-    (!line.is_empty()).then_some(line)
-}
-
-/// `<Brand> <email>` co-author value for an AI tool (empty for an unknown
-/// tool), matching each tool's own standalone-commit form.
-pub fn coauthor_line_for_tool(tool: &str) -> &'static str {
-    match tool {
-        "claude" => "Claude <noreply@anthropic.com>",
-        "copilot" => "Copilot <copilot@github.com>",
-        "qwen" => "Qwen-Coder <qwen-coder@alibabacloud.com>",
-        "vibe" => "Mistral Vibe <vibe@mistral.ai>",
-        _ => "",
-    }
-}
-
 /// A candidate item for the message (id + type + title).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ItemRef {
@@ -53,7 +28,7 @@ pub struct ItemRef {
 /// Who is committing, as resolved by joy-core identity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Committer {
-    /// Member id (email or `ai:tool@joy`).
+    /// Member id (email, or the name of an AI member).
     pub member: String,
     /// The delegating human, present only for an authenticated AI session.
     pub delegated_by: Option<String>,
@@ -91,20 +66,15 @@ fn scope_for_crate(krate: &str) -> String {
     krate.strip_prefix("joy-").unwrap_or(krate).to_string()
 }
 
-/// The trailing block: trailers only under an AI delegation, never for a plain
-/// human commit (where Delegated-By would be meaningless and Co-Authored-By
-/// wrong). Returns lines without a leading blank line.
+/// Delegation trailer for an authenticated AI commit, not for a human commit.
 fn trailer_lines(c: &Committer) -> Vec<String> {
-    let mut out = Vec::new();
-    // Trailers only under an AI delegation (ai:* member with a delegating
-    // operator). A plain human commit gets none.
-    if let (true, Some(op)) = (c.member.starts_with("ai:"), &c.delegated_by) {
-        if let Some(coauthor) = coauthor_line_for_member(&c.member) {
-            out.push(format!("Co-Authored-By: {coauthor}"));
-        }
-        out.push(format!("Delegated-By: {op}"));
+    if let (true, Some(op)) = (
+        crate::model::project::is_ai_member(&c.member),
+        &c.delegated_by,
+    ) {
+        return vec![format!("Delegated-By: {op}")];
     }
-    out
+    Vec::new()
 }
 
 /// Build a complete subject line for one or more items.
@@ -188,8 +158,7 @@ pub fn build_suggestion(inp: &Inputs) -> String {
     assemble("", &trailers, &comments)
 }
 
-/// A commit message that references no Joy item (D3.3 of the forge
-/// connection NG design). Carries what the ADR-015 diagnostic needs, so
+/// A commit message that references no Joy item. Carries what the ADR-015 diagnostic needs, so
 /// the text is built once and every caller prints the same thing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommitMsgError {
@@ -222,7 +191,7 @@ impl std::fmt::Display for CommitMsgError {
 
 impl std::error::Error for CommitMsgError {}
 
-/// The item reference rule of `.joy/hooks/commit-msg`, in process (D3.3).
+/// The item reference rule of `.joy/hooks/commit-msg`, in process.
 ///
 /// libgit2 runs no hooks, so every commit joy writes itself passes this
 /// instead of the bash hook. The rule is the hook's, verbatim: a
@@ -245,7 +214,7 @@ pub fn validate(message: &str, acronym: &str) -> Result<(), CommitMsgError> {
     })
 }
 
-/// D3.3 for joy's OWN automatic commits: warn and proceed.
+/// The item rule for joy's OWN automatic commits: warn and proceed.
 ///
 /// A refusal here would strand the write joy has already made with
 /// uncommitted `.joy` changes and a message the person never typed and
@@ -298,7 +267,7 @@ mod tests {
 
     fn ai() -> Committer {
         Committer {
-            member: "ai:claude@joy".into(),
+            member: "claude".into(),
             delegated_by: Some("horst@joydev.com".into()),
         }
     }
@@ -390,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn ai_delegation_adds_trailers() {
+    fn ai_delegation_adds_delegation_trailer_only() {
         let inp = Inputs {
             staged_items: vec![item("JOY-0004-DD", ItemType::Task, "do it")],
             in_progress: vec![],
@@ -398,7 +367,7 @@ mod tests {
             committer: ai(),
         };
         let msg = build_suggestion(&inp);
-        assert!(msg.contains("Co-Authored-By: Claude <noreply@anthropic.com>"));
+        assert!(!msg.contains("Co-Authored-By:"));
         assert!(msg.contains("Delegated-By: horst@joydev.com"));
     }
 
@@ -419,7 +388,7 @@ mod tests {
         assert!(first.contains("[JOY-0006-FF]"));
     }
 
-    /// D3.3: the in-process rule answers exactly what the bash hook
+    /// The in-process rule answers exactly what the bash hook
     /// answers, for the cases the hook enumerates.
     #[test]
     fn the_item_rule_matches_the_hook() {
