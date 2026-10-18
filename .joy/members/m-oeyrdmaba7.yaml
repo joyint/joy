@@ -1,4 +1,6 @@
-name: qwen
+type: ai
+identity:
+  qwen: {}
 adapter: qwen
 capabilities:
 - conceive

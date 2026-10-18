@@ -1,4 +1,7 @@
-name: agy
+type: ai
+identity:
+  agy:
+    verify_key: 240ae695e06234e0017baa776d0520c6d6effc3b1c050922db52c294c8fee1b0
 capabilities:
 - conceive
 - plan
@@ -14,5 +17,4 @@ granted:
   by: horst.schwarz@joydev.com
   at: 2026-10-16T19:01:32.378677412Z
   signature: 57fce4beca8f4af0614cd012497ff8c429b2babc4749bb34cb6765f0ce06c4f839a0a5e7d96266e4b00328503736e2992c7946b5d994d97a4454c4dcadcd6a06
-verify_key: 240ae695e06234e0017baa776d0520c6d6effc3b1c050922db52c294c8fee1b0
 updated: 2026-10-16T19:01:32.380388629Z

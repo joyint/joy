@@ -1,4 +1,7 @@
-name: vibe
+type: ai
+identity:
+  vibe:
+    verify_key: a58c225b1ef548c07c41e0ad4aec7d3e8b2ab0f70bcc91836f8bfb17e84c3f54
 adapter: vibe
 capabilities:
 - conceive
@@ -15,5 +18,4 @@ granted:
   by: horst.schwarz@joydev.com
   at: 2026-10-16T19:01:32.379171603Z
   signature: cfac685948b899860d7157179f8dcc7deb9dc52fd3a928f021b0822a0e1d8722480f7aea30f690745b43ec592232827e0b8f3d959fe1c371439f9c9bcc839509
-verify_key: a58c225b1ef548c07c41e0ad4aec7d3e8b2ab0f70bcc91836f8bfb17e84c3f54
 updated: 2026-10-16T19:01:32.380388629Z
