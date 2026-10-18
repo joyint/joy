@@ -1,7 +1,7 @@
 id: JOY-02D8-1C
 title: 'Project data from an older joy: ask for the update where it is needed'
 type: task
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -10,8 +10,8 @@ capabilities:
 effort: 4
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-16T13:50:44.797892120Z
-updated: 2026-10-16T17:09:18.194223811Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-10-18T16:24:12.417701796Z
+updated_by: horst.schwarz@joydev.com
 description: 'Operator 2026-10-16: a project whose data is from an older joy (members still in project.yaml) asks a person with a passphrase for the update, never silently. CLI: only the commands that need it (joy project member edit <ai> for oneself) and joy update ask, as the last line in light orange: ''Project data is from an older joy. Update? Everyone then needs joy 0.23+ [Y/n]''. A yes asks for the passphrase if there is no session, updates and the command goes on. Without a terminal a plain hint: ''Your own model for claude needs an update of this project. Run joy update at a terminal.'' No jargon. Everything that decides and says it sits in joy-core''s migrations module (waiting, update_with, prepare_update, finish_update, needs_an_update) and is called only through it, so removing the dated migration is deleting its module and its lines there (ADR JOY-0244-9E).'
 comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
