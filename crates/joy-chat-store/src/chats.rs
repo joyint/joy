@@ -395,8 +395,8 @@ pub fn readd_mentioned_humans(
     let project = joy_core::store::load_project(root)?;
     let humans: Vec<String> = project
         .members()
+        .filter(|(_, member)| member.kind == joy_core::model::project::MemberKind::Person)
         .map(|(key, _)| key.clone())
-        .filter(|key| !joy_core::model::project::is_ai_member(key))
         .collect();
     let mentioned: Vec<String> = joy_chat::mentions::mentions(text, &humans)
         .into_iter()
@@ -708,7 +708,14 @@ mod tests {
             } else {
                 joy_core::model::project::MemberCapabilities::All
             };
-            let mut m = joy_core::model::project::Member::new(capabilities);
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                capabilities,
+            );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&other_seed)
                     .public_key()
@@ -822,7 +829,12 @@ mod tests {
             ("geordi@example.org", 6u8),
             ("claude", 7u8),
         ] {
-            let mut m = joy_core::model::project::Member::new(
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
                 if joy_core::model::project::is_ai_member(member) {
                     joy_core::model::project::MemberCapabilities::all_for_ai()
                 } else {
@@ -880,7 +892,12 @@ mod tests {
         std::fs::create_dir_all(dir.path().join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
         for (member, seed_byte) in [("horst@example.com", 5u8), ("geordi@example.org", 6u8)] {
-            let mut m = joy_core::model::project::Member::new(
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
                 if joy_core::model::project::is_ai_member(member) {
                     joy_core::model::project::MemberCapabilities::all_for_ai()
                 } else {
@@ -1130,7 +1147,12 @@ mod channel_tests {
             ("a@x", [8u8; 32]),
             ("x@y.z", [9u8; 32]),
         ] {
-            let mut m = joy_core::model::project::Member::new(
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
                 if joy_core::model::project::is_ai_member(member) {
                     joy_core::model::project::MemberCapabilities::all_for_ai()
                 } else {

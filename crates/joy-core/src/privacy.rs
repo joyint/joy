@@ -22,23 +22,16 @@ use std::path::Path;
 use joy_crypt::identity::{Keypair, PublicKey};
 
 use crate::error::JoyError;
-use crate::member_id::{email_match, opaque_member_id};
+use crate::member_id::{email_tag, opaque_member_id};
 use crate::members_file::{self, MemberInfo, MembersFile, MEMBERS_ZONE};
 use crate::model::project::{Member, PrivacyMode};
 use crate::model::Project;
 use crate::store;
 use joy_crypt::zone::{unwrap_for_member, wrap_for_member, ZoneKey};
 
-/// A human member is one whose map key is an e-mail, not an AI member's name.
-/// Only human members carry PII and get anonymized; AI members keep their
-/// name.
-fn is_human_key(key: &str) -> bool {
-    !crate::model::project::is_ai_member(key)
-}
-
 /// Resolve the member-map key for a git e-mail, honoring the privacy mode. In
 /// `open` mode the key is the e-mail itself; in `anonymous` mode it is the
-/// opaque id whose stored `email_match` verifies against the e-mail. Returns
+/// opaque id whose stored `email_tag` verifies against the e-mail. Returns
 /// `None` when the e-mail is not a member.
 pub fn member_key_for_email(project: &Project, email: &str) -> Option<String> {
     project.member_key_for_email(email)
@@ -61,8 +54,8 @@ pub fn member_key_owned_by(
 ) -> Option<String> {
     project
         .members()
+        .filter(|(_, member)| member.kind == crate::model::project::MemberKind::Person)
         .map(|(key, _)| key)
-        .filter(|key| !crate::model::project::is_ai_member(key))
         .find(|key| {
             crate::forge_plugins::resolve(spec, key, ctx).is_some_and(|owner| {
                 match (&owner.user_id, &acting.user_id) {
@@ -260,7 +253,7 @@ fn io_err(ctx: &str, e: std::io::Error) -> JoyError {
 
 /// GDPR Art. 17 erasure: remove a member's e-mail and name from the encrypted
 /// `members.yaml` and re-encrypt, severing the id -> PII resolution. The opaque
-/// id, the `email_match` verifier and the whole audit trail in the versioned
+/// id, the `email_tag` verifier and the whole audit trail in the versioned
 /// files are deliberately left intact (Art. 17(3): the audit trail rests on a
 /// legitimate interest). After this, no Joy output can resolve that id to a
 /// person. Anonymous mode only; needs an operator seed with members.yaml access.
@@ -417,8 +410,8 @@ pub fn switch_to_anonymous(
     let in_files = project.member_layout() == crate::model::project::MemberLayout::Files;
 
     for (key, mut member) in project.take_members() {
-        if !is_human_key(&key) {
-            // AI member: keep name and entry as-is.
+        if member.kind != crate::model::project::MemberKind::Person {
+            // AI or platform member: keep name and entry as-is.
             new_members.insert(key, member);
             continue;
         }
@@ -441,7 +434,7 @@ pub fn switch_to_anonymous(
             _ => opaque_member_id(&verify_key)
                 .map_err(|e| JoyError::Other(format!("bad verify_key for {email}: {e}")))?,
         };
-        let verifier = email_match(&email, &kdf_nonce)
+        let verifier = email_tag(&email, &kdf_nonce)
             .map_err(|e| JoyError::Other(format!("bad kdf_nonce for {email}: {e}")))?;
 
         let recipient_pk = PublicKey::from_hex(&verify_key)?;
@@ -453,7 +446,7 @@ pub fn switch_to_anonymous(
             &recipient_pk,
         );
 
-        member.email_match = Some(verifier);
+        member.email_tag = Some(verifier);
         member.members_wrap = Some(wrap);
 
         mf.members.insert(
@@ -508,13 +501,15 @@ pub fn switch_to_open(
     let mut new_members: BTreeMap<String, Member> = BTreeMap::new();
 
     for (key, mut member) in project.take_members() {
-        if !is_human_key(&key) && !mf.members.contains_key(&key) {
+        if member.kind != crate::model::project::MemberKind::Person
+            && !mf.members.contains_key(&key)
+        {
             new_members.insert(key, member);
             continue;
         }
         match mf.email_for(&key) {
             Some(email) => {
-                member.email_match = None;
+                member.email_tag = None;
                 member.members_wrap = None;
                 renamed.push((key.clone(), email.to_string()));
                 new_members.insert(email.to_string(), member);
@@ -555,12 +550,12 @@ mod tests {
     #[test]
     fn enrolled_member_beats_pending_invitation_regardless_of_order() {
         let mut project = Project::new("Test".into(), Some("T".into()));
-        let mut founder = Member::new(MemberCapabilities::All);
+        let mut founder = Member::person(MemberCapabilities::All);
         founder.verify_key = Some("aa".repeat(32));
         project
             .register_member("777+roland@users.noreply.github.com", founder)
             .unwrap();
-        let mut invited = Member::new(MemberCapabilities::All);
+        let mut invited = Member::person(MemberCapabilities::All);
         invited.enrollment_verifier = Some("salt:hash".into());
         project
             .register_member("roland@example.com", invited)
@@ -594,7 +589,7 @@ mod tests {
         std::fs::create_dir_all(joy.join(store::LOG_DIR)).unwrap();
 
         let vk = Keypair::from_seed(seed).public_key().to_hex();
-        let mut member = Member::new(MemberCapabilities::All);
+        let mut member = Member::person(MemberCapabilities::All);
         member.verify_key = Some(vk);
         member.kdf_nonce = Some(NONCE.to_string());
 
@@ -662,12 +657,12 @@ mod tests {
         assert!(members_file::exists(root));
         let raw = std::fs::read(members_file::members_path(root)).unwrap();
         assert!(looks_like_blob(&raw));
-        // project.yaml now keyed by opaque id, carries email_match.
+        // project.yaml now keyed by opaque id, carries email_tag.
         let pj: Project =
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
         assert!(pj.has_member_key(&id));
         assert_eq!(pj.privacy_mode(), PrivacyMode::Anonymous);
-        assert!(pj.member_by_key(&id).unwrap().email_match.is_some());
+        assert!(pj.member_by_key(&id).unwrap().email_tag.is_some());
 
         // Switch back: e-mails restored, members.yaml gone.
         switch_to_open(root, &mut project, &seed).unwrap();
@@ -677,7 +672,7 @@ mod tests {
             store::read_yaml(&store::joy_dir(root).join(store::PROJECT_FILE)).unwrap();
         assert!(pj2.has_member_key(EMAIL));
         assert_eq!(pj2.privacy_mode(), PrivacyMode::Open);
-        assert!(pj2.member_by_key(EMAIL).unwrap().email_match.is_none());
+        assert!(pj2.member_by_key(EMAIL).unwrap().email_tag.is_none());
     }
 
     /// The delegating operator of a token is written down as a member

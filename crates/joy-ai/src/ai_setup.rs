@@ -1017,8 +1017,8 @@ pub fn shared_agents_md_needed(root: &Path, resetting: &[&str]) -> bool {
 pub fn has_ai_member(root: &Path) -> bool {
     joy_core::store::load_project(root)
         .map(|p| {
-            p.member_keys()
-                .any(|k| joy_core::model::project::is_ai_member(k))
+            p.member_values()
+                .any(|m| m.kind == joy_core::model::project::MemberKind::Ai)
         })
         .unwrap_or(false)
 }
@@ -1084,7 +1084,7 @@ pub fn register_tool_member(
         return Ok(false);
     }
     let (attester_id, attester_kp) = attester;
-    let mut new_member = joy_core::model::project::Member::new(new_member_capabilities(root));
+    let mut new_member = joy_core::model::project::Member::ai(new_member_capabilities(root));
     joy_core::auth::vouch::sign(
         project,
         attester_id,
@@ -1481,9 +1481,9 @@ mod setup_tests {
             )]
             .into(),
         );
-        p.register_member(ai, Member::new(work)).unwrap();
+        p.register_member(ai, Member::ai(work)).unwrap();
         for d in delegators {
-            let mut m = Member::new(MemberCapabilities::All);
+            let mut m = Member::person(MemberCapabilities::All);
             m.put_delegation(ai.to_string(), deleg());
             p.register_member(d, m).unwrap();
         }

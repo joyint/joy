@@ -246,10 +246,25 @@ members_grep() {
 
 # The name of the first AI member the project has, or nothing.
 first_ai_member() {
-    grep -h '^name: ' .joy/members/*.yaml 2>/dev/null | head -1 | cut -d' ' -f2
+    for f in .joy/members/*.yaml; do
+        grep -q '^type: ai$' "$f" 2>/dev/null || continue
+        identity_of "$f"
+        return
+    done
+}
+
+# The name a member file's member goes by: the one key under `identity`.
+identity_of() {
+    sed -n '/^identity:/{n;s/^  \([^:]*\):.*/\1/p;q}' "$1"
 }
 
 # The file of one member, by address or by an AI member's name.
 member_file() {
-    grep -lE "^(email|name): $1\$" .joy/members/*.yaml 2>/dev/null | head -1
+    for f in .joy/members/*.yaml; do
+        if [ "$(identity_of "$f" 2>/dev/null)" = "$1" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 0
 }

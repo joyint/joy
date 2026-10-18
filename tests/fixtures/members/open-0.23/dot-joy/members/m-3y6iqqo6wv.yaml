@@ -1,0 +1,19 @@
+name: claude
+adapter: claude
+capabilities:
+- conceive
+- plan
+- design
+- implement
+- test
+- review
+- document
+- create
+- assign
+level: autonomous
+granted:
+  by: founder@example.com
+  at: 2026-10-18T07:46:32.017659768Z
+  signature: 23021d9632e6a081c850c9a909e48871cbb7807d92e4ed7fa547f4e1fc8c30c75bd059e5001b8ecbb44a412bf0fcad387320d41e5cacd5f20bfe8ec8be2c9c06
+verify_key: afd9f387574506b7b21cc87e9e3a33cf8efd6dc6db81df961c7749778e16537e
+updated: 2026-10-18T07:46:32.018153047Z

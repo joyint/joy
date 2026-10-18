@@ -483,7 +483,8 @@ pub fn read_project(
             .parent()
             .and_then(Path::parent)
             .unwrap_or_else(|| Path::new("."));
-        project.replace_members(crate::member_files::read(root, &ids)?);
+        let shape = project.member_file_shape();
+        project.replace_members(crate::member_files::read(root, &ids, shape)?);
     }
     Ok(project)
 }
@@ -511,6 +512,8 @@ pub fn parse_project(
 ///    (JI-019D-46).
 /// 3: a job's window ends at `until`, no longer at `deadline`
 ///    (JOY-02C9-70).
+/// 4: a member file says its `type` and keeps the name its member goes
+///    by as the one key under `identity` (JOY-02DB-09).
 ///
 /// Raise it whenever a change makes a project unreadable for the joy
 /// before, in any file under `.joy`, OR lets that joy read it wrong. An
@@ -525,13 +528,16 @@ pub fn parse_project(
 /// This constant is the highest format this joy reads. What a
 /// project.yaml SAYS is what the project's data needs, and no more: 2
 /// once its members are in files, 3 from the first job that says
-/// `until`. So a project is closed to an older joy exactly when it holds
-/// something that joy would get wrong, and not because a newer joy
-/// touched it.
-pub const PROJECT_FORMAT: u32 = 3;
+/// `until`, 4 once its member files say their type. So a project is
+/// closed to an older joy exactly when it holds something that joy would
+/// get wrong, and not because a newer joy touched it.
+pub const PROJECT_FORMAT: u32 = 4;
 
 /// The format a project needs once its members are in files.
 const FORMAT_MEMBER_FILES: u32 = 2;
+
+/// The format a project needs once its member files say their type.
+const FORMAT_MEMBER_IDENTITY: u32 = 4;
 
 /// The format a project needs from the first job that says `until`.
 pub const FORMAT_JOB_UNTIL: u32 = 3;
@@ -633,6 +639,11 @@ fn parse_project_and_member_ids(
         serde_yaml_ng::from_value(value).map_err(yaml_err)?;
     if listed.is_some() {
         project.set_member_layout(crate::model::project::MemberLayout::Files);
+        project.set_member_file_shape(if format >= FORMAT_MEMBER_IDENTITY {
+            crate::model::project::MemberFileShape::Identity
+        } else {
+            crate::model::project::MemberFileShape::Flat
+        });
     }
     Ok((project, listed))
 }
@@ -684,15 +695,19 @@ pub fn save_project(
         .and_then(|text| serde_yaml_ng::from_str(&text).ok());
     // What the file says already stays said (a job with `until` lifted it
     // to 3, and saving the project must not take that back); member files
-    // need 2. A project in format 1 says nothing, as it always did.
+    // need 2, and 4 once they say their type. A project in format 1 says
+    // nothing, as it always did.
     let said = existing.as_ref().map(format_of).unwrap_or(1);
-    let needed = if in_files {
-        said.max(FORMAT_MEMBER_FILES)
-    } else {
-        said
+    let shape = project.member_file_shape();
+    let needed = match (in_files, shape) {
+        (false, _) => said,
+        (true, crate::model::project::MemberFileShape::Flat) => said.max(FORMAT_MEMBER_FILES),
+        (true, crate::model::project::MemberFileShape::Identity) => {
+            said.max(FORMAT_MEMBER_IDENTITY)
+        }
     };
     if in_files {
-        let ids = crate::member_files::write(root, project.member_map())?;
+        let ids = crate::member_files::write(root, project.member_map(), shape)?;
         if let Some(map) = value.as_mapping_mut() {
             map.remove("members");
             if !ids.is_empty() {
@@ -836,9 +851,9 @@ mod tests {
         })
         .unwrap();
         let text = std::fs::read_to_string(joy_dir(dir.path()).join(PROJECT_FILE)).unwrap();
-        // what member files need, and no more: a joy that reads 2 stays in
+        // what member files of format 4 need, and no more
         assert!(
-            text.starts_with(&format!("format: {FORMAT_MEMBER_FILES}\n")),
+            text.starts_with(&format!("format: {FORMAT_MEMBER_IDENTITY}\n")),
             "{text}"
         );
         assert_eq!(text.matches("format:").count(), 1);
@@ -888,6 +903,13 @@ mod tests {
             });
             job
         };
+        // a project of joy 0.23: member files without a type, format 2
+        let mut project = load_project(root).unwrap();
+        project.set_member_file_shape(crate::model::project::MemberFileShape::Flat);
+        let path = joy_dir(root).join(PROJECT_FILE);
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(&path, text.replace("format: 4\n", "format: 2\n")).unwrap();
+        save_project(root, &project).unwrap();
         assert_eq!(said(), FORMAT_MEMBER_FILES);
 
         // a job without an end, and one with a start only: nothing new

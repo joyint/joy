@@ -579,7 +579,7 @@ mod tests {
                 .public_key()
                 .to_hex(),
         );
-        let mut anna = Member::new(MemberCapabilities::All);
+        let mut anna = Member::person(MemberCapabilities::All);
         anna.verify_key = Some(IdentityKeypair::from_seed(&anna_seed).public_key().to_hex());
         project.register_member("anna@example.com", anna).unwrap();
         joy_core::store::write_yaml(
@@ -762,7 +762,7 @@ mod tests {
         // add an AI member with its own key (like vibe)
         let ai_seed = [9u8; 32];
         let mut project = joy_core::store::load_project(dir.path()).unwrap();
-        let mut vibe = joy_core::model::project::Member::new(
+        let mut vibe = joy_core::model::project::Member::ai(
             joy_core::model::project::MemberCapabilities::all_for_ai(),
         );
         vibe.verify_key = Some(IdentityKeypair::from_seed(&ai_seed).public_key().to_hex());

@@ -98,7 +98,14 @@ mod tests {
             } else {
                 joy_core::model::project::MemberCapabilities::All
             };
-            let mut m = joy_core::model::project::Member::new(capabilities);
+            let mut m = joy_core::model::project::Member::of_kind(
+                if joy_core::model::project::is_ai_member(member) {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                capabilities,
+            );
             m.verify_key = Some(
                 joy_core::auth::IdentityKeypair::from_seed(&[seed_byte; 32])
                     .public_key()

@@ -26,5 +26,5 @@ load setup
 
 @test "a project in member files says its format first, one from before says none" {
     setup_human_auth
-    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
+    [ "$(head -1 .joy/project.yaml)" = "format: 4" ]
 }

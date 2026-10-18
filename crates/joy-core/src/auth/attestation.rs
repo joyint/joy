@@ -150,7 +150,7 @@ mod tests {
     }
 
     fn fresh_member(caps: MemberCapabilities, otp: Option<String>) -> Member {
-        let mut m = Member::new(caps);
+        let mut m = Member::person(caps);
         m.enrollment_verifier = otp;
         m
     }

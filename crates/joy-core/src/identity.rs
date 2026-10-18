@@ -490,7 +490,7 @@ pub fn acting_member_key(root: &Path) -> Result<String, JoyError> {
 ///
 /// This is the question every command asks that needs a passphrase, a
 /// seed or a wrap: an AI member has no `kdf_nonce` and no
-/// `seed_wrap_passphrase` and can never have one, so resolving the AI
+/// `seed_wrap` and can never have one, so resolving the AI
 /// there would refuse work the operator is entitled to do. The operator
 /// is not guessed: it is the `delegated_by` claim the session was signed
 /// with at redemption, so it names the person who issued the token and
@@ -702,7 +702,9 @@ pub fn acting_signature(root: &Path) -> Result<(String, String), JoyError> {
 pub fn has_ai_members(root: &Path) -> bool {
     let project = load_project_optional(root);
     match project {
-        Some(p) => p.member_keys().any(|k| is_ai_member(k)),
+        Some(p) => p
+            .member_values()
+            .any(|m| m.kind == crate::model::project::MemberKind::Ai),
         None => false,
     }
 }

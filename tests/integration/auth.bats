@@ -577,9 +577,9 @@ YAML
     # manage/delete, so nine capability keys each render on their own
     # line). Use a generous -A range so the follow-up greps still reach
     # verify_key and signature.
-    OLD_PUB=$(grep "^verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    OLD_PUB=$(grep "^    verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
     OLD_ATT=$(grep "signature:" "$(member_file alice@example.com)" | head -1)
-    OLD_WRAP=$(grep "^seed_wrap_passphrase:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    OLD_WRAP=$(grep "^    seed_wrap:" "$(member_file alice@example.com)" | awk '{print $NF}')
 
     run joy auth passphrase \
         --passphrase "alpha bravo charlie delta echo foxtrot" \
@@ -588,11 +588,11 @@ YAML
     [[ "$output" == *"Passphrase changed"* ]]
 
     # verify_key preserved (ADR-039 wrapped-seed model: keypair derives
-    # from a stable seed). seed_wrap_passphrase rotates. Attestation is
+    # from a stable seed). seed_wrap rotates. Attestation is
     # untouched.
-    NEW_PUB=$(grep "^verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    NEW_PUB=$(grep "^    verify_key:" "$(member_file alice@example.com)" | awk '{print $NF}')
     NEW_ATT=$(grep "signature:" "$(member_file alice@example.com)" | head -1)
-    NEW_WRAP=$(grep "^seed_wrap_passphrase:" "$(member_file alice@example.com)" | awk '{print $NF}')
+    NEW_WRAP=$(grep "^    seed_wrap:" "$(member_file alice@example.com)" | awk '{print $NF}')
     [ "$OLD_PUB" = "$NEW_PUB" ]
     [ "$OLD_ATT" = "$NEW_ATT" ]
     [ "$OLD_WRAP" != "$NEW_WRAP" ]
@@ -728,7 +728,7 @@ YAML
     [[ "$output" == *"joy_r_"* ]]
 
     # Both wraps land in project.yaml.
-    members_grep -q "seed_wrap_passphrase:"
+    members_grep -q "seed_wrap:"
     members_grep -q "seed_wrap_recovery:"
 }
 
@@ -762,7 +762,7 @@ YAML
     joy init --name "Recovery Test" --acronym RT
     joy auth init --passphrase "$TEST_PASSPHRASE"
     OLD_REC_WRAP=$(members_grep "seed_wrap_recovery:" | awk '{print $NF}')
-    OLD_PASS_WRAP=$(members_grep "seed_wrap_passphrase:" | awk '{print $NF}')
+    OLD_PASS_WRAP=$(members_grep "seed_wrap:" | awk '{print $NF}')
 
     run joy auth recover --regenerate-key --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
@@ -770,7 +770,7 @@ YAML
     [[ "$output" == *"NEW RECOVERY KEY"* ]]
 
     NEW_REC_WRAP=$(members_grep "seed_wrap_recovery:" | awk '{print $NF}')
-    NEW_PASS_WRAP=$(members_grep "seed_wrap_passphrase:" | awk '{print $NF}')
+    NEW_PASS_WRAP=$(members_grep "seed_wrap:" | awk '{print $NF}')
     [ "$OLD_REC_WRAP" != "$NEW_REC_WRAP" ]
     [ "$OLD_PASS_WRAP" = "$NEW_PASS_WRAP" ]
 

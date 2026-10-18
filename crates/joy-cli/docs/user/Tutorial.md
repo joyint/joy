@@ -793,8 +793,8 @@ joy project set privacy anonymous    # or switch an existing project (needs auth
 joy project set privacy open         # switch back
 ```
 
-In anonymous mode each member is keyed by an opaque id (`m-<short>`) and
-project.yaml carries a one-way `email_match` verifier instead of the
+In anonymous mode each person goes by an opaque id (`m-<short>`) and
+their member file carries a one-way `email_tag` instead of the
 address; the cleartext e-mail lives only in `.joy/members.yaml`,
 encrypted per member. Joy resolves ids back to e-mails for you
 automatically while your session is active, never prints a raw id, and

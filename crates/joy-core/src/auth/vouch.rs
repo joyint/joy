@@ -26,8 +26,8 @@ use super::{attestation, session, IdentityKeypair, PublicKey};
 use crate::error::JoyError;
 use crate::model::item::Capability;
 use crate::model::project::{
-    grant_text, is_ai_member, origin_text, Granted, Member, MemberCapabilities, MemberLayout,
-    Origin, Project,
+    grant_text, origin_text, Granted, Member, MemberCapabilities, MemberKind, MemberLayout, Origin,
+    Project,
 };
 use joy_model::InteractionLevel;
 
@@ -60,7 +60,7 @@ enum Form {
 fn form(project: &Project, member_id: &str) -> Form {
     match project.member_layout() {
         MemberLayout::InProject => Form::Attestation,
-        MemberLayout::Files if is_ai_member(member_id) => Form::Maximum,
+        MemberLayout::Files if project.is_ai(member_id) => Form::Maximum,
         MemberLayout::Files => Form::Origin,
     }
 }
@@ -268,7 +268,7 @@ pub fn verify_origin(
     let Some(origin) = &member.origin else {
         let without_origin = project
             .members()
-            .filter(|(key, m)| !is_ai_member(key) && m.origin.is_none())
+            .filter(|(_, m)| m.kind == MemberKind::Person && m.origin.is_none())
             .count();
         if without_origin > 1 {
             return Err(JoyError::AuthFailed(format!(
@@ -312,7 +312,7 @@ pub fn verify_maximum(project: &Project, name: &str, member: &Member) -> Result<
         ));
     };
     let signer = granted.by.id();
-    if is_ai_member(signer) {
+    if project.is_ai(signer) {
         return Err(format!(
             "what {name} may do is signed by {signer}, and an AI member signs for nobody"
         ));
@@ -349,7 +349,7 @@ mod tests {
         let mut project = Project::new("Shop".into(), Some("SH".into()));
         project.set_member_layout(MemberLayout::Files);
         let founder_kp = keypair(1);
-        let mut founder = Member::new(MemberCapabilities::All);
+        let mut founder = Member::person(MemberCapabilities::All);
         founder.verify_key = Some(founder_kp.public_key().to_hex());
         project
             .register_member("founder@example.com", founder)
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn a_person_gets_an_origin_once_and_a_change_leaves_it_alone() {
         let (project, founder_kp) = files_project();
-        let mut second = Member::new(caps(&[Capability::Implement]));
+        let mut second = Member::person(caps(&[Capability::Implement]));
         second.enrollment_verifier = Some("otp-hash".into());
         sign(
             &project,
@@ -408,7 +408,7 @@ mod tests {
     #[test]
     fn an_origin_made_for_someone_else_does_not_verify() {
         let (mut project, founder_kp) = files_project();
-        let mut second = Member::new(MemberCapabilities::All);
+        let mut second = Member::person(MemberCapabilities::All);
         sign(
             &project,
             "founder@example.com",
@@ -429,7 +429,7 @@ mod tests {
     #[test]
     fn only_one_person_is_the_founder() {
         let (mut project, _) = files_project();
-        let stranger = Member::new(MemberCapabilities::All);
+        let stranger = Member::person(MemberCapabilities::All);
         project
             .register_member("stranger@example.com", stranger.clone())
             .unwrap();
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn an_ai_members_maximum_is_signed_and_a_change_by_hand_shows() {
         let (mut project, founder_kp) = files_project();
-        let mut claude = Member::new(caps(&[Capability::Plan, Capability::Implement]));
+        let mut claude = Member::ai(caps(&[Capability::Plan, Capability::Implement]));
         claude.adapter = Some("claude".into());
         sign(
             &project,
@@ -493,11 +493,11 @@ mod tests {
     fn a_maximum_no_person_signed_counts_for_nothing() {
         let (mut project, _) = files_project();
         let dev_kp = keypair(2);
-        let mut dev = Member::new(caps(&[Capability::Implement]));
+        let mut dev = Member::person(caps(&[Capability::Implement]));
         dev.verify_key = Some(dev_kp.public_key().to_hex());
         project.register_member("dev@example.com", dev).unwrap();
 
-        let mut claude = Member::new(caps(&[Capability::Plan]));
+        let mut claude = Member::ai(caps(&[Capability::Plan]));
         assert!(verify_maximum(&project, "claude", &claude)
             .unwrap_err()
             .contains("nobody has signed"));
@@ -515,7 +515,7 @@ mod tests {
         verify_maximum(&project, "claude", &claude).unwrap();
 
         // signed with the AI's own name as the signer
-        let mut selfmade = Member::new(caps(&[Capability::Plan]));
+        let mut selfmade = Member::ai(caps(&[Capability::Plan]));
         sign(
             &project,
             "claude",
@@ -529,7 +529,7 @@ mod tests {
             .contains("signs for nobody"));
 
         // signed by somebody who is not in the project
-        let mut foreign = Member::new(caps(&[Capability::Plan]));
+        let mut foreign = Member::ai(caps(&[Capability::Plan]));
         sign(
             &project,
             "stranger@example.com",
@@ -547,12 +547,12 @@ mod tests {
     fn a_project_from_before_still_gets_an_attestation() {
         let mut project = Project::new("Old".into(), Some("OL".into()));
         let founder_kp = keypair(1);
-        let mut founder = Member::new(MemberCapabilities::All);
+        let mut founder = Member::person(MemberCapabilities::All);
         founder.verify_key = Some(founder_kp.public_key().to_hex());
         project
             .register_member("founder@example.com", founder)
             .unwrap();
-        let mut ai = Member::new(caps(&[Capability::Plan]));
+        let mut ai = Member::ai(caps(&[Capability::Plan]));
         sign(
             &project,
             "founder@example.com",

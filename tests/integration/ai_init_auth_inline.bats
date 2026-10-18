@@ -25,7 +25,7 @@ load setup
     # (identity::check_session) and would not match the non-TTY
     # context we just used to drive the init through its [Y/n]
     # prompts. The auth-bootstrap claim is fully tied to verify_key.
-    members_grep -q "^verify_key:"
+    members_grep -q "^    verify_key:"
 }
 
 @test "joy ai init skips auth section when caller is already authenticated" {

@@ -48,7 +48,7 @@ pub struct Project {
     /// Member-PII privacy mode (ADR-042). Absent means `Open` (today's
     /// behaviour: cleartext e-mail in the member entry). `Anonymous` moves
     /// member e-mail into an encrypted members.yaml and keys members by an
-    /// opaque id plus an `email_match` verifier. Read via `privacy_mode()`;
+    /// opaque id plus an `email_tag` verifier. Read via `privacy_mode()`;
     /// changed only by the dedicated mode-transition command, never by a
     /// bare field write (the switch is an atomic migration).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,7 +59,7 @@ pub struct Project {
         default,
         skip_serializing_if = "BTreeMap::is_empty",
         serialize_with = "serialize_members",
-        deserialize_with = "joy_model::migrations::ai_member_name::de_map"
+        deserialize_with = "de_members"
     )]
     members: BTreeMap<String, Member>,
     /// Crypt zone registry. Empty / absent means encryption is not in
@@ -74,6 +74,11 @@ pub struct Project {
     /// in the same shape.
     #[serde(skip)]
     layout: MemberLayout,
+    /// The shape the member files have on disk, when the members are in
+    /// files. Not part of the file either: the store reads it off the
+    /// format project.yaml says.
+    #[serde(skip)]
+    file_shape: MemberFileShape,
 }
 
 /// Where a project keeps its members.
@@ -89,6 +94,21 @@ pub enum MemberLayout {
     Files,
 }
 
+/// The shape of the member files (JOY-02DB-09).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemberFileShape {
+    /// `type`, and the name a member goes by as the one key under
+    /// `identity` (format 4). What every project is written in from the
+    /// moment its members go into files.
+    #[default]
+    Identity,
+    /// The shape joy 0.23 writes (formats 2 and 3): a person's address
+    /// under `email`, an AI member's name under `name`, no `type`. Read
+    /// and written as it is until a person says yes to the update
+    /// ([`crate::migrations::m_2026_10_member_identity`]).
+    Flat,
+}
+
 /// Per-project member-PII privacy mode (ADR-042). Stored in project.yaml
 /// (committed, project-wide); absent means `Open`. Inspected via
 /// `joy project get privacy`; the switch to `Anonymous` is an atomic
@@ -100,7 +120,7 @@ pub enum PrivacyMode {
     #[default]
     Open,
     /// Member e-mail lives in an encrypted members.yaml; project.yaml
-    /// carries an opaque member id and an `email_match` verifier.
+    /// carries an opaque member id and an `email_tag` verifier.
     Anonymous,
 }
 
@@ -201,8 +221,64 @@ impl Docs {
     }
 }
 
+/// What a member is (JOY-02DB-09). Said by `type` in its member file
+/// and the one thing joy decides by where the project is loaded; the
+/// shape of a key ([`is_ai_member`]) is only the fallback where nothing
+/// but a key is at hand.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberKind {
+    /// Acts on its own, with an address and a passphrase: a human or a
+    /// shared account, joy cannot tell and does not ask.
+    Person,
+    /// Acts on behalf of a person who delegated to it.
+    Ai,
+    /// A platform instance that runs jobs. Read and written, not used
+    /// yet: nothing is assigned or delegated to one.
+    Platform,
+}
+
+/// The members map of a project.yaml of format 1, with every member's
+/// kind set from its key: that file has no word for the kind, and its
+/// keys were written by the one rule there was
+/// ([`crate::migrations::m_2026_10_member_identity::kind_of_key`]).
+fn de_members<'de, D>(deserializer: D) -> Result<BTreeMap<String, Member>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let mut members: BTreeMap<String, Member> = ai_member_name::de_map(deserializer)?;
+    for (key, member) in members.iter_mut() {
+        member.kind = crate::migrations::m_2026_10_member_identity::kind_of_key(key);
+    }
+    Ok(members)
+}
+
+impl MemberKind {
+    /// What a member read on its own says until the map it stands in
+    /// sets its kind ([`de_members`]). Never seen outside serde.
+    fn unread() -> Self {
+        MemberKind::Person
+    }
+
+    /// The word in a member file and in what joy says.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MemberKind::Person => "person",
+            MemberKind::Ai => "ai",
+            MemberKind::Platform => "platform",
+        }
+    }
+}
+
+/// A member as joy holds it. Its serde form is the member entry of a
+/// project.yaml of format 1, the only file it is still written to that
+/// way; a member file has its own shape ([`crate::member_files`]).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
+    /// What this member is. A project.yaml of format 1 has no word for
+    /// it: its members map sets it from the key ([`de_members`]).
+    #[serde(skip, default = "MemberKind::unread")]
+    pub kind: MemberKind,
     pub capabilities: MemberCapabilities,
     /// An AI member's ONE interaction level: the most the project allows
     /// it to do on its own, part of what a manager signs for it
@@ -230,9 +306,14 @@ pub struct Member {
     pub kdf_nonce: Option<String>,
     /// AES-256-GCM ciphertext of the member's identity seed, encrypted
     /// under a KEK derived from passphrase + kdf_nonce via Argon2id
-    /// (ADR-039). Hex-encoded `nonce || ciphertext || tag`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub seed_wrap_passphrase: Option<String>,
+    /// (ADR-039). Hex-encoded `nonce || ciphertext || tag`. A
+    /// project.yaml of format 1 calls it `seed_wrap_passphrase`.
+    #[serde(
+        default,
+        rename = "seed_wrap_passphrase",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub seed_wrap: Option<String>,
     /// AES-256-GCM ciphertext of the same seed, encrypted under a KEK
     /// derived from a recovery key via Argon2id (ADR-039). The recovery
     /// key itself is generated at `joy auth init`, displayed once, and
@@ -254,13 +335,18 @@ pub struct Member {
     /// "crypt-member-kek" tag.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub crypt_wraps: BTreeMap<String, String>,
-    /// Non-reversible e-mail verifier (ADR-042 anonymous mode). Hex of
+    /// Non-reversible e-mail tag (ADR-042 anonymous mode). Hex of
     /// HKDF-SHA256 over normalize(email) keyed by `kdf_nonce`. Present only in
-    /// anonymous mode, where it replaces the cleartext e-mail map key. The
-    /// platform compares this against verified account e-mails to decide
-    /// membership without decrypting anything.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub email_match: Option<String>,
+    /// anonymous mode, where it replaces the cleartext e-mail map key. joy-core,
+    /// which the CLI, the app and the platform share, compares it against a
+    /// known address to find the member. A project.yaml of format 1 calls it
+    /// `email_match`.
+    #[serde(
+        default,
+        rename = "email_match",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub email_tag: Option<String>,
     /// Wrap of the members.yaml zone key for this member (ADR-042 anonymous
     /// mode). Pairwise X25519 wrap (`crypt::wrap_for_member`), unwrappable with
     /// the member's identity seed. Present only in anonymous mode.
@@ -587,20 +673,31 @@ impl Member {
             .remove(ai_member_name::read(ai).as_ref())
     }
 
-    /// Create a member with the given capabilities and no auth fields.
-    pub fn new(capabilities: MemberCapabilities) -> Self {
+    /// A person with the given capabilities and no auth fields.
+    pub fn person(capabilities: MemberCapabilities) -> Self {
+        Self::of_kind(MemberKind::Person, capabilities)
+    }
+
+    /// An AI member with the given capabilities and no auth fields.
+    pub fn ai(capabilities: MemberCapabilities) -> Self {
+        Self::of_kind(MemberKind::Ai, capabilities)
+    }
+
+    /// A member of `kind` with the given capabilities and no auth fields.
+    pub fn of_kind(kind: MemberKind, capabilities: MemberCapabilities) -> Self {
         Self {
+            kind,
             capabilities,
             interaction_level: None,
             adapter: None,
             verify_key: None,
             kdf_nonce: None,
-            seed_wrap_passphrase: None,
+            seed_wrap: None,
             seed_wrap_recovery: None,
             enrollment_verifier: None,
             ai_delegations: BTreeMap::new(),
             crypt_wraps: BTreeMap::new(),
-            email_match: None,
+            email_tag: None,
             members_wrap: None,
             attestation: None,
             model: None,
@@ -691,6 +788,7 @@ impl Project {
             crypt: CryptConfig::default(),
             created: Utc::now(),
             layout: MemberLayout::default(),
+            file_shape: MemberFileShape::default(),
         }
     }
 
@@ -703,6 +801,17 @@ impl Project {
     /// migration that moves a project over say how members are kept.
     pub(crate) fn set_member_layout(&mut self, layout: MemberLayout) {
         self.layout = layout;
+    }
+
+    /// The shape of the member files on disk.
+    pub fn member_file_shape(&self) -> MemberFileShape {
+        self.file_shape
+    }
+
+    /// Privileged: only the store (reading what is on disk) and the
+    /// update that rewrites the member files say their shape.
+    pub(crate) fn set_member_file_shape(&mut self, shape: MemberFileShape) {
+        self.file_shape = shape;
     }
 
     /// The effective privacy mode: `Open` when unset (ADR-042).
@@ -752,15 +861,15 @@ impl Project {
 
     /// Resolve the member-map key for a git e-mail, honoring the privacy mode.
     /// `open`: the key is the e-mail itself; `anonymous`: the opaque id whose
-    /// stored `email_match` verifies against the e-mail. `None` when the e-mail
+    /// stored `email_tag` verifies against the e-mail. `None` when the e-mail
     /// is not a member.
     pub fn member_key_for_email(&self, email: &str) -> Option<String> {
         if self.privacy_mode() != PrivacyMode::Anonymous {
             return self.members.contains_key(email).then(|| email.to_string());
         }
         for (id, member) in &self.members {
-            if let (Some(verifier), Some(nonce)) = (&member.email_match, &member.kdf_nonce) {
-                if crate::member_id::email_match(email, nonce).ok().as_deref()
+            if let (Some(verifier), Some(nonce)) = (&member.email_tag, &member.kdf_nonce) {
+                if crate::member_id::email_tag(email, nonce).ok().as_deref()
                     == Some(verifier.as_str())
                 {
                     return Some(id.clone());
@@ -789,6 +898,14 @@ impl Project {
     /// AI member is named by its name and has to be one of this
     /// project's.
     pub fn assignee(&self, member: &str) -> Result<String, String> {
+        if let Some(key) = self.member_key(member) {
+            return match self.kind_of(&key) {
+                MemberKind::Platform => Err(format!(
+                    "{key} is a platform member: no work is assigned to one yet"
+                )),
+                MemberKind::Person | MemberKind::Ai => Ok(key),
+            };
+        }
         if !is_ai_member(member) {
             if member.contains('@') || crate::member_id::is_opaque_member_id(member) {
                 return Ok(member.to_string());
@@ -797,12 +914,10 @@ impl Project {
                 "{member} is neither an address nor the name of an AI member"
             ));
         }
-        self.member_key(member).ok_or_else(|| {
-            format!(
-                "this project has no AI member named {}",
-                ai_member_name::read(member)
-            )
-        })
+        Err(format!(
+            "this project has no AI member named {}",
+            ai_member_name::read(member)
+        ))
     }
 
     /// The assignee an assignment is taken away from: the member as the
@@ -834,6 +949,22 @@ impl Project {
     pub fn member_by_key_mut(&mut self, key: &str) -> Option<&mut Member> {
         let key = self.member_key(key)?;
         self.members.get_mut(&key)
+    }
+
+    /// What the member under `key` is: its kind where the project knows
+    /// it, and where it does not (a former member, a name in an old
+    /// item) what the key's shape says ([`is_ai_member`]).
+    pub fn kind_of(&self, key: &str) -> MemberKind {
+        match self.member_by_key(key) {
+            Some(member) => member.kind,
+            None if is_ai_member(key) => MemberKind::Ai,
+            None => MemberKind::Person,
+        }
+    }
+
+    /// Whether the member under `key` is an AI member: [`Project::kind_of`].
+    pub fn is_ai(&self, key: &str) -> bool {
+        self.kind_of(key) == MemberKind::Ai
     }
 
     /// Whether a member with this at-rest map key exists.
@@ -878,7 +1009,7 @@ impl Project {
     /// committed project.yaml. That onboarding flow is tracked separately
     /// (JOY-01C3-A7). The caller owns any duplicate-key policy.
     pub fn register_member(&mut self, id: &str, member: Member) -> Result<(), JoyError> {
-        if !is_ai_member(id) && self.privacy_mode() == PrivacyMode::Anonymous {
+        if member.kind == MemberKind::Person && self.privacy_mode() == PrivacyMode::Anonymous {
             return Err(JoyError::Other(format!(
                 "cannot register human member {id} in an anonymous project: \
                  anonymous human onboarding is not yet supported (JOY-01C3-A7)"
@@ -888,7 +1019,7 @@ impl Project {
         // however its capabilities were named (`all` included): the guard
         // refuses it every manage action anyway, and a capability that
         // can never be used must not stand in the project.
-        if is_ai_member(id) && member.has_capability(&Capability::Manage) {
+        if member.kind == MemberKind::Ai && member.has_capability(&Capability::Manage) {
             return Err(JoyError::Other(
                 "an AI member never holds the manage capability: name what it may do".into(),
             ));
@@ -1014,7 +1145,7 @@ mod tests {
         // Operator rule 2026-08-02: an entry whose key cannot re-derive
         // is a broken artifact, not a delegation — every surface greys it
         // and offers Delegate. THE one predicate lives here.
-        let mut member = Member::new(MemberCapabilities::All);
+        let mut member = Member::person(MemberCapabilities::All);
         assert!(!member.delegation_usable("claude"));
         member.ai_delegations.insert(
             "claude".into(),
@@ -1127,7 +1258,7 @@ mod tests {
 
     #[test]
     fn ai_delegations_omitted_when_empty() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         assert!(m.ai_delegations.is_empty());
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(
@@ -1143,7 +1274,7 @@ mod tests {
 
     #[test]
     fn ai_delegations_yaml_roundtrip() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.verify_key = Some("aa".repeat(32));
         m.kdf_nonce = Some("bb".repeat(32));
         m.ai_delegations.insert(
@@ -1178,7 +1309,7 @@ mod tests {
 
     #[test]
     fn ai_delegations_with_rotated_roundtrips() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         let created = chrono::DateTime::parse_from_rfc3339("2026-04-01T10:00:00Z")
             .unwrap()
             .with_timezone(&chrono::Utc);
@@ -1209,14 +1340,14 @@ mod tests {
 
     #[test]
     fn attestation_omitted_when_none() {
-        let m = Member::new(MemberCapabilities::All);
+        let m = Member::person(MemberCapabilities::All);
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(!yaml.contains("attestation:"));
     }
 
     #[test]
     fn attestation_yaml_roundtrips() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.attestation = Some(Attestation {
             attester: "horst@example.com".into(),
             signed_fields: AttestationSignedFields {
@@ -1485,7 +1616,7 @@ capabilities:
 
     #[test]
     fn member_interaction_level_yaml_roundtrip() {
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.interaction_level = Some(InteractionLevel::Confirmed);
         let yaml = serde_yaml_ng::to_string(&m).unwrap();
         assert!(yaml.contains("interaction-level: confirmed"));
@@ -1493,14 +1624,14 @@ capabilities:
         assert_eq!(parsed.interaction_level, Some(InteractionLevel::Confirmed));
 
         // Absent when unset.
-        let bare = Member::new(MemberCapabilities::All);
+        let bare = Member::person(MemberCapabilities::All);
         let yaml = serde_yaml_ng::to_string(&bare).unwrap();
         assert!(!yaml.contains("interaction-level"));
     }
 
     #[test]
     fn set_capabilities_carries_over_surviving_configs() {
-        let mut m = Member::new(MemberCapabilities::Specific(
+        let mut m = Member::person(MemberCapabilities::Specific(
             [
                 (
                     Capability::Implement,
@@ -1539,7 +1670,7 @@ capabilities:
 
     #[test]
     fn set_capabilities_to_all_replaces_wholesale() {
-        let mut m = Member::new(MemberCapabilities::Specific(
+        let mut m = Member::person(MemberCapabilities::Specific(
             [(Capability::Implement, CapabilityConfig::default())].into(),
         ));
         m.set_capabilities(MemberCapabilities::All);

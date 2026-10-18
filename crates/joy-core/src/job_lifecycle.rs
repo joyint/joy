@@ -32,7 +32,7 @@
 
 use crate::migrations::ai_member_name;
 use crate::model::item::{ActivityOutcome, Item, JobFeedback, Status};
-use crate::model::project::{is_ai_member, Project};
+use crate::model::project::Project;
 use joy_model::InteractionLevel;
 
 /// What a surface shows about a job next to its status: nothing special,
@@ -151,7 +151,7 @@ pub fn start_block(
     let Some(assignee) = job.assignees.first().map(|a| a.member.id().to_string()) else {
         return Some("the job has no assignee yet".to_string());
     };
-    if !is_ai_member(&assignee) {
+    if !project.is_ai(&assignee) {
         return None;
     }
     if let Some(block) = host_block {

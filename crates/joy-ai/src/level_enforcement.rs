@@ -197,7 +197,7 @@ mod tests {
             .member_by_key_mut("dev@example.com")
             .unwrap()
             .verify_key = Some(kp.public_key().to_hex());
-        let mut claude = Member::new(MemberCapabilities::Specific(
+        let mut claude = Member::ai(MemberCapabilities::Specific(
             [(joy_core::model::item::Capability::Plan, Default::default())].into(),
         ));
         claude.interaction_level = Some(Confirmed);

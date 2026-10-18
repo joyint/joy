@@ -546,7 +546,7 @@ mod tests {
             .member_by_key_mut("dev@example.com")
             .unwrap()
             .verify_key = Some(kp.public_key().to_hex());
-        let mut vibe = Member::new(MemberCapabilities::Specific(
+        let mut vibe = Member::ai(MemberCapabilities::Specific(
             [(joy_core::model::item::Capability::Plan, Default::default())].into(),
         ));
         vibe.interaction_level = Some(InteractionLevel::Confirmed);

@@ -1062,7 +1062,7 @@ fn setup_new_tools(root: &Path, only: Option<&str>) -> anyhow::Result<Vec<&'stat
             }
             let (attester_id, attester_kp) = acting.as_ref().unwrap();
 
-            let mut new_member = joy_core::model::project::Member::new(capabilities);
+            let mut new_member = joy_core::model::project::Member::ai(capabilities);
             joy_core::auth::vouch::sign(
                 &project,
                 attester_id,

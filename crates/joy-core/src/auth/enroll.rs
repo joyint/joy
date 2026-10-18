@@ -26,7 +26,7 @@ use crate::store;
 pub struct EnrollmentMaterial {
     pub verify_key: String,
     pub kdf_nonce: String,
-    pub seed_wrap_passphrase: String,
+    pub seed_wrap: String,
     pub seed_wrap_recovery: String,
 }
 
@@ -47,8 +47,7 @@ pub fn is_pending(project: &Project, member_key: &str) -> bool {
     let Some(m) = project.member_by_key(member_key) else {
         return false;
     };
-    let enrolled =
-        m.verify_key.is_some() && m.kdf_nonce.is_some() && m.seed_wrap_passphrase.is_some();
+    let enrolled = m.verify_key.is_some() && m.kdf_nonce.is_some() && m.seed_wrap.is_some();
     m.enrollment_verifier.is_some() && !enrolled
 }
 
@@ -139,7 +138,7 @@ pub fn apply_enrollment(
         .expect("member resolved above");
     m.verify_key = Some(material.verify_key);
     m.kdf_nonce = Some(material.kdf_nonce);
-    m.seed_wrap_passphrase = Some(material.seed_wrap_passphrase);
+    m.seed_wrap = Some(material.seed_wrap);
     m.seed_wrap_recovery = Some(material.seed_wrap_recovery);
     if redeemed {
         // The invitation is spent; `is_pending` now reports false and the
@@ -236,7 +235,7 @@ pub fn redeem_with_passphrase(
     let salt = generate_salt();
     let seed = seed_mod::Seed::generate();
     let recovery_key = seed_mod::RecoveryKey::generate();
-    let seed_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, passphrase, &salt)?;
+    let seed_wrap = seed_mod::wrap_seed_with_passphrase(&seed, passphrase, &salt)?;
     let seed_wrap_recovery = seed_mod::wrap_seed_with_recovery(&seed, &recovery_key, &salt)?;
     let keypair = IdentityKeypair::from_seed(seed.as_bytes());
 
@@ -247,7 +246,7 @@ pub fn redeem_with_passphrase(
         EnrollmentMaterial {
             verify_key: keypair.public_key().to_hex(),
             kdf_nonce: salt.to_hex(),
-            seed_wrap_passphrase,
+            seed_wrap,
             seed_wrap_recovery,
         },
     )?;
@@ -277,14 +276,14 @@ mod tests {
         EnrollmentMaterial {
             verify_key: "aa".into(),
             kdf_nonce: "bb".into(),
-            seed_wrap_passphrase: "cc".into(),
+            seed_wrap: "cc".into(),
             seed_wrap_recovery: "dd".into(),
         }
     }
 
     fn project_with(verifier: Option<String>) -> (Project, String) {
         let mut project = Project::new("T".into(), Some("T".into()));
-        let mut m = Member::new(MemberCapabilities::All);
+        let mut m = Member::person(MemberCapabilities::All);
         m.enrollment_verifier = verifier;
         let key = "alice@example.com".to_string();
         project.register_member(&key, m).unwrap();

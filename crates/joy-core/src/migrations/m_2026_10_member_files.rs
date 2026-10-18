@@ -45,9 +45,6 @@ use crate::model::project::{
 use crate::store;
 use joy_model::{migrations::ai_member_name, InteractionLevel};
 
-/// The joy that reads a project brought over: everybody needs it after.
-pub const NEEDS_JOY: &str = "0.23";
-
 /// Whether the project at `root` still keeps its members in project.yaml.
 pub fn pending(root: &Path) -> bool {
     store::load_project(root).is_ok_and(|project| is_pending(&project))

@@ -6,7 +6,9 @@
 //!
 //! `tests/fixtures/members/` holds two projects in the `.joy` format of
 //! joy 0.22, one open and one anonymous, each with a founder, a second
-//! person, an AI member with its delegation, and a token issued for it.
+//! person, an AI member with its delegation, and a token issued for it;
+//! and the same two as joy 0.23 brought them over to member files
+//! (`*-0.23`, JOY-02DB-09).
 //! They stay in that format: this is what the repositories out there
 //! look like, and whatever a later version does to the format has to
 //! leave these cases true.
@@ -82,7 +84,7 @@ impl Project {
             root,
             home,
             token,
-            anonymous: name == "anonymous",
+            anonymous: name.starts_with("anonymous"),
         }
     }
 
@@ -132,7 +134,7 @@ impl Project {
         let waiting = joy_core::migrations::waiting(&self.root);
         assert_eq!(
             waiting.map(|w| w.question()).as_deref(),
-            Some("Project data is from an older joy. Update? Everyone then needs joy 0.23+")
+            Some("Project data is from an older joy. Update? Everyone then needs joy 0.24+")
         );
         assert!(
             joy_core::migrations::update_with(&self.root, &founder, &unlocked.keypair).unwrap(),
@@ -342,7 +344,15 @@ fn still_works(fixture: &str, host: Host) {
         .map(|dir| dir.count())
         .unwrap_or(0);
     assert_eq!(files, 3, "{ctx}: three member files");
-    assert!(members.contains("name: claude"), "{ctx}: {members}");
+    assert!(
+        members.contains("type: ai\nidentity:\n  claude:"),
+        "{ctx}: {members}"
+    );
+    assert!(members.contains("format: 4\n"), "{ctx}: {members}");
+    assert!(
+        !members.contains("seed_wrap_passphrase"),
+        "{ctx}: {members}"
+    );
     // project.yaml and the member files do not say the legacy form any
     // more...
     assert!(!members.contains(&older), "{ctx}: {members}");
@@ -463,4 +473,183 @@ fn an_anonymous_project_still_works_after_the_desktop_opened_it() {
 #[test]
 fn an_anonymous_project_still_works_after_joy_update() {
     still_works("anonymous", Host::Cli);
+}
+
+/// The member files of a fixture, as text, with what each says first.
+fn member_files(root: &Path) -> Vec<String> {
+    let mut files: Vec<PathBuf> = files_under(&root.join(".joy/members"));
+    files.sort();
+    files
+        .iter()
+        .map(|path| std::fs::read_to_string(path).unwrap())
+        .collect()
+}
+
+/// The `updated:` line of every member file.
+fn dates(root: &Path) -> Vec<String> {
+    member_files(root)
+        .iter()
+        .map(|body| {
+            body.lines()
+                .find(|line| line.starts_with("updated:"))
+                .expect("a date")
+                .to_string()
+        })
+        .collect()
+}
+
+/// A project of joy 0.23 (member files without a type, format 2) still
+/// works on every host as it is, and only a yes rewrites its files in
+/// format 4 (JOY-02DB-09).
+fn still_works_from_0_23(fixture: &str, host: Host) {
+    let project = Project::clone_of(fixture);
+    let ctx = format!("{fixture} opened as {host:?}");
+    let before = member_files(&project.root);
+    assert_eq!(before.len(), 3, "{ctx}");
+    assert!(
+        before.iter().all(|body| !body.contains("type:")),
+        "{ctx}: {before:?}"
+    );
+    let dates_before = dates(&project.root);
+    project.open_as(host);
+    assert_eq!(
+        member_files(&project.root),
+        before,
+        "{ctx}: opening changes no file"
+    );
+
+    // `joy update` where nobody can be asked says the data is from an
+    // older joy and leaves it as it is.
+    let waits = project.joy(&["update", "--no-binary"]);
+    assert!(waits.status.success(), "{ctx}: {}", text(&waits));
+    assert!(
+        text(&waits).contains("from an older joy, some features don't work"),
+        "{ctx}: {}",
+        text(&waits)
+    );
+
+    // People sign in, write and manage as before; the AI's token redeems.
+    let auth = project.joy(&["auth", "--user", SECOND, "--passphrase", SECOND_PASS]);
+    assert!(
+        auth.status.success(),
+        "{ctx}: second signs in: {}",
+        text(&auth)
+    );
+    let add = project.joy(&["add", "task", "Written by the second person"]);
+    assert!(add.status.success(), "{ctx}: second writes: {}", text(&add));
+    let auth = project.joy(&["auth", "--user", FOUNDER, "--passphrase", FOUNDER_PASS]);
+    assert!(
+        auth.status.success(),
+        "{ctx}: founder signs in: {}",
+        text(&auth)
+    );
+    let manage = project.joy(&["project", "set", "description", "said by the founder"]);
+    assert!(
+        manage.status.success(),
+        "{ctx}: founder manages: {}",
+        text(&manage)
+    );
+    let session = project.ai_session();
+    let add = project.joy_with(&["add", "task", "Written by the AI"], Some(&session));
+    assert!(add.status.success(), "{ctx}: the AI writes: {}", text(&add));
+    let manage = project.joy_with(
+        &["project", "set", "description", "not the AI's to say"],
+        Some(&session),
+    );
+    assert!(!manage.status.success(), "{ctx}: the AI never manages");
+    assert!(
+        member_files(&project.root)
+            .iter()
+            .all(|body| !body.contains("type:")),
+        "{ctx}: nobody asked for an update, so no file changed its shape"
+    );
+    let yaml = std::fs::read_to_string(project.root.join(".joy/project.yaml")).unwrap();
+    assert!(yaml.starts_with("format: 2\n"), "{ctx}: {yaml}");
+
+    // The founder says yes: every file in format 4, the same members.
+    project.update_as_founder();
+    let after = member_files(&project.root);
+    assert_eq!(after.len(), 3, "{ctx}");
+    let all = after.join("");
+    assert!(
+        all.contains("type: ai\nidentity:\n  claude:"),
+        "{ctx}: {all}"
+    );
+    assert_eq!(
+        all.matches("type: person\nidentity:\n").count(),
+        2,
+        "{ctx}: {all}"
+    );
+    for old in ["seed_wrap_passphrase", "email_match", "\nemail:", "\nname:"] {
+        assert!(
+            !all.contains(old) && !all.starts_with(&old[1..]),
+            "{ctx}: {old} in {all}"
+        );
+    }
+    if project.anonymous {
+        assert!(
+            !all.contains('@'),
+            "{ctx}: no address in an anonymous project: {all}"
+        );
+        assert_eq!(all.matches("email_tag: ").count(), 2, "{ctx}: {all}");
+    } else {
+        assert!(all.contains("  founder@example.com:\n"), "{ctx}: {all}");
+    }
+    let yaml = std::fs::read_to_string(project.root.join(".joy/project.yaml")).unwrap();
+    assert!(yaml.starts_with("format: 4\n"), "{ctx}: {yaml}");
+    let mut dates_after = dates(&project.root);
+    let mut dates_before = dates_before;
+    dates_after.sort();
+    dates_before.sort();
+    assert_eq!(
+        dates_after, dates_before,
+        "{ctx}: each member keeps its date"
+    );
+
+    // And everybody goes on as before.
+    let auth = project.joy(&["auth", "--user", SECOND, "--passphrase", SECOND_PASS]);
+    assert!(
+        auth.status.success(),
+        "{ctx}: second signs in: {}",
+        text(&auth)
+    );
+    let session = project.ai_session();
+    let add = project.joy_with(&["add", "task", "Written by the AI after"], Some(&session));
+    assert!(add.status.success(), "{ctx}: the AI writes: {}", text(&add));
+    let ls = project.joy(&["ls", "--json"]);
+    assert!(
+        text(&ls).contains("A task from before the member files"),
+        "{ctx}: {}",
+        text(&ls)
+    );
+}
+
+#[test]
+fn an_open_project_of_joy_0_23_still_works_after_the_platform_opened_it() {
+    still_works_from_0_23("open-0.23", Host::Platform);
+}
+
+#[test]
+fn an_open_project_of_joy_0_23_still_works_after_the_desktop_opened_it() {
+    still_works_from_0_23("open-0.23", Host::Desktop);
+}
+
+#[test]
+fn an_open_project_of_joy_0_23_still_works_after_joy_update() {
+    still_works_from_0_23("open-0.23", Host::Cli);
+}
+
+#[test]
+fn an_anonymous_project_of_joy_0_23_still_works_after_the_platform_opened_it() {
+    still_works_from_0_23("anonymous-0.23", Host::Platform);
+}
+
+#[test]
+fn an_anonymous_project_of_joy_0_23_still_works_after_the_desktop_opened_it() {
+    still_works_from_0_23("anonymous-0.23", Host::Desktop);
+}
+
+#[test]
+fn an_anonymous_project_of_joy_0_23_still_works_after_joy_update() {
+    still_works_from_0_23("anonymous-0.23", Host::Cli);
 }

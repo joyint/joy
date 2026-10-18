@@ -144,7 +144,7 @@ pub(crate) struct Cli {
     session: Option<String>,
 
     /// Act as this member
-    #[arg(long, global = true, value_name = "ADDRESS")]
+    #[arg(long, global = true, value_name = "EMAIL")]
     user: Option<String>,
 
     /// Passphrase (non-interactive)

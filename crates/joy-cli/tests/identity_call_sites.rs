@@ -567,7 +567,7 @@ fn taking_something_away_script(machine: &Machine) -> Vec<Step> {
 /// the migration re-pinned the acting member itself to cover it. The
 /// operator's 2026-09-19 correction (JOY-02AE-1A) removes the need for
 /// either trick: `member_key_for_email` already resolves a CLEARTEXT
-/// address against an anonymous project's `email_match` verifier, so
+/// address against an anonymous project's `email_tag` verifier, so
 /// the same git config that named the founder before the rekey still
 /// names them after it, with no re-pin involved.
 fn privacy_migration_script(machine: &Machine) -> Vec<Step> {
@@ -876,7 +876,7 @@ fn the_verbs_that_take_something_away_need_git_config_too() {
 /// The privacy migration, inverted for the same reason: with git config
 /// it keeps working straight through the rekey, because
 /// `member_key_for_email` already resolves a cleartext address against
-/// an anonymous project's `email_match` verifier and needs no help from
+/// an anonymous project's `email_tag` verifier and needs no help from
 /// a pin; without git config, and without a forge account, the migration
 /// cannot even start.
 ///
