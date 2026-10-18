@@ -235,6 +235,10 @@ impl Machine {
             .env("XDG_CONFIG_HOME", self.path().join("config"))
             .env("XDG_STATE_HOME", self.path().join("state"))
             .env("GIT_CONFIG_NOSYSTEM", "1")
+            // The environment was cleared, so the door to the
+            // credential store is closed again, for the connector joy
+            // starts as well.
+            .env(joy_test_env::NO_KEYCHAIN, "1")
             // The documented test hook, and the reason it
             // exists: a case has to be able to say which binary
             // answers.

@@ -33,6 +33,10 @@
 //! keeps the password inside the `Entry` object itself
 //! (`CredentialPersistence::EntryOnly`), so it fails exactly that read.
 //!
+//! The store is reached through `joy_core::keychain`, the one door to it
+//! (JOY-02DB-25). A test run closes that door, and then this module sees
+//! the machine its file was written for: a store that cannot answer.
+//!
 //! Two rules hold for the file, and neither is optional:
 //!
 //! - **One writer at a time.** The file is ONE document for every host
@@ -215,7 +219,7 @@ enum Keys {
     /// None at all: the 0600 file alone, or nothing.
     #[default]
     None,
-    /// The operating system's, through `keyring::Entry::new` and
+    /// The operating system's, through `joy_core::keychain` and
     /// nothing else.
     Os,
     /// An in process store with the same semantics an operating
@@ -228,6 +232,11 @@ enum Keys {
     /// the mock detector unproven.
     #[cfg(feature = "fake-api")]
     Fake(std::sync::Arc<std::sync::Mutex<BTreeMap<String, String>>>),
+    /// A store that takes every write and persists none of them, the
+    /// way keyring's own mock does: what the read back of
+    /// [`Keys::put_checked`] exists to detect. Behind `fake-api`.
+    #[cfg(feature = "fake-api")]
+    Forgetful,
 }
 
 /// Rule 1 of this module's parent: the in process store of a test holds
@@ -244,6 +253,8 @@ impl std::fmt::Debug for Keys {
                 "Keys::Fake({} entries)",
                 store.lock().unwrap_or_else(|e| e.into_inner()).len()
             ),
+            #[cfg(feature = "fake-api")]
+            Keys::Forgetful => write!(f, "Keys::Forgetful"),
         }
     }
 }
@@ -261,13 +272,7 @@ impl Keys {
             // caller falls through to the 0600 file.
             Keys::Os => {
                 let (service, user) = (service.to_string(), user.to_string());
-                bounded(move || {
-                    keyring::Entry::new(&service, &user)
-                        .ok()?
-                        .get_password()
-                        .ok()
-                })
-                .flatten()
+                bounded(move || joy_core::keychain::get(&service, &user).ok()).flatten()
             }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => store
@@ -275,6 +280,8 @@ impl Keys {
                 .unwrap_or_else(|e| e.into_inner())
                 .get(&fake_key(service, user))
                 .cloned(),
+            #[cfg(feature = "fake-api")]
+            Keys::Forgetful => None,
         }
     }
 
@@ -284,11 +291,8 @@ impl Keys {
             Keys::Os => {
                 let (service, user, secret) =
                     (service.to_string(), user.to_string(), secret.to_string());
-                bounded(move || {
-                    keyring::Entry::new(&service, &user)
-                        .is_ok_and(|entry| entry.set_password(&secret).is_ok())
-                })
-                .unwrap_or(false)
+                bounded(move || joy_core::keychain::set(&service, &user, &secret).is_ok())
+                    .unwrap_or(false)
             }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => {
@@ -298,6 +302,8 @@ impl Keys {
                     .insert(fake_key(service, user), secret.to_string());
                 true
             }
+            #[cfg(feature = "fake-api")]
+            Keys::Forgetful => true,
         }
     }
 
@@ -306,11 +312,8 @@ impl Keys {
             Keys::None => false,
             Keys::Os => {
                 let (service, user) = (service.to_string(), user.to_string());
-                bounded(move || {
-                    keyring::Entry::new(&service, &user)
-                        .is_ok_and(|entry| entry.delete_credential().is_ok())
-                })
-                .unwrap_or(false)
+                bounded(move || joy_core::keychain::delete(&service, &user).is_ok())
+                    .unwrap_or(false)
             }
             #[cfg(feature = "fake-api")]
             Keys::Fake(store) => store
@@ -318,6 +321,8 @@ impl Keys {
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&fake_key(service, user))
                 .is_some(),
+            #[cfg(feature = "fake-api")]
+            Keys::Forgetful => false,
         }
     }
 
@@ -444,13 +449,26 @@ impl Vault {
 
     /// A vault that asks the OPERATING SYSTEM's credential store and
     /// falls back to a file under `dir`. Behind `fake-api`, and only a
-    /// test that has installed keyring's mock credential builder may
-    /// build one: on a machine with a real Secret Service this writes
-    /// into the person's own keychain.
+    /// test binary whose door to the store is closed may build one
+    /// (`joy_test_env::isolate!` closes it in every one, see
+    /// `joy_core::keychain`): with it open this writes into the person's
+    /// own keychain.
     #[cfg(feature = "fake-api")]
     pub fn os_keychain_at(dir: impl AsRef<Path>) -> Self {
         Vault {
             keys: Keys::Os,
+            file: dir.as_ref().join(FALLBACK_FILE),
+            read_only: false,
+        }
+    }
+
+    /// A vault whose credential store takes every write and persists
+    /// none, the way keyring's own mock does, with the file under
+    /// `dir`. Behind `fake-api`.
+    #[cfg(feature = "fake-api")]
+    pub fn forgetful_keychain_at(dir: impl AsRef<Path>) -> Self {
+        Vault {
+            keys: Keys::Forgetful,
             file: dir.as_ref().join(FALLBACK_FILE),
             read_only: false,
         }
@@ -1109,15 +1127,14 @@ mod tests {
     ///
     /// keyring's own mock keeps the password inside the `Entry` object
     /// (`CredentialPersistence::EntryOnly`), so the read back through a
-    /// NEW entry finds nothing. joy must then write its own 0600 file
-    /// instead of believing a store that stored nothing, and must say
-    /// `"stored":"file"` truthfully.
+    /// NEW entry finds nothing, and so does this store. joy must then
+    /// write its own 0600 file instead of believing a store that stored
+    /// nothing, and must say `"stored":"file"` truthfully.
     #[test]
     #[cfg(feature = "fake-api")]
     fn a_store_that_persists_nothing_is_detected_and_the_file_takes_over() {
-        keyring::set_default_credential_builder(keyring::mock::default_credential_builder());
         let dir = tempfile::tempdir().unwrap();
-        let vault = Vault::os_keychain_at(dir.path());
+        let vault = Vault::forgetful_keychain_at(dir.path());
         assert_eq!(
             vault.put("github.com", &record("gho_a", "work")).unwrap(),
             Source::File,
@@ -1128,6 +1145,28 @@ mod tests {
         assert_eq!(source, Source::File);
         assert!(vault.file().exists(), "the 0600 file took over");
         assert_eq!(vault.logins("github.com"), vec!["work".to_string()]);
+        assert_eq!(
+            vault.remove("github.com", Some("work")),
+            Ok(Some(Source::File))
+        );
+    }
+
+    /// The operating system's store, behind the door a test run closes
+    /// (`joy_core::keychain`): the vault meets a store that cannot
+    /// answer, and every read and write is the 0600 file's.
+    #[test]
+    #[cfg(feature = "fake-api")]
+    fn a_closed_door_is_a_store_that_cannot_answer_and_the_file_takes_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = Vault::os_keychain_at(dir.path());
+        assert_eq!(
+            vault.put("github.com", &record("gho_a", "work")).unwrap(),
+            Source::File
+        );
+        let (found, source) = vault.get("github.com", Some("work")).unwrap();
+        assert_eq!(found.token, "gho_a");
+        assert_eq!(source, Source::File);
+        assert!(vault.file().exists(), "the 0600 file took over");
         assert_eq!(
             vault.remove("github.com", Some("work")),
             Ok(Some(Source::File))
