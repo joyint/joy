@@ -178,7 +178,7 @@ mod tests {
         let message = commit.message().unwrap_or_default().to_string();
         let subject = message.lines().next().unwrap_or_default();
         assert!(
-            subject.starts_with("chore(joy): project files updated from joy 0.0.1 to joy "),
+            subject.starts_with("chore(joy): project files refreshed by joy "),
             "{subject}"
         );
         assert!(commit.tree().unwrap().get_name("notes.txt").is_none());
