@@ -1,7 +1,7 @@
 id: JOY-02DB-09
 title: 'Member files: identity block and member type'
 type: story
-status: new
+status: closed
 priority: high
 capabilities:
 - plan
@@ -10,7 +10,7 @@ capabilities:
 effort: 4
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T07:32:16.016099440Z
-updated: 2026-10-18T07:32:16.016099440Z
+updated: 2026-10-18T14:59:14.571368310Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   GitGuardian flagged the member files of joy 0.23 as "Company Email Password exposed" (joyint/joy, jyn, crypt, joydev-horst/joyint-forge-test on 2026-10-17): a top-level `email: <address>` with `seed_wrap_passphrase` four lines below reads like an address and its password. The same values under the address as a map key (project.yaml up to 0.22) were pushed on 2026-10-12 without an alert.
