@@ -1,24 +1,27 @@
-# joy:start -- managed by joy, do not edit manually (JOY-02AC-53)
+# joy:start -- managed by joy, do not edit manually (JOY-02AC-53, JOY-02DD-D2)
 # Joy stores its items, comments and logs as files in this repository.
-# When two branches touch the same item, the forge cannot put them back
-# together: it merges with plain git, which does not run Joy's merge
-# rules. This job does that merge here, where joy is installed, and
-# publishes the result. The merge button then only fast forwards, which
-# cannot fail.
+# When two branches touch the same item or the same day's log, the forge
+# cannot put them back together: it merges with plain git, which does
+# not run Joy's merge rules. Your own clone can, because joy init
+# registered the merge driver there.
 #
-# Nobody needs to run anything: the job starts on its own. On a real
-# disagreement, when both sides changed the same field, it stops and says
-# so, because that belongs to a person.
+# This job tries the merge where joy is installed and, only when Joy
+# files stand in the way, tells the author in one comment what to do:
+# switch to the branch, pull the target, push. It pushes nothing itself.
+# A push by the job's token puts the pull request's checks behind a
+# manual approval on GitHub since 2026, which stalled every pull request
+# this job had helped (JOY-02DD-D2). Where plain git can merge, the job
+# says nothing. A later push updates the comment instead of adding one.
 #
 # It listens on pull_request_target, because a forge starts no
 # pull_request job for a pull request it already shows as conflicting,
-# and that conflict is the one merged here (JOY-02CE-55).
+# and that conflict is the one looked at here (JOY-02CE-55).
 name: joy merge
 on:
   pull_request_target:
     types: [opened, synchronize, reopened]
 permissions:
-  contents: write
+  contents: read
   pull-requests: write
 concurrency:
   group: joy-merge-${{ github.event.pull_request.number }}
@@ -39,9 +42,35 @@ jobs:
       - name: Install joy
         if: github.event.pull_request.head.repo.full_name == github.repository
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/joyint/joy/releases/latest/download/joy-cli-installer.sh | sh
+      # joy fetches the target with its own git connection, not with the
+      # credentials actions/checkout leaves in the git config, so it gets
+      # the job's token the way it reads one on a workstation.
+      - name: Try the merge
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: joy merge ci --target "${{ github.event.pull_request.base.ref }}" --head "${{ github.event.pull_request.head.ref }}" --advise "$RUNNER_TEMP/joy-merge-advice.md"
+      # The note is the job's one word to the author. When there is one,
+      # it replaces the job's last comment or starts it; when there is
+      # none any more, the last comment is told so and nothing new is
+      # written.
+      - name: Tell the author
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          note="$RUNNER_TEMP/joy-merge-advice.md"
+          if [ -f "$note" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file "$note" --edit-last \
+              || gh pr comment "${{ github.event.pull_request.number }}" --body-file "$note"
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" --edit-last --body \
+              "Nothing stands in the way of this merge any more." 2>/dev/null || true
+          fi
       # A pull request from a fork lives in someone else's repository,
-      # where this job pushes nothing. So it asks instead, and says in
-      # which repository, since it stands in no checkout.
+      # which this job never checks out. So it says the same thing once,
+      # with this repository as the place to pull from.
       - name: Ask the contributor when this is a fork
         if: github.event.pull_request.head.repo.full_name != github.repository
         env:
@@ -49,13 +78,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           gh pr comment "${{ github.event.pull_request.number }}" --body \
-            "This project keeps its items and logs in the repository. Please merge \`${{ github.event.pull_request.base.ref }}\` into your branch once and push: your local joy resolves the item files, and the merge button here turns green."
-      # joy publishes the merge with its own git connection, not with the
-      # credentials actions/checkout leaves in the git config, so it gets
-      # the job's token the way it reads one on a workstation.
-      - name: Merge the target branch in
-        if: github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: joy merge ci --target "${{ github.event.pull_request.base.ref }}"
+            "This project keeps its items and logs in the repository, and only joy can merge those. If the merge button shows a conflict, in your clone: \`git switch ${{ github.event.pull_request.head.ref }}\`, \`git pull ${{ github.event.pull_request.base.repo.clone_url }} ${{ github.event.pull_request.base.ref }}\`, \`git push\`. joy resolves the Joy files during the pull."
 # joy:end
