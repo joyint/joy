@@ -1,0 +1,16 @@
+id: JOY-02B5-D8
+title: 'A provider that refuses the API key is answered with ''could not finish this turn: acp prompt: API error'''
+type: bug
+status: in-progress
+priority: high
+assignees:
+- member: ai:claude@joy
+capabilities:
+- implement
+- review
+effort: 1
+created_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+created: 2026-09-30T07:16:45.733721139Z
+updated: 2026-09-30T07:16:45.845876814Z
+updated_by: ai:claude@joy delegated-by:horst.schwarz@joydev.com
+description: 'Horst 2026-09-30, Integrate: the vibe agent''s Mistral key had expired, every turn was refused, and the room read ''@vibe could not finish this turn: acp prompt: API error from mistral (model: devstral-small-latest): Invalid API key. Please check your API key and try again.'' Five retries followed, none of which could help. humanize_turn_error now recognises a refused key (invalid api key, incorrect api key, api key expired, unauthorized, authentication, 401), names the provider when the text carries one, and says who can fix it: ''@vibe cannot answer right now: its API key for mistral is invalid or has expired. An administrator has to renew it in Settings → AI members; retrying does not help.'' Test beside the existing wording tests.'
