@@ -1192,7 +1192,7 @@ GitHub, GitLab and Gitea merge on their servers with plain git, and they do not 
 | Gitea, Forgejo | `.gitea/workflows/joy-merge.yml` |
 | GitLab | `.joy/ci/gitlab.yml`, included from your `.gitlab-ci.yml` |
 
-You do not call anything. On a pull request the job tries the merge where joy is installed. Where plain git can do it, the job says nothing. Where Joy files stand in the way, it leaves one comment with the three commands for your clone: switch to the branch, pull the target, push. Your `git pull` runs the merge driver `joy init` registered, so the Joy files resolve by themselves, and after the push the button turns green. A later push updates the comment instead of adding one.
+You do not call anything. On a pull request the job tries the merge where joy is installed. Where plain git can do it, the job says nothing. Where Joy files stand in the way, it leaves one comment with the three commands for your clone: switch to the branch, pull the target, push. Your `git pull` runs the merge driver `joy init` registered, so the Joy files resolve by themselves, and after the push the button turns green. A later push updates the comment instead of adding one. On GitLab, where a CI job may not comment without a token of its own, the same three commands stand in the log of the `joy-merge` job, which then shows as a warning in the merge request.
 
 The job pushes nothing itself. A push by a CI job's own token is one the forges treat as a stranger's: on GitHub the pull request's checks then wait for a person to approve them, which stalls exactly what the job was meant to speed up.
 

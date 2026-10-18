@@ -705,7 +705,7 @@ pub const CI_GITLAB: CiTemplate = CiTemplate {
     target: ".joy/ci/gitlab.yml",
     content: include_str!("../data/ci/gitlab.yml"),
     note: Some(
-        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nset the CI variable JOY_PUSH_TOKEN (a token with the api scope, for the note), and keep one more job that runs for merge requests",
+        "add to .gitlab-ci.yml:\n  include:\n    - local: .joy/ci/gitlab.yml\nand keep one more job that runs for merge requests",
     ),
 };
 
@@ -1082,25 +1082,29 @@ mod ci_template_tests {
                 template.target
             );
         }
-        // GitLab's job token may not write a note, so the project's token does
+        // GitLab's job token may not write a note, and the project gets no
+        // token to set up: the note goes to the job log, and the job ends
+        // as a warning the merge request shows, never as a failure
         let job = CI_GITLAB.content;
-        assert!(job.contains("PRIVATE-TOKEN: $JOY_PUSH_TOKEN"), "{job}");
+        assert!(!job.contains("JOY_PUSH_TOKEN"), "{job}");
+        assert!(!job.contains("PRIVATE-TOKEN"), "{job}");
+        assert!(job.contains("allow_failure:\n    exit_codes: [3]"), "{job}");
         assert!(
-            job.contains("/merge_requests/$CI_MERGE_REQUEST_IID/notes"),
+            job.contains("if [ -f /tmp/joy-merge-advice.md ]; then exit 3; fi"),
             "{job}"
         );
         assert!(
-            CI_GITLAB.note.expect("the note").contains("api scope"),
+            !CI_GITLAB.note.expect("the note").contains("TOKEN"),
             "{:?}",
             CI_GITLAB.note
         );
     }
 
     /// What a GitLab told us when it ran the job (JOY-02D0-A1): the
-    /// installer unpacks a .tar.xz, which the slim image cannot; the note
-    /// goes to the instance's own API, wherever it is; and GitLab starts
-    /// no pipeline for a job of the .pre stage alone, which the person has
-    /// to be told.
+    /// installer unpacks a .tar.xz, which the slim image cannot; the
+    /// target comes in with the runner's own clone credentials; and GitLab
+    /// starts no pipeline for a job of the .pre stage alone, which the
+    /// person has to be told.
     #[test]
     fn the_gitlab_job_runs_as_a_gitlab_ran_it() {
         let job = CI_GITLAB.content;
@@ -1108,8 +1112,10 @@ mod ci_template_tests {
             job.contains("apt-get install -y -qq curl ca-certificates git xz-utils"),
             "{job}"
         );
-        assert!(job.contains("\"$CI_API_V4_URL/projects/"), "{job}");
-        assert!(!job.contains("https://gitlab.com"), "{job}");
+        assert!(
+            job.contains("git fetch origin \"+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME\""),
+            "{job}"
+        );
         // a merge request that conflicts gets its pipeline all the same,
         // so the rule stays the plain one
         assert!(

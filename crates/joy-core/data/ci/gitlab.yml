@@ -6,18 +6,15 @@
 # registered the merge driver there.
 #
 # This job tries the merge where joy is installed and, only when Joy
-# files stand in the way, tells the author in a note what to do: switch
-# to the branch, pull the target, push. It pushes nothing itself
-# (JOY-02DD-D2). Where plain git can merge, the job says nothing.
+# files stand in the way, writes into its log what to do: switch to the
+# branch, pull the target, push. It then ends as a warning, which the
+# merge request shows, and the rest of the pipeline runs on. It pushes
+# nothing and needs no token (JOY-02DD-D2). Where plain git can merge,
+# the job passes and says nothing.
 #
 # Include it from your .gitlab-ci.yml:
 #   include:
 #     - local: .joy/ci/gitlab.yml
-#
-# The job writes the note with the API, which the job token may not. So
-# give the project a token with the api scope and put it in the CI
-# variable JOY_PUSH_TOKEN (Settings, CI/CD, Variables, masked and
-# protected).
 #
 # GitLab starts no pipeline that holds only jobs of the .pre and .post
 # stages: the project needs one more job that runs for merge requests,
@@ -27,6 +24,8 @@ joy-merge:
   image: debian:stable-slim
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  allow_failure:
+    exit_codes: [3]
   variables:
     GIT_STRATEGY: clone
     GIT_DEPTH: 0
@@ -36,11 +35,9 @@ joy-merge:
     - export PATH="$HOME/.local/bin:$PATH"
   script:
     - git checkout "$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME"
+    # the runner's own clone credentials bring the target in, so joy
+    # needs none of its own
+    - git fetch origin "+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"
     - joy merge ci --advise /tmp/joy-merge-advice.md
-    - |
-      if [ -f /tmp/joy-merge-advice.md ]; then
-        curl -sS --fail -X POST -H "PRIVATE-TOKEN: $JOY_PUSH_TOKEN" \
-          --data-urlencode "body@/tmp/joy-merge-advice.md" \
-          "$CI_API_V4_URL/projects/$CI_MERGE_REQUEST_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" > /dev/null
-      fi
+    - if [ -f /tmp/joy-merge-advice.md ]; then exit 3; fi
 # joy:end
