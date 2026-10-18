@@ -320,7 +320,7 @@ The CLI may auto-stage files it creates or modifies (controlled by `joy config g
 
 That rule holds during a merge too. Items, comments and logs are files, so two branches that touched the same item meet here. Merge in the checkout (`git merge`, `git pull`, `git rebase`): joy resolves its own files, taking a status from one side and a comment from the other, and unions the day log. If you ever see conflict markers inside a file under `.joy/`, do NOT edit them out: the merge ran without joy's rules (a forge merged it, or the clone was never `joy init`ed). Abort the merge, say so, and let the person decide; a hand-repaired item file is a corrupted one.
 
-A forge merges with plain git and cannot run those rules. `joy init` writes a CI file that tries the merge where joy is installed (`joy merge ci`, called by that file, never by you) and, when Joy files stand in the way, leaves a comment on the pull request with three commands: switch to the branch, pull the target, push. When you see that comment on your own pull request, do exactly that in your checkout; the pull resolves the Joy files, and the merge button turns green after the push.
+A forge merges with plain git and cannot run those rules. When Joy files are in the way, the CI job `joy-merge` says so: as a comment on GitHub and Gitea, in its job log on GitLab. Then run in your checkout: `git switch <branch>`, `git pull origin <target>`, `git push`.
 
 ---
 

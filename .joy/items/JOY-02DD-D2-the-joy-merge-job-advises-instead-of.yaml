@@ -10,7 +10,7 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T18:32:20.419251298Z
-updated: 2026-10-18T18:43:58.878906936Z
+updated: 2026-10-18T19:15:13.185396632Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   Since mid 2026 GitHub puts every workflow run that a GITHUB_TOKEN push creates on a pull request into an approval-required state (docs: Triggering a workflow, GITHUB_TOKEN; verified on 2026-10-18 in joyint-test/joy-merge-probe and on joyint/joy#89, #90). The merge commit that 'joy merge ci' pushed is such a push, so every pull request it helped waited for a person to click 'Approve and run'. The push setting of the repository changes nothing, workflow_dispatch runs do not count for the pull request, and no event announces the waiting run. The only pushes the forge trusts come from an identity a person set up (GitHub App, token), and that is one mechanism per forge.
@@ -33,3 +33,6 @@ comments:
     [x] Tutorial chapter 13 and the AI tutorial.
     [x] Tried against joyint-test/joy-merge-probe with the built binary: a branch behind main with the same item commented gets the note and nothing is pushed; a code-only branch and a contained target stay silent.
     Open: this repository's own joy-merge.yml is refreshed by joy update once the release with --advise is out; refreshed earlier, the job would call a flag the installed joy does not have. The same holds for every project, which is why the template and the binary ship together.
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-18T19:15:13.185396121Z
+  text: 'Correction (operator, 2026-10-18): GitLab gets no token either. The GitLab job no longer posts a note over the API with JOY_PUSH_TOKEN; it writes the three commands into its own log and ends with exit code 3, which allow_failure turns into a warning the merge request shows, so the pipeline runs on. The target comes in with the runner''s own clone credentials (git fetch in the script). The init note no longer asks for a CI variable. Not run on a GitLab instance.'
