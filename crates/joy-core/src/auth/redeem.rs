@@ -183,9 +183,9 @@ mod tests {
 
         let mut project = Project::new("Test".into(), Some(PID.into()));
         project
-            .register_member(AI, Member::new(MemberCapabilities::all_for_ai()))
+            .register_member(AI, Member::ai(MemberCapabilities::all_for_ai()))
             .unwrap();
-        let mut human = Member::new(MemberCapabilities::All);
+        let mut human = Member::person(MemberCapabilities::All);
         human.verify_key = Some(delegator.public_key().to_hex());
         human.put_delegation(
             AI.to_string(),
@@ -298,7 +298,7 @@ mod tests {
         // A project that knows the AI but carries no delegation for it.
         let mut project = Project::new("Test".into(), Some(PID.into()));
         project
-            .register_member(AI, Member::new(MemberCapabilities::all_for_ai()))
+            .register_member(AI, Member::ai(MemberCapabilities::all_for_ai()))
             .unwrap();
         let delegator = IdentityKeypair::from_seed(&[3u8; 32]);
         let token = crypt_token(&delegator, &[4u8; 32]);

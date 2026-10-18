@@ -878,7 +878,6 @@ fn run_zone_rm(name: &str) -> Result<()> {
 }
 
 fn run_grant(zone: &str, target_member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     // Who acts here, then whether they may: the refusal comes before the
     // passphrase prompt, so a member without `manage` is not asked for a
     // secret it will not use.
@@ -889,7 +888,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     // kind: the name of an AI member (always the at-rest map key),
     // or a git e-mail for humans (privacy-dependent map key). Resolve each via
     // the matching accessor so anonymous-mode lookups stay correct (ADR-042).
-    let target = if is_ai_member(target_member) {
+    let target = if unlocked.project.is_ai(target_member) {
         unlocked.project.member_by_key(target_member)
     } else {
         unlocked.project.member_by_email(target_member)
@@ -907,7 +906,7 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
     // stored zone-major under crypt.zones.<zone>.delegations.<ai>.<op>.
     // Human grants stay member-major under members.<who>.crypt_wraps as
     // before; the wrap layouts coexist in the same `project.yaml`.
-    let target_is_ai = is_ai_member(target_member);
+    let target_is_ai = unlocked.project.is_ai(target_member);
 
     let mut project = store::load_project(&unlocked.root)?;
     project
@@ -1035,12 +1034,11 @@ fn run_grant(zone: &str, target_member: &str) -> Result<()> {
 }
 
 fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     let (root, mut project, acting) = load_context()?;
     enforce_zone_rights()?;
     // `target_member` is polymorphic (see run_grant): resolve AI ids by at-rest
     // key, human identifiers by privacy-aware e-mail lookup (ADR-042).
-    let target_exists = if is_ai_member(target_member) {
+    let target_exists = if project.is_ai(target_member) {
         project.has_member_key(target_member)
     } else {
         project.member_by_email(target_member).is_some()
@@ -1052,7 +1050,7 @@ fn run_revoke(zone: &str, target_member: &str) -> Result<()> {
     // ADR-041 §5: AI Tool revoke removes the entire delegations.<ai> map
     // under the zone (all operator-keyed wraps for that AI). Human
     // revoke continues to remove from members.<who>.crypt_wraps.
-    let removed = if is_ai_member(target_member) {
+    let removed = if project.is_ai(target_member) {
         let zone_entry = project.crypt.zones.get_mut(zone);
         match zone_entry {
             Some(z) => z.delegations.remove(target_member).is_some(),

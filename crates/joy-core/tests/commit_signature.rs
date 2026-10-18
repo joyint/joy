@@ -39,8 +39,7 @@ fn founded(root: &Path, founder: &str) -> [u8; 32] {
         joy_core::auth::enroll::EnrollmentMaterial {
             verify_key: keypair.public_key().to_hex(),
             kdf_nonce: salt.to_hex(),
-            seed_wrap_passphrase: seed_mod::wrap_seed_with_passphrase(&seed, "a b c d", &salt)
-                .unwrap(),
+            seed_wrap: seed_mod::wrap_seed_with_passphrase(&seed, "a b c d", &salt).unwrap(),
             seed_wrap_recovery: seed_mod::wrap_seed_with_recovery(&seed, &recovery, &salt).unwrap(),
         },
     )

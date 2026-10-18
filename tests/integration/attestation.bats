@@ -111,7 +111,7 @@ enroll_member() {
     # enrollment_verifier is recorded (alice still has one, pre-redemption).
     members_grep -q "enrollment_verifier:"
     # Only the founder has a verify_key at this point; alice has none.
-    [ "$(members_grep -c '^verify_key:')" = "1" ]
+    [ "$(members_grep -c '^    verify_key:')" = "1" ]
 }
 
 @test "member add without manage-member passphrase fails" {
@@ -140,10 +140,10 @@ enroll_member() {
 
     # Alice's own copy of the invitation is cleared; her origin keeps the
     # hash it was signed over.
-    run members_grep -E "^enrollment_verifier:"
+    run members_grep -E "^    enrollment_verifier:"
     [ "$status" -ne 0 ]
     # Both alice and founder now have verify_keys at member-level.
-    [ "$(members_grep -cE '^verify_key:')" = "2" ]
+    [ "$(members_grep -cE '^    verify_key:')" = "2" ]
 
     # The origin is untouched by the redemption, and the founder is
     # still the one person without one.
@@ -165,9 +165,9 @@ enroll_member() {
     [ "$status" -eq 0 ]
 
     # invitation spent on the invited slot, both members enrolled
-    run members_grep -E "^enrollment_verifier:"
+    run members_grep -E "^    enrollment_verifier:"
     [ "$status" -ne 0 ]
-    [ "$(members_grep -cE '^verify_key:')" = "2" ]
+    [ "$(members_grep -cE '^    verify_key:')" = "2" ]
     # no second identity under the alias
     ! members_grep -q "users.noreply.github.com"
 }
@@ -263,7 +263,7 @@ enroll_member() {
 
     # Simulate an edit by hand: a member file for eve and her id in the
     # list, without going through 'joy project member add'.
-    printf 'email: eve@attacker.com\ncapabilities: all\nupdated: 2026-01-01T00:00:00Z\n' \
+    printf 'type: person\nidentity:\n  eve@attacker.com: {}\ncapabilities: all\nupdated: 2026-01-01T00:00:00Z\n' \
         > .joy/members/m-eveeveevee.yaml
     awk '/^members:/ { print; print "- m-eveeveevee"; next } { print }' \
         .joy/project.yaml > .joy/project.yaml.tmp \
@@ -317,10 +317,10 @@ enroll_member() {
     [ "$status" -ne 0 ]
     [[ "$output" == *"one-time password is required"* ]]
     # Only the founder is enrolled; alice's slot is untouched.
-    [ "$(members_grep -cE '^verify_key:')" = "1" ]
+    [ "$(members_grep -cE '^    verify_key:')" = "1" ]
 
     # Redeeming the invitation is the way in.
     run joy auth --otp "$MEMBER_OTP" --user alice@example.com --passphrase "$ALICE_PASSPHRASE"
     [ "$status" -eq 0 ]
-    [ "$(members_grep -cE '^verify_key:')" = "2" ]
+    [ "$(members_grep -cE '^    verify_key:')" = "2" ]
 }

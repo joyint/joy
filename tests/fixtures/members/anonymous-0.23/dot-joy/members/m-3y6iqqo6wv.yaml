@@ -1,0 +1,19 @@
+name: claude
+adapter: claude
+capabilities:
+- conceive
+- plan
+- design
+- implement
+- test
+- review
+- document
+- create
+- assign
+level: autonomous
+granted:
+  by: m-nl6ts2ldoc
+  at: 2026-10-18T07:46:32.345235007Z
+  signature: 9ac30b5f18333caca2074cf9775ad194aa86f7e50f4ecad9c48fa754728096e46b63343b44b51fc0b995970ee7738f7b92a68a56afb0e2a57e9b679aae8bae04
+verify_key: 7d2d3b8e27dba45d4dd463e33d80b18f1d10e727cb85410df8f873ae7b71ab20
+updated: 2026-10-18T07:46:32.345879531Z

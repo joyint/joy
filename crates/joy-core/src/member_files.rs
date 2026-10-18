@@ -24,9 +24,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::JoyError;
 use crate::member_id;
+use crate::migrations::ai_member_name;
 use crate::model::item::Capability;
 use crate::model::project::{
-    is_ai_member, AiDelegationEntry, Granted, Member, MemberCapabilities, Origin,
+    AiDelegationEntry, Granted, Member, MemberCapabilities, MemberFileShape, MemberKind, Origin,
 };
 use joy_model::InteractionLevel;
 
@@ -48,16 +49,19 @@ enum AllMarker {
     All,
 }
 
-/// A member file. The field order is the order in the file: who, what
-/// they may do, then the keys nobody edits by hand.
+/// A member file (format 4). The field order is the order in the file:
+/// what the member is and who, then what they may do, then the keys
+/// nobody edits by hand.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct MemberFile {
-    /// A person's address, in an open project.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email: Option<String>,
-    /// An AI member's name: what it is called everywhere.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    name: Option<String>,
+    /// Required: a file without it, or with a word joy does not know, is
+    /// named in an error and not guessed at.
+    #[serde(rename = "type")]
+    kind: MemberKind,
+    /// One key: the name the member goes by everywhere (a person's
+    /// address, in an anonymous project the file id, an AI member's or a
+    /// platform's name), and under it what proves who they are.
+    identity: BTreeMap<String, Identity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     adapter: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -70,18 +74,6 @@ struct MemberFile {
     granted: Option<Granted>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     origin: Option<Origin>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    verify_key: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    kdf_nonce: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    seed_wrap_passphrase: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    seed_wrap_recovery: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    enrollment_verifier: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    email_match: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     members_wrap: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -97,6 +89,25 @@ struct MemberFile {
     updated: DateTime<Utc>,
 }
 
+/// What proves who a member is, under the name they go by.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+struct Identity {
+    /// In an anonymous project: the tag a known address is checked
+    /// against ([`member_id::email_tag`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    email_tag: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    verify_key: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kdf_nonce: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seed_wrap: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    seed_wrap_recovery: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enrollment_verifier: Option<String>,
+}
+
 /// The directory of the member files of the project at `root`.
 pub fn members_dir(root: &Path) -> PathBuf {
     crate::store::joy_dir(root).join(MEMBERS_DIR)
@@ -107,11 +118,17 @@ fn file_path(root: &Path, id: &str) -> PathBuf {
 }
 
 fn to_file(key: &str, member: &Member, updated: DateTime<Utc>) -> MemberFile {
-    let ai = is_ai_member(key);
-    let person_by_address = !ai && !member_id::is_opaque_member_id(key);
+    let identity = Identity {
+        email_tag: member.email_tag.clone(),
+        verify_key: member.verify_key.clone(),
+        kdf_nonce: member.kdf_nonce.clone(),
+        seed_wrap: member.seed_wrap.clone(),
+        seed_wrap_recovery: member.seed_wrap_recovery.clone(),
+        enrollment_verifier: member.enrollment_verifier.clone(),
+    };
     MemberFile {
-        email: person_by_address.then(|| key.to_string()),
-        name: ai.then(|| key.to_string()),
+        kind: member.kind,
+        identity: BTreeMap::from([(key.to_string(), identity)]),
         adapter: member.adapter.clone(),
         model: member.model.clone(),
         capabilities: match &member.capabilities {
@@ -121,12 +138,6 @@ fn to_file(key: &str, member: &Member, updated: DateTime<Utc>) -> MemberFile {
         level: member.interaction_level,
         granted: member.granted.clone(),
         origin: member.origin.clone(),
-        verify_key: member.verify_key.clone(),
-        kdf_nonce: member.kdf_nonce.clone(),
-        seed_wrap_passphrase: member.seed_wrap_passphrase.clone(),
-        seed_wrap_recovery: member.seed_wrap_recovery.clone(),
-        enrollment_verifier: member.enrollment_verifier.clone(),
-        email_match: member.email_match.clone(),
         members_wrap: member.members_wrap.clone(),
         crypt_wraps: member.crypt_wraps.clone(),
         ai_delegations: member.ai_delegations.clone(),
@@ -134,46 +145,76 @@ fn to_file(key: &str, member: &Member, updated: DateTime<Utc>) -> MemberFile {
     }
 }
 
-/// The member a file describes, and the key it has in the member map: a
-/// person's address, an AI member's name, or in an anonymous project the
-/// file id itself.
-fn from_file(id: &str, file: MemberFile) -> (String, Member) {
-    let key = file
-        .email
-        .clone()
-        .or_else(|| file.name.clone())
-        .unwrap_or_else(|| id.to_string());
-    let mut member = Member::new(match file.capabilities {
-        Capabilities::All(_) => MemberCapabilities::All,
-        Capabilities::List(list) => MemberCapabilities::Specific(
-            list.into_iter().map(|c| (c, Default::default())).collect(),
-        ),
-    });
+/// The member a file describes, and the key it has in the member map: the
+/// one name under `identity`.
+fn from_file(id: &str, file: MemberFile, path: &Path) -> Result<(String, Member), JoyError> {
+    let mut named = file.identity.into_iter();
+    let (Some((key, identity)), None) = (named.next(), named.next()) else {
+        return Err(JoyError::Other(format!(
+            "{}: `identity` names one member, by the name they go by",
+            path.display()
+        )));
+    };
+    let mut member = Member::of_kind(
+        file.kind,
+        match file.capabilities {
+            Capabilities::All(_) => MemberCapabilities::All,
+            Capabilities::List(list) => MemberCapabilities::Specific(
+                list.into_iter().map(|c| (c, Default::default())).collect(),
+            ),
+        },
+    );
     member.interaction_level = file.level;
     member.adapter = file.adapter;
     member.model = file.model;
     member.granted = file.granted;
     member.origin = file.origin;
-    member.verify_key = file.verify_key;
-    member.kdf_nonce = file.kdf_nonce;
-    member.seed_wrap_passphrase = file.seed_wrap_passphrase;
-    member.seed_wrap_recovery = file.seed_wrap_recovery;
-    member.enrollment_verifier = file.enrollment_verifier;
-    member.email_match = file.email_match;
+    member.verify_key = identity.verify_key;
+    member.kdf_nonce = identity.kdf_nonce;
+    member.seed_wrap = identity.seed_wrap;
+    member.seed_wrap_recovery = identity.seed_wrap_recovery;
+    member.enrollment_verifier = identity.enrollment_verifier;
+    member.email_tag = identity.email_tag;
     member.members_wrap = file.members_wrap;
     member.crypt_wraps = file.crypt_wraps;
     member.ai_delegations = file.ai_delegations;
     member.file_id = Some(id.to_string());
-    (key, member)
+    Ok((ai_member_name::read_owned(key), member))
 }
 
-/// Read the members whose ids project.yaml lists.
-pub(crate) fn read(root: &Path, ids: &[String]) -> Result<BTreeMap<String, Member>, JoyError> {
+/// The member file `id` as it is on disk, in format 4 whatever its shape,
+/// and whether its shape is that of format 4.
+fn read_file(root: &Path, id: &str) -> Result<(MemberFile, bool), JoyError> {
+    let path = file_path(root, id);
+    let value: serde_yaml_ng::Value = crate::store::read_yaml(&path)?;
+    let in_shape = value.get("identity").is_some() || value.get("type").is_some();
+    let value = if in_shape {
+        value
+    } else {
+        crate::migrations::m_2026_10_member_identity::from_flat(id, value)
+    };
+    let file = serde_yaml_ng::from_value(value).map_err(|e| JoyError::YamlParse {
+        path: path.clone(),
+        source: e,
+    })?;
+    Ok((file, in_shape))
+}
+
+/// Read the members whose ids project.yaml lists, in the shape
+/// project.yaml says they have.
+pub(crate) fn read(
+    root: &Path,
+    ids: &[String],
+    shape: MemberFileShape,
+) -> Result<BTreeMap<String, Member>, JoyError> {
     let mut members = BTreeMap::new();
     for id in ids {
         let path = file_path(root, id);
-        let file: MemberFile = crate::store::read_yaml(&path)?;
-        let (key, member) = from_file(id, file);
+        let file = match shape {
+            MemberFileShape::Identity => crate::store::read_yaml(&path)?,
+            MemberFileShape::Flat => read_file(root, id)?.0,
+        };
+        let (key, member) = from_file(id, file, &path)?;
         members.insert(key, member);
     }
     Ok(members)
@@ -192,13 +233,14 @@ fn file_id_of(key: &str, member: &Member) -> String {
     member_id::new_member_file_id()
 }
 
-/// Write the member files so that they say exactly `members`, and hand
-/// back the ids in the order project.yaml lists them. A file whose
-/// member is unchanged is left alone, a file whose member is gone is
-/// removed.
+/// Write the member files so that they say exactly `members` in `shape`,
+/// and hand back the ids in the order project.yaml lists them. A file
+/// whose member is unchanged and whose shape is `shape` already is left
+/// alone, a file whose member is gone is removed.
 pub(crate) fn write(
     root: &Path,
     members: &BTreeMap<String, Member>,
+    shape: MemberFileShape,
 ) -> Result<Vec<String>, JoyError> {
     let dir = members_dir(root);
     std::fs::create_dir_all(&dir).map_err(|e| JoyError::WriteFile {
@@ -210,11 +252,25 @@ pub(crate) fn write(
     for (key, member) in members {
         let id = file_id_of(key, member);
         let path = file_path(root, &id);
-        let existing: Option<MemberFile> = crate::store::read_yaml(&path).ok();
-        let updated = existing.as_ref().map(|f| f.updated).unwrap_or(now);
+        let existing = read_file(root, &id).ok();
+        let updated = existing.as_ref().map(|(f, _)| f.updated).unwrap_or(now);
         let unchanged = to_file(key, member, updated);
-        if existing.as_ref() != Some(&unchanged) {
-            crate::store::write_yaml(&path, &to_file(key, member, now))?;
+        let same_shape = existing
+            .as_ref()
+            .is_some_and(|(_, in_shape)| *in_shape == (shape == MemberFileShape::Identity));
+        let same_member = existing.as_ref().map(|(f, _)| f) == Some(&unchanged);
+        if !(same_shape && same_member) {
+            // a file only brought into shape keeps the date of its member
+            let file = to_file(key, member, if same_member { updated } else { now });
+            match shape {
+                MemberFileShape::Identity => crate::store::write_yaml(&path, &file)?,
+                MemberFileShape::Flat => {
+                    let flat = crate::migrations::m_2026_10_member_identity::to_flat(
+                        serde_yaml_ng::to_value(&file)?,
+                    )?;
+                    crate::store::write_yaml(&path, &flat)?
+                }
+            }
         }
         ids.push(id);
     }
@@ -255,13 +311,13 @@ mod tests {
         let mut project = Project::new("Shop".into(), Some("SH".into()));
         project.set_member_layout(MemberLayout::Files);
 
-        let mut founder = Member::new(MemberCapabilities::All);
+        let mut founder = Member::person(MemberCapabilities::All);
         founder.verify_key = Some("aa".repeat(32));
         project
             .register_member("founder@example.com", founder)
             .unwrap();
 
-        let mut claude = Member::new(caps(&[Capability::Plan, Capability::Implement]));
+        let mut claude = Member::ai(caps(&[Capability::Plan, Capability::Implement]));
         claude.adapter = Some("claude".into());
         claude.model = Some("opus".into());
         claude.interaction_level = Some(InteractionLevel::Confirmed);
@@ -350,7 +406,9 @@ mod tests {
             .join("\n");
         assert_eq!(
             without_date,
-            "name: claude\n\
+            "type: ai\n\
+             identity:\n  \
+               claude: {}\n\
              adapter: claude\n\
              model: opus\n\
              capabilities:\n\
@@ -358,6 +416,152 @@ mod tests {
              - implement\n\
              level: confirmed"
         );
+        let founder_id = after
+            .member_by_email("founder@example.com")
+            .unwrap()
+            .file_id
+            .clone()
+            .unwrap();
+        let body = std::fs::read_to_string(file_path(root, &founder_id)).unwrap();
+        assert!(
+            body.starts_with(&format!(
+                "type: person\nidentity:\n  founder@example.com:\n    verify_key: {}\ncapabilities: all\n",
+                "aa".repeat(32)
+            )),
+            "{body}"
+        );
+    }
+
+    /// A member file of format 4 says what its member is; joy names a
+    /// file that does not, or says a word it does not know, and guesses
+    /// nothing.
+    #[test]
+    fn a_member_file_without_a_type_or_with_an_unknown_one_is_named() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        save_project(root, &project(root)).unwrap();
+        let loaded = load_project(root).unwrap();
+        let id = loaded
+            .member_by_key("claude")
+            .unwrap()
+            .file_id
+            .clone()
+            .unwrap();
+        let path = file_path(root, &id);
+        let body = std::fs::read_to_string(&path).unwrap();
+
+        std::fs::write(&path, body.replace("type: ai\n", "")).unwrap();
+        let err = load_project(root).unwrap_err().to_string();
+        assert!(err.contains(&id) && err.contains("type"), "{err}");
+
+        std::fs::write(&path, body.replace("type: ai\n", "type: robot\n")).unwrap();
+        let err = load_project(root).unwrap_err().to_string();
+        assert!(err.contains(&id) && err.contains("robot"), "{err}");
+    }
+
+    /// A platform member is read and written, and nothing is assigned to
+    /// it yet.
+    #[test]
+    fn a_platform_member_is_kept_and_takes_no_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut project = project(root);
+        project
+            .register_member(
+                "joyint.com",
+                Member::of_kind(MemberKind::Platform, caps(&[Capability::Implement])),
+            )
+            .unwrap();
+        save_project(root, &project).unwrap();
+
+        let after = load_project(root).unwrap();
+        assert_eq!(after.kind_of("joyint.com"), MemberKind::Platform);
+        assert!(!after.is_ai("joyint.com"));
+        let err = after.assignee("joyint.com").unwrap_err();
+        assert!(err.contains("platform member"), "{err}");
+    }
+
+    /// A project of joy 0.23 is read and written in its own shape until a
+    /// person says yes to the update: its files keep `email` and `name`,
+    /// and project.yaml keeps the format it says.
+    #[test]
+    fn member_files_of_joy_0_23_stay_as_they_are_until_the_update() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut project = project(root);
+        project.set_member_file_shape(MemberFileShape::Flat);
+        save_project(root, &project).unwrap();
+        let yaml = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(yaml.starts_with("format: 2\n"), "{yaml}");
+
+        let loaded = load_project(root).unwrap();
+        assert_eq!(loaded.member_file_shape(), MemberFileShape::Flat);
+        assert_eq!(loaded.kind_of("claude"), MemberKind::Ai);
+        assert_eq!(loaded.kind_of("founder@example.com"), MemberKind::Person);
+        let founder_id = loaded
+            .member_by_email("founder@example.com")
+            .unwrap()
+            .file_id
+            .clone()
+            .unwrap();
+        let before = std::fs::read_to_string(file_path(root, &founder_id)).unwrap();
+        assert!(
+            before.starts_with("email: founder@example.com\n"),
+            "{before}"
+        );
+
+        // a change before the update is written the way it was
+        let mut changed = loaded.clone();
+        changed
+            .member_by_email_mut("founder@example.com")
+            .unwrap()
+            .seed_wrap = Some("dd".repeat(40));
+        save_project(root, &changed).unwrap();
+        let after = std::fs::read_to_string(file_path(root, &founder_id)).unwrap();
+        assert!(after.starts_with("email: founder@example.com\n"), "{after}");
+        assert!(after.contains("seed_wrap_passphrase: "), "{after}");
+        assert!(!after.contains("identity:"), "{after}");
+        let yaml = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(yaml.starts_with("format: 2\n"), "{yaml}");
+    }
+
+    /// The yes rewrites every file in format 4, keeps each member's date,
+    /// and lifts project.yaml to 4 in the same write.
+    #[test]
+    fn the_update_brings_every_file_into_format_4_with_its_date() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut project = project(root);
+        project.set_member_file_shape(MemberFileShape::Flat);
+        save_project(root, &project).unwrap();
+        let loaded = load_project(root).unwrap();
+        let dates: Vec<String> = std::fs::read_dir(members_dir(root))
+            .unwrap()
+            .map(|e| {
+                let body = std::fs::read_to_string(e.unwrap().path()).unwrap();
+                body.lines()
+                    .find(|l| l.starts_with("updated:"))
+                    .unwrap()
+                    .to_string()
+            })
+            .collect();
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut updated = loaded.clone();
+        updated.set_member_file_shape(MemberFileShape::Identity);
+        save_project(root, &updated).unwrap();
+
+        let yaml = std::fs::read_to_string(joy_dir(root).join(PROJECT_FILE)).unwrap();
+        assert!(yaml.starts_with("format: 4\n"), "{yaml}");
+        for entry in std::fs::read_dir(members_dir(root)).unwrap() {
+            let body = std::fs::read_to_string(entry.unwrap().path()).unwrap();
+            assert!(body.starts_with("type: "), "{body}");
+            let date = body.lines().find(|l| l.starts_with("updated:")).unwrap();
+            assert!(dates.iter().any(|d| d == date), "{date} kept: {dates:?}");
+        }
+        let again = load_project(root).unwrap();
+        assert_eq!(again.member_file_shape(), MemberFileShape::Identity);
+        assert_eq!(again.member_map(), loaded.member_map());
     }
 
     #[test]
@@ -468,8 +672,8 @@ mod tests {
         let mut project = Project::new("Secret".into(), Some("SE".into()));
         project.set_member_layout(MemberLayout::Files);
         let mut members = BTreeMap::new();
-        let mut person = Member::new(MemberCapabilities::All);
-        person.email_match = Some("cc".repeat(32));
+        let mut person = Member::person(MemberCapabilities::All);
+        person.email_tag = Some("cc".repeat(32));
         members.insert("m-abcdefghij".to_string(), person);
         project.replace_members(members);
         save_project(root, &project).unwrap();
@@ -491,7 +695,10 @@ mod tests {
         std::fs::create_dir_all(joy_dir(root)).unwrap();
         let mut project = Project::new("Old".into(), Some("OL".into()));
         project
-            .register_member("founder@example.com", Member::new(MemberCapabilities::All))
+            .register_member(
+                "founder@example.com",
+                Member::person(MemberCapabilities::All),
+            )
             .unwrap();
         save_project(root, &project).unwrap();
 

@@ -209,7 +209,7 @@ impl AiMemberAdapterItem {
         project
             .members()
             .filter(|(key, m)| {
-                joy_core::model::project::is_ai_member(key)
+                m.kind == joy_core::model::project::MemberKind::Ai
                     && m.adapter.as_deref().unwrap_or("").trim().is_empty()
                     && Self::adapter_for(key).is_some()
             })

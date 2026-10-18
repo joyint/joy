@@ -20,7 +20,7 @@ use std::process::Stdio;
 const FOUNDER: &str = "founder@example.com";
 const FOUNDER_PASS: &str = "correct horse battery staple extra words";
 const QUESTION: &str =
-    "Project data is from an older joy. Update? Everyone then needs joy 0.23+ [Y/n]";
+    "Project data is from an older joy. Update? Everyone then needs joy 0.24+ [Y/n]";
 
 /// A pty pair: what the test holds, and what the child gets as its
 /// stdin, stdout and stderr.

@@ -587,7 +587,7 @@ fn set_privacy(ctx: &Context, project: &mut Project, args: &SetArgs) -> Result<(
     // The migration rekeys every human member, but git config (or the
     // forge account) still names the person by their real address, which
     // `member_key_for_email` resolves in either mode (open: the address
-    // itself; anonymous: the opaque id whose `email_match` verifies
+    // itself; anonymous: the opaque id whose `email_tag` verifies
     // against it, ADR-042). With the device pin gone (JOY-02AE-1A) there
     // is no stale key to repair here any more: the next command re-reads
     // git config and finds the migrated key on its own.
@@ -836,8 +836,8 @@ fn show_project(project: &Project, root: &std::path::Path) {
     // An AI member has more to it than the table says: its one level,
     // and what the reader allows it for themselves
     if project
-        .member_keys()
-        .any(|id| joy_core::model::project::is_ai_member(id))
+        .member_values()
+        .any(|m| m.kind == joy_core::model::project::MemberKind::Ai)
     {
         println!(
             "{}",
@@ -913,7 +913,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 .member_key(&a.id)
                 .or_else(|| project.member_key_for_email(&a.id))
                 .unwrap_or_else(|| a.id.clone());
-            let is_ai = joy_core::model::project::is_ai_member(&key);
+            let is_ai = project.is_ai(&key);
             // What an AI member may do has three sides: what the project
             // allows, what the person looking allows it themselves, and
             // what comes out for them (JI-019D-46).
@@ -1108,7 +1108,14 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
 
             // The acting manager signs for the new entry (JOY-00FC-1D);
             // what exactly is signed is joy-core's to say.
-            let mut new_member = Member::new(capabilities);
+            let mut new_member = Member::of_kind(
+                if is_ai {
+                    joy_core::model::project::MemberKind::Ai
+                } else {
+                    joy_core::model::project::MemberKind::Person
+                },
+                capabilities,
+            );
             new_member.enrollment_verifier = otp_hash_opt;
             if is_ai {
                 joy_core::auth::grants::change_maximum(&mut new_member, None, level)?;
@@ -1223,7 +1230,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 .member_key(&a.id)
                 .or_else(|| joy_core::privacy::member_key_for_email(project, &a.id))
                 .ok_or_else(|| anyhow::anyhow!("member not found: {}", a.id))?;
-            let is_ai = joy_core::model::project::is_ai_member(&key);
+            let is_ai = project.is_ai(&key);
             if !is_ai && (level.is_some() || a.project || a.model.is_some()) {
                 bail!("--level, --project and --model are for an AI member");
             }
@@ -1528,7 +1535,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             let unlocked = crate::auth_gate::unlock(&ctx.root, project, &operator_key)?;
 
             // The target is an opaque id already in members.yaml, or an e-mail
-            // resolved to its id via the email_match verifier.
+            // resolved to its id via the email_tag verifier.
             let target_id = if project.has_member_key(&a.id) {
                 a.id.clone()
             } else {
@@ -1907,9 +1914,7 @@ fn member_auth_status(
     project_id: &str,
     use_emoji: bool,
 ) -> String {
-    use joy_core::model::project::is_ai_member;
-
-    let is_ai = is_ai_member(id);
+    let is_ai = all_members.is_ai(id);
 
     // For humans: has passphrase key?
     // For AI: a human registered an ai_delegations entry, which is the

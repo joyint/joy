@@ -105,7 +105,7 @@ fn add_member(root: &Path, address: &str) {
     let path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project = joy_core::store::load_project(root).unwrap();
     project
-        .register_member(address, Member::new(MemberCapabilities::All))
+        .register_member(address, Member::person(MemberCapabilities::All))
         .unwrap();
     joy_core::store::write_yaml(&path, &project).unwrap();
 }
@@ -198,7 +198,7 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
     let path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project = joy_core::store::load_project(root).unwrap();
     project
-        .register_member(ai, Member::new(MemberCapabilities::all_for_ai()))
+        .register_member(ai, Member::ai(MemberCapabilities::all_for_ai()))
         .unwrap();
     {
         let founder = project

@@ -59,38 +59,35 @@ make_job() {
     echo "$output" | jq -e '.data.priority == "low" and .data.effort == 1' >/dev/null
 }
 
-@test "the first job that says until lifts the project's format to 3, in the same commit" {
+# A project of joy 0.23 (format 2) is lifted to 3 by the first job that
+# says `until`: joy-core's store tests build one. A project joy writes
+# today is at 4 from its first member file, and a job changes nothing.
+@test "a job that says until leaves a project of format 4 as it is" {
     setup_human_auth
     make_job
-    # a job without an end changes nothing: a joy that reads 2 stays in
-    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
+    [ "$(head -1 .joy/project.yaml)" = "format: 4" ]
     joy edit "$JOB_ID" --not-before 2026-12-01
-    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
     git add -A && git commit -qm "before [no-item]"
 
     joy edit "$JOB_ID" --until 2026-12-24
-    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
-    # the number and the field travel together: one staged change set
-    git diff --cached --name-only | grep -q "^.joy/project.yaml$"
-    git diff --cached --name-only | grep -q "^.joy/jobs/"
-    # and the project reads as before
+    [ "$(head -1 .joy/project.yaml)" = "format: 4" ]
     run joy show "$JOB_ID"
     [ "$status" -eq 0 ]
     [[ "$output" == *"until 2026-12-24"* ]]
     # saving the project keeps the number
     joy project set name "Renamed"
-    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
+    [ "$(head -1 .joy/project.yaml)" = "format: 4" ]
 }
 
-@test "a job file from before lifts the format when it is written again" {
+@test "a job file from before says until when it is written again" {
     setup_human_auth
     make_job
-    # as a joy before wrote it: `deadline`, under format 2
+    # as a joy before wrote it: `deadline`
     joy edit "$JOB_ID" --not-before 2026-12-01
     sed -i 's/^\( *\)not_before: \(.*\)$/\1not_before: \2\n\1deadline: 2026-12-24T00:00:00Z/' "$JOB_FILE"
     grep -q "deadline: 2026-12-24" "$JOB_FILE"
-    [ "$(head -1 .joy/project.yaml)" = "format: 2" ]
     joy edit "$JOB_ID" --max-tokens 5
     grep -q "until: 2026-12-24" "$JOB_FILE"
-    [ "$(head -1 .joy/project.yaml)" = "format: 3" ]
+    ! grep -q "deadline:" "$JOB_FILE"
+    [ "$(head -1 .joy/project.yaml)" = "format: 4" ]
 }

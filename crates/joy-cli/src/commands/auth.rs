@@ -52,7 +52,7 @@ enum AuthCommand {
 struct RecoverArgs {
     /// Recover identity using the recovery key after passphrase loss.
     /// Prompts for the recovery key (or reads it from --recovery), then
-    /// asks for a new passphrase and re-wraps seed_wrap_passphrase.
+    /// asks for a new passphrase and re-wraps seed_wrap.
     #[arg(long, conflicts_with = "regenerate_key")]
     recovery_key: bool,
 
@@ -383,7 +383,7 @@ pub(crate) fn run_init(
         joy_core::auth::enroll::EnrollmentMaterial {
             verify_key: public_key.to_hex(),
             kdf_nonce: salt.to_hex(),
-            seed_wrap_passphrase: wrap_passphrase,
+            seed_wrap: wrap_passphrase,
             seed_wrap_recovery: wrap_recovery,
         },
     )?;
@@ -394,7 +394,7 @@ pub(crate) fn run_init(
     // Determine the on-disk member key. In anonymous mode (ADR-042) the founder
     // is rekeyed to an opaque id before the project file is persisted, so the
     // git e-mail never lands in a written -- let alone committed -- project.yaml.
-    // switch_to_anonymous performs the rekey and writes the email_match verifier
+    // switch_to_anonymous performs the rekey and writes the email_tag verifier
     // plus the encrypted members.yaml; in open mode we just persist as-is.
     let session_member = if anonymous {
         let renamed = joy_core::privacy::switch_to_anonymous(&root, &mut project, seed.as_bytes())?;
@@ -524,7 +524,7 @@ fn auth_with_passphrase(
     // the interactive recovery-key printout; the shared core login below
     // then finds a wrapped seed. JOY-01EA: the flow itself lives in
     // joy_core::auth::login so the desktop app runs the exact same code.
-    if member.seed_wrap_passphrase.is_none() {
+    if member.seed_wrap.is_none() {
         let key = derive_key(&passphrase, &salt)?;
         let kp = IdentityKeypair::from_derived_key(&key);
         if kp.public_key() != public_key {
@@ -593,7 +593,7 @@ fn migrate_to_wrapped_seed(
     let m = project
         .member_by_email_mut(email)
         .ok_or_else(|| anyhow::anyhow!("member {} disappeared mid-migration", email))?;
-    m.seed_wrap_passphrase = Some(wrap_passphrase);
+    m.seed_wrap = Some(wrap_passphrase);
     m.seed_wrap_recovery = Some(wrap_recovery);
 
     store::save_project(root, &project)?;
@@ -988,7 +988,7 @@ fn run_reset(args: ResetArgs) -> Result<()> {
     let m = project.member_by_key_mut(target).unwrap();
     m.verify_key = None;
     m.kdf_nonce = None;
-    m.seed_wrap_passphrase = None;
+    m.seed_wrap = None;
     m.seed_wrap_recovery = None;
     m.enrollment_verifier = None;
 
@@ -1089,11 +1089,9 @@ pub(crate) fn create_delegation_token(
     ai_member: &str,
     ttl_hours_override: Option<i64>,
 ) -> Result<(String, i64)> {
-    use joy_core::model::project::is_ai_member;
-
     let project = store::load_project(root)?;
 
-    if !is_ai_member(ai_member) {
+    if !project.is_ai(ai_member) {
         anyhow::bail!(not_an_ai_member(ai_member));
     }
     if !project.has_member_key(ai_member) {
@@ -1299,13 +1297,12 @@ pub(crate) fn create_delegation_token(
 /// row per registered (operator, AI) pair. With a member id, the output
 /// is filtered to that AI; without, every (operator, AI) pair is shown.
 fn run_delegation_ls(filter_member: Option<&str>) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
     let project = store::load_project(&root)?;
 
     if let Some(m) = filter_member {
-        if !is_ai_member(m) {
+        if !project.is_ai(m) {
             anyhow::bail!(not_an_ai_member(m));
         }
     }
@@ -1408,10 +1405,10 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let current_pass = read_passphrase("Current passphrase: ")?;
 
     // ADR-039: in the wrapped-seed model the seed and keypair are stable
-    // across passphrase rotation; we only re-wrap seed_wrap_passphrase.
+    // across passphrase rotation; we only re-wrap seed_wrap.
     // Legacy entries (no seed_wrap_*) are migrated transparently first
     // and then re-wrapped under the new passphrase.
-    let seed = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
+    let seed = if let Some(wrap_hex) = member.seed_wrap.as_deref() {
         seed_mod::unwrap_seed_with_passphrase(wrap_hex, &current_pass, &current_salt)?
     } else {
         let current_key = derive_key(&current_pass, &current_salt)?;
@@ -1424,7 +1421,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
         let migrated_seed = seed_mod::Seed::from_derived_key(&current_key);
         let recovery = seed_mod::RecoveryKey::generate();
         let m = project.member_by_key_mut(&acting).unwrap();
-        m.seed_wrap_passphrase = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
+        m.seed_wrap = Some(seed_mod::wrap_seed_for_migration(&migrated_seed));
         m.seed_wrap_recovery = Some(seed_mod::wrap_seed_with_recovery(
             &migrated_seed,
             &recovery,
@@ -1461,7 +1458,7 @@ fn run_passphrase(new_flag: Option<&str>) -> Result<()> {
     let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &current_salt)?;
 
     let m = project.member_by_key_mut(&acting).unwrap();
-    m.seed_wrap_passphrase = Some(new_wrap_passphrase);
+    m.seed_wrap = Some(new_wrap_passphrase);
     store::save_project(&root, &project)?;
 
     let project_id = session::project_id(&root)?;
@@ -1534,7 +1531,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
 
         let new_wrap_passphrase = seed_mod::wrap_seed_with_passphrase(&seed, &new_pass, &salt)?;
         let m = project.member_by_key_mut(&acting).unwrap();
-        m.seed_wrap_passphrase = Some(new_wrap_passphrase);
+        m.seed_wrap = Some(new_wrap_passphrase);
         store::save_project(&root, &project)?;
 
         let project_id = session::project_id(&root)?;
@@ -1550,7 +1547,7 @@ fn run_recover(args: RecoverArgs) -> Result<()> {
         joy_core::git_ops::auto_git_post_command(&root, "auth recover --recovery-key", &acting);
     } else {
         // --regenerate-key: rotate the recovery wrap.
-        let wrap_passphrase_hex = member.seed_wrap_passphrase.as_ref().ok_or_else(|| {
+        let wrap_passphrase_hex = member.seed_wrap.as_ref().ok_or_else(|| {
             anyhow::anyhow!(
                 "{} has no passphrase wrap. The legacy auth schema needs `joy auth` once first.",
                 acting
@@ -1635,15 +1632,13 @@ fn run_auth_otp(otp: &str, user_flag: Option<&str>) -> Result<()> {
 /// `(acting human, member)`. For the initial delegation use
 /// `joy auth token add`, not rotate.
 pub fn run_ai_rotate(member: &str) -> Result<()> {
-    use joy_core::model::project::is_ai_member;
-
     let cwd = std::env::current_dir()?;
     let root = store::find_project_root(&cwd).ok_or(joy_core::error::JoyError::NotInitialized)?;
 
     let project = store::load_project(&root)?;
     let acting = joy_core::identity::acting_human_key(&root)?;
 
-    if !is_ai_member(member) {
+    if !project.is_ai(member) {
         anyhow::bail!(not_an_ai_member(member));
     }
     if !project.has_member_key(member) {

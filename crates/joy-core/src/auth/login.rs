@@ -12,7 +12,7 @@ use std::path::Path;
 
 use crate::auth::{attestation, seed as seed_mod, session, IdentityKeypair, PublicKey, Salt};
 use crate::error::JoyError;
-use crate::model::project::{is_ai_member, Attestation, Member, PrivacyMode, Project};
+use crate::model::project::{Attestation, Member, PrivacyMode, Project};
 use crate::store;
 
 /// What a successful login produced.
@@ -67,7 +67,7 @@ pub fn login(root: &Path, email: &str, passphrase: &str) -> Result<LoginOutcome,
     let public_key = PublicKey::from_hex(public_key_hex)?;
     let salt = Salt::from_hex(salt_hex)?;
 
-    let wrap_hex = member.seed_wrap_passphrase.as_deref().ok_or_else(|| {
+    let wrap_hex = member.seed_wrap.as_deref().ok_or_else(|| {
         JoyError::AuthFailed(format!(
             "{email} still uses the legacy auth schema; run `joy auth` in a terminal once to migrate."
         ))
@@ -159,7 +159,7 @@ fn finish_login(
         // no person behind it to keep out of a committed file, and the
         // key is what an attestation over it signs, exactly as in open
         // mode.
-        _ if is_ai_member(&member_key) => member_key.clone(),
+        _ if view.is_ai(&member_key) => member_key.clone(),
         // A person, in anonymous mode: only members.yaml can say who
         // they are, and if it cannot, this says so. The fallback that
         // used to stand here handed the opaque id to the attestation

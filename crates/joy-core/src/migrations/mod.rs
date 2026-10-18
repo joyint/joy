@@ -22,6 +22,9 @@
 //! - [`m_2026_10_member_files`]: the members from project.yaml into files
 //!   of their own (JI-019D-46). The one migration that needs a person's
 //!   key, so it is not applied on read or at sync time.
+//! - [`m_2026_10_member_identity`]: the member files of joy 0.23 into
+//!   format 4, `type` and `identity` (JOY-02DB-09). Asked like the one
+//!   before, and run right after it in the same update.
 //!
 //! A migration that a person has to say yes to (it changes what an older
 //! joy can read, and it is signed with their key) is reached only
@@ -42,6 +45,7 @@ pub use joy_model::migrations::ai_member_name;
 
 pub mod item_yaml;
 pub mod m_2026_10_member_files;
+pub mod m_2026_10_member_identity;
 pub mod project_yaml;
 pub mod repo;
 
@@ -81,10 +85,12 @@ pub fn needs_an_update(what: &str) -> String {
 }
 
 /// Whether the project at `root` waits for a person to update its data.
+/// Whatever waits, the update writes format 4, so everybody needs the
+/// joy that reads it.
 pub fn waiting(root: &Path) -> Option<Waiting> {
-    if m_2026_10_member_files::pending(root) {
+    if m_2026_10_member_files::pending(root) || m_2026_10_member_identity::pending(root) {
         return Some(Waiting {
-            needs_joy: m_2026_10_member_files::NEEDS_JOY,
+            needs_joy: m_2026_10_member_identity::NEEDS_JOY,
         });
     }
     None
@@ -93,23 +99,50 @@ pub fn waiting(root: &Path) -> Option<Waiting> {
 /// Update the project at `root`, signed by the person `signer_key` with
 /// `keypair`, because they said yes. `Ok(false)`: nothing waited, or the
 /// one who asked is not a person of this project with that key.
+///
+/// A project with its members still in project.yaml goes into member
+/// files of format 4 in one step; one of joy 0.23 has its files
+/// rewritten. Either way it is one update, and the host commits it once.
 pub fn update_with(
     root: &Path,
     signer_key: &str,
     keypair: &IdentityKeypair,
 ) -> Result<bool, JoyError> {
-    m_2026_10_member_files::migrate(root, signer_key, keypair)
+    if m_2026_10_member_files::migrate(root, signer_key, keypair)? {
+        return Ok(true);
+    }
+    m_2026_10_member_identity::migrate(root, signer_key)
 }
 
 /// An update converted and waiting for the person's signatures, for a
 /// host whose person holds their key somewhere else (a browser).
-pub use m_2026_10_member_files::Prepared as PreparedUpdate;
+pub struct PreparedUpdate(Prepared);
+
+enum Prepared {
+    MemberFiles(m_2026_10_member_files::Prepared),
+    MemberIdentity(crate::model::project::Project),
+}
+
+impl PreparedUpdate {
+    /// What the person signs, in the order the signatures are handed to
+    /// [`finish_update`]. Rewriting member files signs nothing.
+    pub fn payloads(&self) -> Vec<(String, Vec<u8>)> {
+        match &self.0 {
+            Prepared::MemberFiles(prepared) => prepared.payloads(),
+            Prepared::MemberIdentity(_) => Vec::new(),
+        }
+    }
+}
 
 /// The first half of [`update_with`]: the converted project and what is
 /// to be signed. `None`: nothing waits, or `signer_key` is not a person
 /// of this project with a key.
 pub fn prepare_update(root: &Path, signer_key: &str) -> Result<Option<PreparedUpdate>, JoyError> {
-    m_2026_10_member_files::prepare(root, signer_key)
+    if let Some(prepared) = m_2026_10_member_files::prepare(root, signer_key)? {
+        return Ok(Some(PreparedUpdate(Prepared::MemberFiles(prepared))));
+    }
+    Ok(m_2026_10_member_identity::prepare(root, signer_key)?
+        .map(|project| PreparedUpdate(Prepared::MemberIdentity(project))))
 }
 
 /// The second half: the signatures `signer_key` made over
@@ -121,5 +154,18 @@ pub fn finish_update(
     signer_key: &str,
     signatures: &[Vec<u8>],
 ) -> Result<(), JoyError> {
-    m_2026_10_member_files::finish(root, prepared, signer_key, signatures)
+    match prepared.0 {
+        Prepared::MemberFiles(prepared) => {
+            m_2026_10_member_files::finish(root, prepared, signer_key, signatures)
+        }
+        Prepared::MemberIdentity(project) => {
+            if !signatures.is_empty() {
+                return Err(JoyError::Other(format!(
+                    "nothing to sign, {} signatures",
+                    signatures.len()
+                )));
+            }
+            m_2026_10_member_identity::finish(root, &project)
+        }
+    }
 }

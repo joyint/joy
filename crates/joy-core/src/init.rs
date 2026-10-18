@@ -330,7 +330,7 @@ pub fn init(options: InitOptions) -> Result<InitResult, JoyError> {
     // migrates afterwards via switch_to_anonymous.
     project.register_member(
         &founder_email,
-        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+        crate::model::project::Member::person(crate::model::project::MemberCapabilities::All),
     )?;
 
     store::save_project(root, &project)?;
@@ -497,7 +497,7 @@ pub fn ensure_founder(
     };
     project.register_member(
         &email,
-        crate::model::project::Member::new(crate::model::project::MemberCapabilities::All),
+        crate::model::project::Member::person(crate::model::project::MemberCapabilities::All),
     )?;
     store::save_project(root, &project)?;
     Ok(FounderHeal::Registered(email))

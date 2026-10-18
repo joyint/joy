@@ -43,7 +43,7 @@ load setup
     run joy project member add copilot-chat \
         --passphrase "$TEST_PASSPHRASE"
     [ "$status" -eq 0 ]
-    members_grep -q "^name: copilot-chat"
+    members_grep -q "^  copilot-chat:"
 
     # Step 2: issue a delegation token (as the next-steps hint instructs).
     # The command prints the token wrapped in double quotes; strip them

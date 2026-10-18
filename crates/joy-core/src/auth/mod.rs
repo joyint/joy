@@ -76,7 +76,7 @@ pub fn change_passphrase(
         .as_deref()
         .ok_or_else(|| JoyError::AuthFailed(format!("{member_key} has no identity key yet")))?;
     let wrap_hex = member
-        .seed_wrap_passphrase
+        .seed_wrap
         .as_deref()
         .ok_or_else(|| JoyError::AuthFailed(format!("{member_key} has no passphrase wrap")))?;
     let salt = Salt::from_hex(salt_hex)?;
@@ -84,7 +84,7 @@ pub fn change_passphrase(
     project
         .member_by_key_mut(member_key)
         .expect("found above")
-        .seed_wrap_passphrase = Some(new_wrap);
+        .seed_wrap = Some(new_wrap);
     Ok(())
 }
 
@@ -122,7 +122,7 @@ pub fn unlock_identity(
         .ok_or_else(|| JoyError::AuthFailed("member has no verify_key".into()))?;
     let verify_key = PublicKey::from_hex(verify_hex)?;
 
-    let (kp, seed_bytes) = if let Some(wrap_hex) = member.seed_wrap_passphrase.as_deref() {
+    let (kp, seed_bytes) = if let Some(wrap_hex) = member.seed_wrap.as_deref() {
         let seed = seed::unwrap_seed_with_passphrase(wrap_hex, passphrase, &salt)?;
         let bytes = *seed.as_bytes();
         (IdentityKeypair::from_seed(&bytes), bytes)
@@ -165,11 +165,10 @@ mod tests {
         let salt = generate_salt();
         let seed = Seed::generate();
         let keypair = IdentityKeypair::from_seed(seed.as_bytes());
-        let mut member = Member::new(MemberCapabilities::All);
+        let mut member = Member::person(MemberCapabilities::All);
         member.kdf_nonce = Some(salt.to_hex());
         member.verify_key = Some(keypair.public_key().to_hex());
-        member.seed_wrap_passphrase =
-            Some(wrap_seed_with_passphrase(&seed, "old one", &salt).unwrap());
+        member.seed_wrap = Some(wrap_seed_with_passphrase(&seed, "old one", &salt).unwrap());
         project.register_member("a@b.c", member).unwrap();
 
         change_passphrase(&mut project, "a@b.c", "old one", "new one").unwrap();
@@ -177,7 +176,7 @@ mod tests {
         let wrap = project
             .member_by_key("a@b.c")
             .unwrap()
-            .seed_wrap_passphrase
+            .seed_wrap
             .clone()
             .unwrap();
         let opened = unwrap_seed_with_passphrase(&wrap, "new one", &salt).unwrap();

@@ -1,0 +1,19 @@
+email: second@example.com
+capabilities:
+- conceive
+- plan
+- design
+- implement
+- test
+- review
+- document
+- create
+- assign
+origin:
+  attester: founder@example.com
+  signed_at: 2026-10-07T20:25:47.950524933Z
+verify_key: 8b7b18b788e3f803877157cfb7ef7efea56591283f66171d22838e842415364c
+kdf_nonce: 96eaeda1ec41110f3d4d11e7a7ae4846c8b19ed9aed038ad2e2b2237da764635
+seed_wrap_passphrase: 510754cc8a3feaf952b21b7ef3cf2f697a17b73f182a2713e54c6d8cc7d5a3d0a4b24f6bb86e9f245aa3573948bc1146e805f288ba8a4308529696ae
+seed_wrap_recovery: e55edc0553524942cabc6d564228f58a6b21ca72f9480b57eaa26ff1cde90d19666a46ee781fa70c594a863d16b850b54afbf2439b9453acda4a7a13
+updated: 2026-10-18T07:46:32.018153047Z

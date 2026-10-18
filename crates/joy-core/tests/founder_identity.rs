@@ -212,7 +212,7 @@ fn the_enrolment_takes_the_member_the_host_names() {
 fn invite(root: &Path, address: &str, otp: &str) {
     let project_path = joy_core::store::joy_dir(root).join(joy_core::store::PROJECT_FILE);
     let mut project = joy_core::store::load_project(root).unwrap();
-    let mut member = Member::new(MemberCapabilities::All);
+    let mut member = Member::person(MemberCapabilities::All);
     member.enrollment_verifier = Some(joy_core::auth::otp::hash_otp(otp).unwrap());
     project.register_member(address, member).unwrap();
     joy_core::store::write_yaml(&project_path, &project).unwrap();

@@ -1765,7 +1765,7 @@ mod forge_sync_tests {
         let seed_repo = git2::Repository::init(&seed).unwrap();
         std::fs::create_dir_all(seed.join(".joy")).unwrap();
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        let mut m = joy_core::model::project::Member::new(
+        let mut m = joy_core::model::project::Member::person(
             joy_core::model::project::MemberCapabilities::All,
         );
         m.verify_key = Some(
@@ -1856,7 +1856,7 @@ mod forge_sync_tests {
         // chats are always sealed now: the writing member needs an
         // identity, and this thread needs its seed
         let mut project = joy_core::model::Project::new("T".to_string(), Some("T".to_string()));
-        let mut m = joy_core::model::project::Member::new(
+        let mut m = joy_core::model::project::Member::person(
             joy_core::model::project::MemberCapabilities::All,
         );
         m.verify_key = Some(

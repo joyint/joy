@@ -606,7 +606,7 @@ pub fn job_assignee(
     member: &str,
     person_key: &str,
 ) -> Result<Option<InteractionLevel>, String> {
-    if !crate::model::project::is_ai_member(member) {
+    if !project.is_ai(member) {
         let holds = project
             .member_by_key(member)
             .is_some_and(|m| vouch::capability_list(&m.capabilities).contains(&Capability::Jobs));
@@ -875,7 +875,7 @@ mod tests {
     }
 
     fn person(kp: &IdentityKeypair, capabilities: MemberCapabilities) -> Member {
-        let mut member = Member::new(capabilities);
+        let mut member = Member::person(capabilities);
         member.verify_key = Some(kp.public_key().to_hex());
         member.put_delegation(
             "claude",
@@ -903,7 +903,7 @@ mod tests {
         project
             .register_member(DEV, person(&dev_kp, caps(&[Implement, Create])))
             .unwrap();
-        let mut claude = Member::new(caps(&[Plan, Implement, Review]));
+        let mut claude = Member::ai(caps(&[Plan, Implement, Review]));
         claude.interaction_level = Some(Confirmed);
         vouch::sign(
             &project,

@@ -608,15 +608,10 @@ fn run_command(root: &std::path::Path, command: ChatCommand) -> Result<()> {
             // session and no turn host, so an AI it addresses would never
             // answer - and the sender would never learn why (JOY-0270-40,
             // Horst 2026-08-30: refuse, do not send into the void).
-            let members: Vec<String> = joy_core::store::load_project(root)?
-                .members()
-                .map(|(id, _)| id.clone())
-                .collect();
+            let project = joy_core::store::load_project(root)?;
+            let members: Vec<String> = project.member_keys().cloned().collect();
             let addressed = joy_chat::mentions::leading_mentions(&text, &members);
-            if let Some(ai) = addressed
-                .iter()
-                .find(|id| joy_core::model::project::is_ai_member(id))
-            {
+            if let Some(ai) = addressed.iter().find(|id| project.is_ai(id)) {
                 anyhow::bail!(
                     "@{} answers only when addressed from the app (an AI turn runs under the sender's chat session there); nothing sent. Address {} in the app, or send the message without the mention.",
                     ai, ai

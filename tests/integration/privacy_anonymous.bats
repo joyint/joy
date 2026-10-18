@@ -65,13 +65,13 @@ _emails_present() { grep -rlq "$TEST_EMAIL" .joy/; }
     [ "$status" -ne 0 ]
 }
 
-@test "anonymous: project.yaml carries an email_match verifier, not the e-mail" {
+@test "anonymous: project.yaml carries an email_tag, not the e-mail" {
     setup_human_auth
     _go_anonymous
 
     run members_grep -q "$TEST_EMAIL"
     [ "$status" -ne 0 ]
-    run members_grep -q "email_match"
+    run members_grep -q "email_tag"
     [ "$status" -eq 0 ]
 }
 

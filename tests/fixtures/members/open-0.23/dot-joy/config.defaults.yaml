@@ -1,0 +1,9 @@
+version: 1
+output:
+  color: auto
+  emoji: false
+  short: true
+  fortune: true
+workflow:
+  auto-assign: true
+  auto-git: add

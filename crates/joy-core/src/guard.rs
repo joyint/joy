@@ -17,7 +17,7 @@ use std::path::Path;
 use crate::error::JoyError;
 use crate::identity::Identity;
 use crate::model::item::{Capability, Status};
-use crate::model::project::{is_ai_member, Member, MemberCapabilities, Project};
+use crate::model::project::{Member, MemberCapabilities, MemberKind, Project};
 use crate::store;
 
 /// What operation is being attempted.
@@ -162,6 +162,11 @@ pub struct Guard {
 }
 
 impl Guard {
+    /// Whether the project has an AI member, by the kind of its members.
+    fn has_ai_members(&self) -> bool {
+        self.members.values().any(|m| m.kind == MemberKind::Ai)
+    }
+
     /// Create a Guard from a loaded project (no gates).
     pub fn new(project: &Project) -> Self {
         Self {
@@ -247,8 +252,10 @@ impl Guard {
                 (Status::Open, Status::InProgress) | (Status::InProgress, Status::Review)
             );
             let ordered_by_a_person = matches!((from, to), (Status::Open, Status::InProgress))
-                && !is_ai_member(identity.member.id())
-                && assignee.as_ref().is_some_and(|a| is_ai_member(a.id()));
+                && !self.project.is_ai(identity.member.id())
+                && assignee
+                    .as_ref()
+                    .is_some_and(|a| self.project.is_ai(a.id()));
             if assignee_only && !ordered_by_a_person {
                 match assignee {
                     Some(a) if a.id() == identity.member.id() => {}
@@ -272,7 +279,7 @@ impl Guard {
             }
         }
         // AI-specific restrictions apply regardless of capabilities (even capabilities: all)
-        if is_ai_member(&identity.member) {
+        if self.project.is_ai(&identity.member) {
             let required = action.required_capability();
 
             // AI members are never allowed to perform manage actions
@@ -325,7 +332,7 @@ impl Guard {
         // passphrase BEFORE this check (the CLI's auth gate, operator
         // 2026-09-27); this refusal is for the host that cannot.
         if self.needs_authentication(action, identity) {
-            let what = if self.members.keys().any(|k| is_ai_member(k)) {
+            let what = if self.has_ai_members() {
                 "this action"
             } else {
                 "manage actions"
@@ -340,7 +347,7 @@ impl Guard {
         // people signed for it, and nothing else (JI-019D-46): the
         // project maximum and what its delegator allows. No signature,
         // no capability; no capability, no action, whichever kind.
-        if is_ai_member(&identity.member) && crate::auth::grants::applies(&self.project) {
+        if self.project.is_ai(&identity.member) && crate::auth::grants::applies(&self.project) {
             let required = action.required_capability();
             // A job step is no exception: the assignee that starts its
             // own job holds the jobs capability for the person it acts
@@ -402,7 +409,7 @@ impl Guard {
         if identity.authenticated {
             return false;
         }
-        if self.members.keys().any(|k| is_ai_member(k)) {
+        if self.has_ai_members() {
             return true;
         }
         let auth_active = self.members.values().any(|m| m.verify_key.is_some());
@@ -422,7 +429,7 @@ impl Guard {
     ///   unenrolled members (pre-auth projects, no verifier) count as
     ///   before.
     pub fn is_last_manager(&self, member_id: &str) -> bool {
-        if is_ai_member(member_id) {
+        if self.project.kind_of(member_id) != MemberKind::Person {
             return false;
         }
         let is_manager = self
@@ -440,7 +447,7 @@ impl Guard {
             .filter(|(id, m)| {
                 *id != member_id
                     && m.has_capability(&Capability::Manage)
-                    && !is_ai_member(id)
+                    && m.kind == MemberKind::Person
                     && !pending_invite(m)
             })
             .count();
@@ -528,7 +535,17 @@ mod tests {
         for (name, caps) in members {
             // as a project file holds them: an older one may name an AI
             // member with every capability, which nobody can add today
-            project.insert_as_read(name, Member::new(caps));
+            project.insert_as_read(
+                name,
+                Member::of_kind(
+                    if crate::model::project::is_ai_member(name) {
+                        crate::model::project::MemberKind::Ai
+                    } else {
+                        crate::model::project::MemberKind::Person
+                    },
+                    caps,
+                ),
+            );
         }
         project
     }
@@ -663,10 +680,10 @@ mod tests {
         let mut project = Project::new("Test".into(), Some("TST".into()));
         project.set_member_layout(MemberLayout::Files);
         let kp = IdentityKeypair::from_seed(&[7; 32]);
-        let mut dev = Member::new(MemberCapabilities::All);
+        let mut dev = Member::person(MemberCapabilities::All);
         dev.verify_key = Some(kp.public_key().to_hex());
         project.register_member("dev@example.com", dev).unwrap();
-        let mut claude = Member::new(specific_caps(&[Capability::Review]));
+        let mut claude = Member::ai(specific_caps(&[Capability::Review]));
         vouch::sign(
             &project,
             "dev@example.com",
