@@ -2379,14 +2379,14 @@ pub fn commit_joy(
         .add_all([".joy"], git2::IndexAddOption::DEFAULT, None)
         .map_err(err)?;
     index.write().map_err(err)?;
-    let tree_id = index.write_tree().map_err(err)?;
-    let tree = repo.find_tree(tree_id).map_err(err)?;
-    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parent = repo
         .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok());
+    let tree_id = tree_of_scope(&repo, &index, parent.as_ref(), &[".joy"]).map_err(err)?;
+    let tree = repo.find_tree(tree_id).map_err(err)?;
+    let signature = signature_now(repo_dir, author_name, author_email)?;
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     let oid = repo
         .commit(
@@ -2399,6 +2399,45 @@ pub fn commit_joy(
         )
         .map_err(err)?;
     Ok(Some(oid.to_string()))
+}
+
+/// The tree a commit of `scope` carries (JP-017A-0C, JOY-02DC-DA): HEAD's
+/// tree with the index's entries under `scope` laid over it, and nothing
+/// else of the index. A server checkout never initialises its
+/// submodules, and a fast-forward leaves their index entries where the
+/// clone put them, so a tree written from the whole index turned every
+/// submodule pointer back to the clone's. A path is in scope when it is
+/// a scope entry or lies below one.
+fn tree_of_scope(
+    repo: &git2::Repository,
+    index: &git2::Index,
+    parent: Option<&git2::Commit>,
+    scope: &[&str],
+) -> Result<git2::Oid, git2::Error> {
+    let in_scope = |path: &[u8]| {
+        scope.iter().any(|spec| {
+            let spec = spec.trim_end_matches('/').as_bytes();
+            path == spec || (path.starts_with(spec) && path.get(spec.len()) == Some(&b'/'))
+        })
+    };
+    // stage 0 only: a conflict is nobody's commit
+    let resolved = |entry: &git2::IndexEntry| entry.flags & 0x3000 == 0;
+    let mut tree = git2::Index::new()?;
+    if let Some(parent) = parent {
+        tree.read_tree(&parent.tree()?)?;
+    }
+    let replaced: Vec<String> = tree
+        .iter()
+        .filter(|entry| in_scope(&entry.path))
+        .map(|entry| String::from_utf8_lossy(&entry.path).into_owned())
+        .collect();
+    for path in replaced {
+        tree.remove(Path::new(&path), 0)?;
+    }
+    for entry in index.iter().filter(|e| resolved(e) && in_scope(&e.path)) {
+        tree.add(&entry)?;
+    }
+    tree.write_tree_to(repo)
 }
 
 /// Push the current branch back to the forge.
@@ -4001,12 +4040,13 @@ pub fn commit_paths(
         .add_all(pathspecs, git2::IndexAddOption::DEFAULT, None)
         .map_err(err)?;
     index.write().map_err(err)?;
-    let tree_id = index.write_tree().map_err(err)?;
     let parent = repo
         .head()
         .ok()
         .and_then(|h| h.target())
         .and_then(|oid| repo.find_commit(oid).ok());
+    let scope: Vec<&str> = pathspecs.iter().map(String::as_str).collect();
+    let tree_id = tree_of_scope(&repo, &index, parent.as_ref(), &scope).map_err(err)?;
     if parent.as_ref().map(|p| p.tree_id()) == Some(tree_id) {
         return Ok(None);
     }
@@ -6203,6 +6243,107 @@ mod tests {
             .expect_err("a real conflict stops the merge");
         assert!(err.to_string().contains("README.md"), "message was {err}");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// JP-017A-0C, JOY-02DC-DA: a server checkout never initialises its
+    /// submodules, and a fast-forward leaves their index entries at the
+    /// clone's pointers. A .joy commit (and a commit of named paths) takes
+    /// every other path from HEAD, so it never turns a pointer back.
+    #[test]
+    fn a_scoped_commit_keeps_the_submodule_pointers_of_head() {
+        let base = tempfile::tempdir().unwrap();
+        let up = base.path().join("up");
+        let forge = git2::Repository::init(&up).unwrap();
+        let gitlink = |repo: &git2::Repository, oid: &str| {
+            let mut index = repo.index().unwrap();
+            index
+                .add(&git2::IndexEntry {
+                    ctime: git2::IndexTime::new(0, 0),
+                    mtime: git2::IndexTime::new(0, 0),
+                    dev: 0,
+                    ino: 0,
+                    mode: 0o160000,
+                    uid: 0,
+                    gid: 0,
+                    file_size: 0,
+                    id: git2::Oid::from_str(oid).unwrap(),
+                    flags: 3,
+                    flags_extended: 0,
+                    path: b"sub".to_vec(),
+                })
+                .unwrap();
+            index.write().unwrap();
+        };
+        let commit = |repo: &git2::Repository, message: &str| {
+            let tree = repo
+                .find_tree(repo.index().unwrap().write_tree().unwrap())
+                .unwrap();
+            let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
+            let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+            let parents: Vec<&git2::Commit> = parent.iter().collect();
+            repo.commit(Some("HEAD"), &sig, &sig, message, &tree, &parents)
+                .unwrap()
+        };
+        let pointer = |repo: &git2::Repository, rev: &str| {
+            let commit = repo.find_commit(git2::Oid::from_str(rev).unwrap()).unwrap();
+            commit
+                .tree()
+                .unwrap()
+                .get_path(Path::new("sub"))
+                .unwrap()
+                .id()
+                .to_string()
+        };
+        std::fs::create_dir_all(up.join(".joy")).unwrap();
+        std::fs::write(up.join(".joy/item.yaml"), "id: X-1\n").unwrap();
+        std::fs::write(up.join("VERSION"), "1.0.0\n").unwrap();
+        let mut index = forge.index().unwrap();
+        index.add_path(Path::new(".joy/item.yaml")).unwrap();
+        index.add_path(Path::new("VERSION")).unwrap();
+        index.write().unwrap();
+        let old = "1111111111111111111111111111111111111111";
+        let new = "2222222222222222222222222222222222222222";
+        gitlink(&forge, old);
+        commit(&forge, "seed");
+
+        let checkout = base.path().join("checkout");
+        clone_full(up.to_str().unwrap(), &Auth::token("irrelevant"), &checkout).expect("clone");
+        // the submodule moves on the forge after the clone
+        gitlink(&forge, new);
+        commit(&forge, "bump the submodule");
+        let repo = git2::Repository::open(&checkout).unwrap();
+        repo.find_remote("origin")
+            .unwrap()
+            .fetch(&["refs/heads/*:refs/remotes/origin/*"], None, None)
+            .unwrap();
+        ff_from_tracking(&checkout).expect("fast-forward");
+
+        std::fs::write(checkout.join(".joy/item.yaml"), "id: X-2\n").unwrap();
+        let joy = commit_joy(&checkout, "item [no-item]", "Tester", "tester@example.com")
+            .unwrap()
+            .expect("a .joy commit");
+        assert_eq!(pointer(&repo, &joy), new);
+
+        std::fs::write(checkout.join("VERSION"), "1.0.1\n").unwrap();
+        let paths = commit_paths(
+            &checkout,
+            &["VERSION".to_string(), ".joy".to_string()],
+            "bump to 1.0.1 [no-item]",
+            "Tester",
+            "tester@example.com",
+        )
+        .unwrap()
+        .expect("a commit of named paths");
+        assert_eq!(pointer(&repo, &paths), new);
+        // and each carried its own change
+        let file = |rev: &str, path: &str| {
+            let commit = repo.find_commit(git2::Oid::from_str(rev).unwrap()).unwrap();
+            let entry = commit.tree().unwrap().get_path(Path::new(path)).unwrap();
+            let blob = repo.find_blob(entry.id()).unwrap();
+            String::from_utf8(blob.content().to_vec()).unwrap()
+        };
+        assert_eq!(file(&joy, ".joy/item.yaml"), "id: X-2\n");
+        assert_eq!(file(&paths, "VERSION"), "1.0.1\n");
     }
 
     #[test]
