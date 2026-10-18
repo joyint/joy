@@ -1,7 +1,7 @@
 id: JOY-02DE-40
 title: The update commit names a version from the local marker
 type: bug
-status: new
+status: closed
 priority: high
 capabilities:
 - implement
@@ -9,6 +9,10 @@ capabilities:
 effort: 2
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T19:19:36.579228965Z
-updated: 2026-10-18T19:19:36.579228965Z
+updated: 2026-10-18T19:22:16.987122432Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: 'joy update wrote ''project files updated from joy X to joy Y'' with X from joy.last-sync-version in the clone''s git config: a machine last synced with 0.15 wrote ''from 0.15'' into a repository that had been on 0.23 for long. The subject is now always ''project files refreshed by joy Y''; the local marker still decides whether a sync runs and is said on stderr, never in a commit.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-18T19:22:16.932671844Z
+  text: 'Solution (joy#93): project_update_message takes only the version that ran, the subject is always ''chore(joy): project files refreshed by joy Y [no-item]'' and the body ''joy brought the files it manages in this project in line with version Y.'' The local marker joy.last-sync-version still decides whether a sync runs and is named on stderr, never in a commit. Tests: git_ops unit test, joy-chat-store update test, update_command.bats (16/16), fmt-check and clippy green.'
