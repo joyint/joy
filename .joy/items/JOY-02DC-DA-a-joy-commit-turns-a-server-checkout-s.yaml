@@ -1,0 +1,19 @@
+id: JOY-02DC-DA
+title: A .joy commit turns a server checkout's submodule pointers back
+type: bug
+status: review
+priority: critical
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-18T15:22:56.786166567Z
+updated: 2026-10-18T15:29:07.019457194Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: 'JP-017A-0C, cause found 2026-10-18: a server checkout never initialises its submodules, and a fast-forward (checkout_head) leaves their index entries where the clone put them. commit_joy and commit_paths wrote the commit''s tree from the whole index, so every platform write on a repository with submodules (the umbrella: a11b92f on 2026-10-16) turned the pointers back to the clone''s. Agreed with the operator: the commit is HEAD''s tree with only the commit''s own paths (.joy, or the given pathspecs) laid over it from the index. Test: a repository with a submodule pointer bumped on the forge after the clone.'
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-18T15:29:06.996499673Z
+  text: 'Result: commit_joy and commit_paths write HEAD''s tree with only their scope (.joy, or the given pathspecs) laid over it from the index (tree_of_scope); the repository''s index is written as before. Test a_scoped_commit_keeps_the_submodule_pointers_of_head: a clone, the forge bumps the submodule, fast-forward, a .joy commit and a commit of named paths both keep the new pointer and carry their own change; red with the old path, green now. joy just check green; platform cargo test (438) and the desktop''s Rust tests (238) green against this branch. Other index commits checked: the job worktree commits (commit_all) start from a fresh index of the current base, not affected.'
