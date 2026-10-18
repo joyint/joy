@@ -2460,6 +2460,7 @@ dependencies = [
  "joy-process",
  "joy-test-env",
  "joy-token",
+ "keyring",
  "libc",
  "minijinja",
  "rand 0.8.8",
@@ -2514,7 +2515,6 @@ dependencies = [
  "joy-forge-net",
  "joy-process",
  "joy-test-env",
- "keyring",
  "rand 0.8.8",
  "rustls-pki-types",
  "serde",
@@ -2604,7 +2604,6 @@ name = "joy-test-env"
 version = "0.23.1"
 dependencies = [
  "joy-process",
- "keyring",
 ]
 
 [[package]]

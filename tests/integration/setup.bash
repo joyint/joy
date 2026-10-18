@@ -43,10 +43,12 @@ fi
 # (JOY-02BB-C7), the same rule crates/joy-test-env holds for the Rust
 # tests: no JOY_ variable (JOY_BIN is the suite's own, which binary to
 # test, and stays), no git identity variable, no token or config
-# directory of a forge CLI, and no session bus. A stale JOY_SESSION
-# answered for the developer instead of the person a case builds, and
-# with the session bus in reach the connector asked the developer's own
-# keychain.
+# directory of a forge CLI, and no operating system credential store. A
+# stale JOY_SESSION answered for the developer instead of the person a
+# case builds, and with the store in reach the connector asked the
+# developer's own keychain. JOY_TEST_NO_KEYCHAIN=1 closes the one door
+# to it (joy_core::keychain, JOY-02DB-25) on every system; it is set
+# after the sweep, which would take a JOY_ variable away again.
 for name in $(compgen -e); do
     case "$name" in
         JOY_BIN) ;;
@@ -56,7 +58,7 @@ for name in $(compgen -e); do
     esac
 done
 unset name
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/nonexistent/joy-test-no-bus"
+export JOY_TEST_NO_KEYCHAIN=1
 
 # Nor the developer's forge CLI. joy asks gh, glab and tea for the token
 # they hold, and with the developer's PATH it asks the developer's own gh

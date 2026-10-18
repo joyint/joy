@@ -18,9 +18,3 @@ dist = false
 
 [dependencies]
 joy-process = { workspace = true }
-# For its in memory mock store alone, which isolate! makes the default
-# of every test binary, so no test reaches the operating system's
-# credential store on any system. No store feature is asked for here:
-# the crate that uses keyring brings its own, and cargo builds one
-# keyring for both.
-keyring = { version = "3.6", default-features = false }
