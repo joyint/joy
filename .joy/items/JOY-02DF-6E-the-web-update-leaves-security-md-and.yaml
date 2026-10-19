@@ -1,7 +1,7 @@
 id: JOY-02DF-6E
 title: The web update leaves SECURITY.md and the .gitattributes block behind
 type: bug
-status: in-progress
+status: closed
 priority: medium
 assignees:
 - member: claude
@@ -14,7 +14,7 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-19T03:26:53.646621312Z
-updated: 2026-10-19T03:45:30.399695426Z
+updated: 2026-10-19T05:42:28.873024611Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   Found 2026-10-19 on joyint/demo-calc (opened in the production web app): the update window moved the members to format 4 (platform commit fbb07d3, 'update project data from an older joy'), but SECURITY.md still describes .joy/project.yaml and seed_wrap_passphrase. A CLI 'joy update' of the same project renders the new SECURITY.md (joyint-forge-test, 2026-10-18). Web and CLI end in different repositories.
