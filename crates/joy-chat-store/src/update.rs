@@ -133,7 +133,7 @@ pub fn sync_and_commit(root: &Path, reach: Reach, identity: &str) -> Synced {
 mod tests {
     use super::*;
     use joy_core::git_ops::UpdateCommit;
-    use joy_core::vcs::forge;
+    use joy_core::vcs::{forge, Vcs};
 
     /// A project whose files are all committed and whose clone was last
     /// synced by an older joy.
@@ -191,5 +191,48 @@ mod tests {
         // opened again: nothing changed, nothing committed
         let again = sync_and_commit(root, Reach::Checkout, "horst@example.com");
         assert_eq!(again.commit, UpdateCommit::Nothing);
+    }
+
+    /// A server's clone gets joy's bookkeeping about the data, SECURITY.md
+    /// and the `.gitattributes` block, in the commit of the person who
+    /// opened it, and still none of the checkout hygiene: no hooks, no
+    /// merge driver, no version marker (JOY-02DF-6E).
+    #[test]
+    fn a_server_clone_gets_the_bookkeeping_and_no_hooks() {
+        let dir = a_committed_project();
+        let root = dir.path();
+        std::fs::write(root.join("SECURITY.md"), "what an older joy wrote\n").unwrap();
+        std::fs::write(root.join(".gitattributes"), "*.png binary\n").unwrap();
+        std::fs::remove_file(root.join(".joy/hooks/commit-msg")).unwrap();
+        forge::commit_everything(root, "older [no-item]", "m", "m@e.c").unwrap();
+        let vcs = joy_core::vcs::default_vcs();
+        vcs.config_set(root, joy_core::init::MERGE_DRIVER_NAME_KEY, "")
+            .unwrap();
+
+        let synced = sync_and_commit(root, Reach::Data, "horst@example.com");
+        let UpdateCommit::Written(_) = &synced.commit else {
+            panic!("no commit: {:?}", synced.commit);
+        };
+        let mut paths = synced.changed.paths.clone();
+        paths.sort();
+        assert_eq!(paths, [".gitattributes", "SECURITY.md"]);
+        assert!(joy_core::security_md::is_current(&root.join("SECURITY.md")).unwrap());
+        let attributes = std::fs::read_to_string(root.join(".gitattributes")).unwrap();
+        assert!(attributes.starts_with("*.png binary\n"), "{attributes}");
+        assert!(attributes.contains(joy_core::init::GITATTRIBUTES_BLOCK_START));
+
+        assert!(!root.join(".joy/hooks/commit-msg").exists(), "no hook");
+        assert_eq!(
+            vcs.config_get(root, joy_core::init::MERGE_DRIVER_NAME_KEY)
+                .ok()
+                .as_deref(),
+            Some(""),
+            "no merge driver"
+        );
+        assert_eq!(
+            joy_core::init::last_sync_version(root).as_deref(),
+            Some("0.0.1"),
+            "no version marker"
+        );
     }
 }
