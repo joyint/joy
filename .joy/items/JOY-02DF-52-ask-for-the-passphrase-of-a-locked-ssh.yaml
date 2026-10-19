@@ -1,0 +1,36 @@
+id: JOY-02DF-52
+title: Ask for the passphrase of a locked ssh key instead of skipping it
+type: story
+status: new
+priority: medium
+tags:
+- ssh
+- forge
+- desktop
+- cli
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-19T03:38:36.177516591Z
+updated: 2026-10-19T03:38:36.177516591Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Seen 2026-10-18 by Philipp on the desktop app: the banner said 'store error: Sign in to GitHub to sync.' with the detail 'libgit2: no usable credential for github.com: the ssh agent at /run/user/1000/ssh-agent.socket holds no identity, so joy has nothing to offer github.com; key /home/lluq/.ssh/id_gh_lluq: passphrase needed, skipped'. He expected to be asked for the key's passphrase.
+
+  Today (read in the code): joy-core has the question (vcs/ssh_auth.rs set_passphrase_prompt, answers held per process in ANSWERS), but no host installs it, only tests. A locked key that is not loaded in the agent is therefore always skipped. With no ssh credential the resolver goes to the https address of the repository (resolver.rs twin_leg); a background sync may use it only with a forge token from the sign-in. Not signed in, the person gets 'Sign in to GitHub to sync.', which does not say what is wrong or what else would help. ask_passphrase returns before it reads the held answers on a host that may not prompt, so even an answer given in the foreground would not reach the background sync.
+
+  https stays the preferred way (operator 2026-10-19: ssh is much slower; when https is available joy falls back to it). This story covers the case where it is not, because nobody is signed in at the forge.
+
+  Proposal (agreed with the operator 2026-10-19, for Philipp's review, not yet to be built):
+  1. The message, desktop and CLI: names the cause ('GitHub cannot be reached: your ssh key id_gh_lluq needs its passphrase and is not loaded in the ssh agent') and the two ways: 'Sign in to GitHub' (recommended: faster and lasting, over https) and 'Enter the passphrase'. Details carry the command line: 'ssh-add ~/.ssh/id_gh_lluq' for this login session, 'AddKeysToAgent yes' in ~/.ssh/config so it happens by itself.
+  2. Desktop: 'Enter the passphrase' opens a modal like the joy authentication. The answer is held in memory for as long as the app runs and the background sync uses it too; nothing is written to disk. One question per app start.
+  3. CLI: on an interactive terminal joy asks for the passphrase instead of skipping the key; the question names the same two lasting ways, because a CLI command is its own process and would ask every time.
+
+  Acceptance:
+  - an e2e repro first: a locked key, no agent identity, nobody signed in, ssh remote: today the banner says only 'Sign in to GitHub to sync.'
+  - the desktop asks once per app start and the next background sync succeeds with the held answer
+  - the CLI asks on a terminal and never under a delegation or in the background
+  - the passphrase is never written to disk or logged
+  - signed in at the forge, nothing asks: https is used as today

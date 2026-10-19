@@ -124,7 +124,10 @@ pub struct RefreshRow {
 /// someone else's repository gets NONE of that — it holds the project's
 /// data and must not author repo hygiene into it (operator, 2026-07-29:
 /// the platform started installing hooks into every project it served).
-/// What both need is the data reconciles: schema, layout, chat storage.
+/// What both need is the data reconciles (schema, layout, chat storage)
+/// and joy's bookkeeping about that data: SECURITY.md and the
+/// `.gitattributes` block (operator, 2026-10-19, JOY-02DF-6E). Hooks and
+/// CI files stay the person's to see and check in.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Reach {
     /// Runs wherever the project is opened, server included.
@@ -242,6 +245,9 @@ impl UpdateItem for VersionMarkerItem {
 struct GitattributesBlockItem;
 
 impl UpdateItem for GitattributesBlockItem {
+    fn reach(&self) -> Reach {
+        Reach::Data
+    }
     fn section(&self) -> &'static str {
         SECTION_GIT
     }
@@ -426,6 +432,9 @@ impl UpdateItem for EmbeddedFilesItem {
 struct SecurityMdItem;
 
 impl UpdateItem for SecurityMdItem {
+    fn reach(&self) -> Reach {
+        Reach::Data
+    }
     fn section(&self) -> &'static str {
         SECTION_AUTH
     }

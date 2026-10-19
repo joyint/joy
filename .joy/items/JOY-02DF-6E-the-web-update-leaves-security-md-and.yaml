@@ -1,0 +1,43 @@
+id: JOY-02DF-6E
+title: The web update leaves SECURITY.md and the .gitattributes block behind
+type: bug
+status: closed
+priority: medium
+assignees:
+- member: claude
+tags:
+- platform
+- update
+- security
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-19T03:26:53.646621312Z
+updated: 2026-10-19T05:42:28.873024611Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Found 2026-10-19 on joyint/demo-calc (opened in the production web app): the update window moved the members to format 4 (platform commit fbb07d3, 'update project data from an older joy'), but SECURITY.md still describes .joy/project.yaml and seed_wrap_passphrase. A CLI 'joy update' of the same project renders the new SECURITY.md (joyint-forge-test, 2026-10-18). Web and CLI end in different repositories.
+
+  Cause (read in the code): the window (platform update_project_data, src/api/joy_service.rs) runs only joy_core::migrations::finish_update; no update item runs with it. The server's own sync (platform sync.rs reconcile_and_commit) runs only items of Reach::Data: project.yaml schema, doc paths, chat storage. SecurityMdItem and GitattributesBlockItem have the default Reach::Checkout (joy-core/src/update.rs). The split came with 1ec234e8 (2026-07-31); its only stated reason is the operator's rule of 2026-07-29 that the server must not install hooks into the projects it serves. No decision excludes SECURITY.md.
+
+  Decision (operator, 2026-10-19): what is joy bookkeeping goes along automatically, wherever the project is updated: SECURITY.md and the .gitattributes block. Hooks and CI files (.github/workflows/joy-merge.yml and the other embedded files) are never checked in automatically; the person must see them. The 2026-07-29 rule stands. The version marker is per-clone git config and is not part of this.
+
+  Target: SecurityMdItem and GitattributesBlockItem run wherever the project is opened, server included. The window's commit carries them together with the member files, so a format migration never leaves a SECURITY.md that describes the old layout. A project opened on the platform with a stale SECURITY.md or .gitattributes block gets them in the sync commit of the person who opened it, as the data reconciles do today.
+
+  Acceptance:
+  - an e2e repro first: a 0.23 project updated through the web window ends with the current SECURITY.md and .gitattributes block in the pushed commit (fails today)
+  - the platform never writes hooks, joy-merge.yml or other embedded files into a served repository (existing guard stays green)
+  - CLI 'joy update' unchanged
+  - demo-calc is brought up to date by opening it once after the release
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-19T03:45:30.399694655Z
+  text: |-
+    Built 2026-10-19 on fix/joy-02df-6e-server-bookkeeping in joy and platform, committed, not pushed.
+
+    joy: SecurityMdItem and GitattributesBlockItem now have Reach::Data (joy-core/src/update.rs), so every host that opens a project renders them, server included. Hooks, hooks path, merge driver, embedded files and the version marker keep Reach::Checkout; joy-merge.yml and the AI tool files are joy-cli's own items and never run on a server.
+
+    Differs from the Target text: the bookkeeping does not ride in the window's commit. It lands in the existing commit the platform writes when a person opens the project ('chore(joy): project files refreshed by joy X', sync.rs reconcile_and_commit), which runs before the window, the same order as the CLI's joy update (joyint-forge-test: b09dcd3 before the yes). No second commit path was added.
+
+    Tests: joy-chat-store update::tests::a_server_clone_gets_the_bookkeeping_and_no_hooks (fails without the change); platform sync::tests::an_old_security_md_is_brought_up_to_date_for_the_person_who_opened_the_project (fails without the change); the platform fixture a_clone_with_a_reconcile_pending now carries a SECURITY.md as the CLI's joy init leaves it. joy-chat-store, joy-core update, joy-cli member_fixtures and platform sync:: green; clippy clean. Not run: the web e2e repro named in Acceptance, the full joy and platform suites.
