@@ -1,7 +1,7 @@
 id: JOY-02DD-D2
 title: The joy merge job advises instead of pushing
 type: story
-status: new
+status: review
 priority: high
 parent: JOY-02AC-53
 capabilities:
@@ -10,7 +10,7 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T18:32:20.419251298Z
-updated: 2026-10-18T19:15:13.185396632Z
+updated: 2026-10-20T07:45:05.024051730Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   Since mid 2026 GitHub puts every workflow run that a GITHUB_TOKEN push creates on a pull request into an approval-required state (docs: Triggering a workflow, GITHUB_TOKEN; verified on 2026-10-18 in joyint-test/joy-merge-probe and on joyint/joy#89, #90). The merge commit that 'joy merge ci' pushed is such a push, so every pull request it helped waited for a person to click 'Approve and run'. The push setting of the repository changes nothing, workflow_dispatch runs do not count for the pull request, and no event announces the waiting run. The only pushes the forge trusts come from an identity a person set up (GitHub App, token), and that is one mechanism per forge.
@@ -36,3 +36,11 @@ comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-10-18T19:15:13.185396121Z
   text: 'Correction (operator, 2026-10-18): GitLab gets no token either. The GitLab job no longer posts a note over the API with JOY_PUSH_TOKEN; it writes the three commands into its own log and ends with exit code 3, which allow_failure turns into a warning the merge request shows, so the pipeline runs on. The target comes in with the runner''s own clone credentials (git fetch in the script). The init note no longer asks for a CI variable. Not run on a GitLab instance.'
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-10-20T07:45:05.000537813Z
+  text: |-
+    Follow-up 2026-10-20: CodeQL code-scanning alerts #24 and #25 on joyint/joy (actions/code-injection/critical, .github/workflows/joy-merge.yml lines 52 and 81). The job runs on pull_request_target with pull-requests: write, and two scripts had ${{ github.event.pull_request.head.ref }} written into the script text. #25 is the fork step: a fork's branch named like x$(...) would have run as code with the job's token. #24 runs for branches of this repository only, same pattern.
+
+    Fixed on fix/joy-02dd-d2-merge-job-injection (21531438): in the GitHub and Gitea templates every value of the pull request reaches the scripts as a step environment variable (BASE_REF, HEAD_REF, BASE_URL, PR_NUMBER) and the scripts read "$HEAD_REF" etc. Nobody sets anything in their project; GitHub fills the variables from the event as before. What the job does and says is unchanged. GitLab already read $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME. This repository's joy-merge.yml refreshed from the template.
+
+    Test: init.rs no_job_script_expands_an_expression (no run script of the GitHub or Gitea template contains ${{; fails on the old templates); the_job_advises_and_never_pushes now expects --head "$HEAD_REF". joy-core init tests green. Other repositories (jyn, crypt, joy-vscode, jon, joyint-forge-test, users) get the file with joy update after the next release.
