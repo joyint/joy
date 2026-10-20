@@ -409,14 +409,94 @@ fn member_key_from_forge_account(root: &Path, project: &Project) -> Option<Strin
     }
     // No git config at all: the same two directions, without an address
     // to cache under.
+    let (spec, ctx) = responsible_forge(root, project)?;
+    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
+    crate::privacy::member_key_for_any(project, &acting.emails)
+        .or_else(|| crate::privacy::member_key_owned_by(project, spec, &ctx, &acting))
+}
+
+/// The connector that answers for this project's remotes, with the
+/// context it is asked in: the `forge:` override, else the claims round.
+/// `None` when there is no remote or no connector claims one.
+fn responsible_forge(
+    root: &Path,
+    project: &Project,
+) -> Option<(
+    &'static crate::forge_plugins::ForgePluginSpec,
+    crate::forge_plugins::CallContext,
+)> {
     let remotes = crate::vcs::default_vcs()
         .all_remotes(root)
         .unwrap_or_default();
     let ctx = crate::forge_plugins::CallContext::in_project(root);
     let spec = crate::forge_plugins::responsible_plugin(project.forge.as_deref(), &ctx, &remotes)?;
-    let acting = crate::forge_plugins::identity(spec, None, &ctx)?;
-    crate::privacy::member_key_for_any(project, &acting.emails)
-        .or_else(|| crate::privacy::member_key_owned_by(project, spec, &ctx, &acting))
+    Some((spec, ctx))
+}
+
+/// What this machine offers as an identity for the project, whether or
+/// not any of it is a member (JOY-02E0-EC). A person whom the project
+/// does not know reads it to learn which addresses joy tried, or that
+/// it found none.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FoundIdentity {
+    /// The git `user.email` first, then the addresses the forge account
+    /// vouches for, without duplicates, in the order they are tried.
+    pub addresses: Vec<String>,
+    /// The forge that answers for the project's remotes; `None` when no
+    /// remote is configured or no connector claims one.
+    pub forge: Option<FoundForge>,
+}
+
+/// The forge part of [`FoundIdentity`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct FoundForge {
+    /// The forge's name as a person writes it (`GitHub`, `GitLab`, `Gitea`).
+    pub name: String,
+    /// The account signed in there; `None` when nobody is, or the
+    /// connector could not be asked.
+    pub login: Option<String>,
+    /// The forge's own command line tool a person signs in with (`gh`,
+    /// `glab`, `tea`), as the connector names it.
+    pub tool: Option<String>,
+}
+
+/// [`resolve_identity`]'s steps 3 to 5 read for what they offer instead
+/// of for a member: the same git config read and the same connector
+/// identity call. A connector that answers `known: false` still names
+/// its forge and its tool; one that fails names its forge only.
+pub fn found_identity(root: &Path, project: &Project) -> FoundIdentity {
+    let mut addresses: Vec<String> = Vec::new();
+    let mut add = |address: &str| {
+        let address = address.trim();
+        if !address.is_empty() && !addresses.iter().any(|a| a.eq_ignore_ascii_case(address)) {
+            addresses.push(address.to_string());
+        }
+    };
+    let (_, email) = crate::vcs::forge::user_identity(root);
+    if let Some(email) = email.as_deref() {
+        add(email);
+    }
+    let forge = responsible_forge(root, project).map(|(spec, ctx)| {
+        let answer = crate::forge_plugins::identity_full(spec, None, &ctx).ok();
+        let (login, tool) = match answer {
+            Some(identity) => {
+                let tool = identity.cli.filter(|cli| !cli.trim().is_empty());
+                if !identity.known {
+                    (None, tool)
+                } else {
+                    identity.emails.iter().for_each(|e| add(e));
+                    (identity.login.filter(|l| !l.trim().is_empty()), tool)
+                }
+            }
+            None => (None, None),
+        };
+        FoundForge {
+            name: spec.display.to_string(),
+            login,
+            tool,
+        }
+    });
+    FoundIdentity { addresses, forge }
 }
 
 /// What an AI reads when the session in `JOY_SESSION` no longer stands
