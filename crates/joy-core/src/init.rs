@@ -1039,6 +1039,34 @@ mod ci_template_tests {
         }
     }
 
+    /// No script of a job reads a value of the pull request through an
+    /// expression: GitHub writes `${{ ... }}` into the script text before
+    /// the shell starts, so a branch called `x$(...)` from a fork would
+    /// run as code with the job's token (CodeQL code injection on
+    /// joy-merge.yml, JOY-02DD-D2). The values come in as environment
+    /// variables, which the shell reads as text.
+    #[test]
+    fn no_job_script_expands_an_expression() {
+        for template in [CI_GITHUB, CI_GITEA] {
+            let mut script_indent: Option<usize> = None;
+            for line in template.content.lines() {
+                let indent = line.len() - line.trim_start().len();
+                if let Some(at) = script_indent {
+                    if line.trim().is_empty() || indent > at {
+                        assert!(!line.contains("${{"), "{}: {line}", template.target);
+                        continue;
+                    }
+                    script_indent = None;
+                }
+                let key = line.trim_start().trim_start_matches("- ");
+                if let Some(script) = key.strip_prefix("run:") {
+                    assert!(!script.contains("${{"), "{}: {line}", template.target);
+                    script_indent = Some(indent);
+                }
+            }
+        }
+    }
+
     /// The job pushes nothing any more: a push by its token puts the pull
     /// request's checks behind a manual approval on GitHub, so it tries
     /// the merge and tells the author instead (JOY-02DD-D2). Every
@@ -1077,7 +1105,7 @@ mod ci_template_tests {
             );
             // the author pastes the branch they are on
             assert!(
-                job.contains("--head \"${{ github.event.pull_request.head.ref }}\""),
+                job.contains("--head \"$HEAD_REF\""),
                 "{}: {job}",
                 template.target
             );

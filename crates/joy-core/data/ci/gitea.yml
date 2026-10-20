@@ -14,7 +14,10 @@
 #
 # It listens on pull_request_target, because a forge starts no
 # pull_request job for a pull request it already shows as conflicting,
-# and that conflict is the one looked at here (JOY-02CE-55).
+# and that conflict is the one looked at here (JOY-02CE-55). What the
+# pull request names, a branch above all, reaches the scripts only as an
+# environment variable: written into a script, a branch called
+# x$(...) would run as code with the job's token (JOY-02DD-D2).
 name: joy merge
 on:
   pull_request_target:
@@ -45,7 +48,9 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository
         env:
           GH_TOKEN: ${{ github.token }}
-        run: joy merge ci --target "${{ github.event.pull_request.base.ref }}" --head "${{ github.event.pull_request.head.ref }}" --advise "$RUNNER_TEMP/joy-merge-advice.md"
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: joy merge ci --target "$BASE_REF" --head "$HEAD_REF" --advise "$RUNNER_TEMP/joy-merge-advice.md"
       # The note is the job's one word to the author. When there is one,
       # it replaces the job's last comment or starts it; when there is
       # none any more, the last comment is told so and nothing new is
@@ -55,13 +60,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           note="$RUNNER_TEMP/joy-merge-advice.md"
           if [ -f "$note" ]; then
-            gh pr comment "${{ github.event.pull_request.number }}" --body-file "$note" --edit-last \
-              || gh pr comment "${{ github.event.pull_request.number }}" --body-file "$note"
+            gh pr comment "$PR_NUMBER" --body-file "$note" --edit-last \
+              || gh pr comment "$PR_NUMBER" --body-file "$note"
           else
-            gh pr comment "${{ github.event.pull_request.number }}" --edit-last --body \
+            gh pr comment "$PR_NUMBER" --edit-last --body \
               "Nothing stands in the way of this merge any more." 2>/dev/null || true
           fi
       # A pull request from a fork lives in someone else's repository,
@@ -72,7 +78,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_URL: ${{ github.event.pull_request.base.repo.clone_url }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
-          gh pr comment "${{ github.event.pull_request.number }}" --body \
-            "This project keeps its items and logs in the repository, and only joy can merge those. If the merge button shows a conflict, in your clone: \`git switch ${{ github.event.pull_request.head.ref }}\`, \`git pull ${{ github.event.pull_request.base.repo.clone_url }} ${{ github.event.pull_request.base.ref }}\`, \`git push\`. joy resolves the Joy files during the pull."
+          gh pr comment "$PR_NUMBER" --body \
+            "This project keeps its items and logs in the repository, and only joy can merge those. If the merge button shows a conflict, in your clone: \`git switch $HEAD_REF\`, \`git pull $BASE_URL $BASE_REF\`, \`git push\`. joy resolves the Joy files during the pull."
 # joy:end
