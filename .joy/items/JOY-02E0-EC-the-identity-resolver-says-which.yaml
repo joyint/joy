@@ -1,0 +1,24 @@
+id: JOY-02E0-EC
+title: The identity resolver says which addresses it found
+type: story
+status: review
+priority: medium
+assignees:
+- member: claude
+tags:
+- identity
+- desktop
+capabilities:
+- plan
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-10-20T20:22:52.986482594Z
+updated: 2026-10-21T05:12:06.824578686Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Part of JAPP-0328-8A (one notice bar and a bell, operator 2026-10-20). The app must tell a person who is not a member WHICH address joy used, or that it found none: case A 'Who are you? Set `git config --global user.email` or sign in with `gh`.', case B '`a@x`, `b@y`: none is a member. Ask a project manager.', or 'GitHub account `login`: no member address. Ask a project manager.' when the forge account shows no readable address.
+
+  resolve_identity (joy-core/src/identity.rs) answers only the member or none. Add one function beside it, reusing the same reads (no second resolver): what this machine offers for the project, namely the git user.email (repository then global), the forge account's login and verified addresses from the responsible connector (member_key_from_forge_account's path), the forge's display name and the connector's foreign_cli (gh, glab, tea). Read-only, no network beyond what the resolver already does, cached the same way.
+
+  Acceptance: unit tests for no git and no forge, git only, forge with addresses, forge without readable addresses; resolve_identity unchanged.

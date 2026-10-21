@@ -318,7 +318,7 @@ fn answer(forge: &dyn Forge, command: &Command, ctx: &Ctx) -> i32 {
         Command::Identity { remote, host, .. } => {
             let target = target(remote.as_deref(), host.as_deref())
                 .unwrap_or_else(|| Target::Host(String::new()));
-            forge.identity(&target, ctx)
+            with_cli(forge.identity(&target, ctx), forge)
         }
         Command::Store { remote, host } => match target(remote.as_deref(), host.as_deref()) {
             Some(target) => forge.store(&target, ctx),
@@ -465,6 +465,16 @@ fn parse_purpose(raw: Option<&str>) -> Result<Option<Purpose>, i32> {
         }
         None => Ok(None),
     }
+}
+
+/// An `identity` answer, known or not, also names the forge's own
+/// command line tool, so joy can tell a person what to sign in with
+/// (JOY-02E0-EC).
+fn with_cli(mut answer: Value, forge: &dyn Forge) -> Value {
+    if let Some(object) = answer.as_object_mut() {
+        object.insert("cli".into(), json!(forge.foreign_cli()));
+    }
+    answer
 }
 
 fn target(remote: Option<&str>, host: Option<&str>) -> Option<Target> {
@@ -650,6 +660,14 @@ mod tests {
         assert_eq!(rest.len(), 4);
         assert_eq!(pick(&forges, None).unwrap().id(), "github");
         assert!(pick(&forges, Some("gitlab")).is_err());
+    }
+
+    #[test]
+    fn the_identity_answer_names_the_forge_cli_known_or_not() {
+        let github = Stub("github");
+        let answer = with_cli(json!({ "known": false }), &github);
+        assert_eq!(answer["known"], false);
+        assert_eq!(answer["cli"], github.foreign_cli());
     }
 
     /// `claims` consults the forge, the configured instances and

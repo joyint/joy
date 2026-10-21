@@ -1824,6 +1824,10 @@ pub struct ForgeIdentity {
     /// its source cannot list them.
     #[serde(default)]
     pub emails: Vec<String>,
+    /// The forge's own command line tool (`gh`, `glab`, `tea`), named
+    /// by the connector in its `identity` answer, known or not.
+    #[serde(default)]
+    pub cli: Option<String>,
 }
 
 #[derive(Deserialize)]
