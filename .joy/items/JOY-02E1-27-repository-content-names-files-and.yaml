@@ -1,0 +1,29 @@
+id: JOY-02E1-27
+title: Repository content names files and commands outside the project (security audit C1, E2, E3, I1)
+type: bug
+status: review
+priority: high
+assignees:
+- member: claude
+capabilities:
+- implement
+- review
+effort: 3
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-11-13T20:53:17.799677827Z
+updated: 2026-11-13T20:59:31.892265738Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: |-
+  Security audit 2026-10-22, re-checked 2026-11-13 (Joyint Docs, Horst > Reviews). A cloned repository is untrusted content. Three places trusted it.
+
+  C1/E3 version files: release.version-files patterns were joined to the project root and globbed as they stood, so '../x' or an absolute path, or a symlink inside the project, let 'joy release' rewrite files outside the project. Now a pattern with a parent or root component is refused, and every match is canonicalized and must lie under the canonical project root (joy-core version_bump.rs, expand_glob).
+
+  E2 editor: the editor command came from the layered config, so the committed .joy/config.defaults.yaml could name a command that 'joy edit' ran through sh -c on the member's machine. Now only the member's own personal config names the editor, then VISUAL, EDITOR, the built-in fallback (joy-cli editor.rs).
+
+  I1: rustls-webpki 0.103.17, webpki-root-certs 1.0.12 in Cargo.lock.
+
+  Not in this item, needs Horst's decision: E1 (core.hooksPath pointing at the committed .joy/hooks).
+comments:
+- author: claude delegated-by:horst.schwarz@joydev.com
+  date: 2026-11-13T20:59:31.873694776Z
+  text: 'Result on branch fix/security-audit. cargo test --workspace: all suites ok (792 in joy-core''s largest suite, none failed). New tests: a_pattern_that_leaves_the_project_changes_nothing, a_symlink_out_of_the_project_is_not_bumped, the_editor_comes_from_the_members_own_config_only. Limits: the editor test proves the helper that reads the personal config, not that the committed defaults file is ignored end to end. jyn''s Cargo.lock got the same rustls updates (rustls 0.23.46, rustls-webpki 0.103.17) on its own branch fix/security-audit; jyn tests ok. E1 (hooks from the committed .joy/hooks) is not changed, it needs Horst''s decision. Not pushed.'

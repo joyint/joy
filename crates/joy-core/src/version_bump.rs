@@ -73,11 +73,38 @@ pub fn expand(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn expand_glob(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    // The pattern comes from the committed project.yaml, so it is
+    // repository content, not the member's word: it names files of
+    // this project and nothing above or beside it.
+    let relative = Path::new(pattern);
+    if relative.is_absolute()
+        || relative.components().any(|c| {
+            !matches!(
+                c,
+                std::path::Component::Normal(_) | std::path::Component::CurDir
+            )
+        })
+    {
+        anyhow::bail!("version file pattern leaves the project: {pattern}");
+    }
     let full_pattern = root.join(pattern).to_string_lossy().to_string();
-    let paths: Vec<PathBuf> = glob::glob(&full_pattern)
+    let real_root = root
+        .canonicalize()
+        .with_context(|| format!("failed to resolve {}", root.display()))?;
+    let mut paths = Vec::new();
+    for path in glob::glob(&full_pattern)
         .with_context(|| format!("invalid glob pattern: {pattern}"))?
         .filter_map(|r| r.ok())
-        .collect();
+    {
+        // A symlink inside the project may still point out of it.
+        let real = path
+            .canonicalize()
+            .with_context(|| format!("failed to resolve {}", path.display()))?;
+        if !real.starts_with(&real_root) {
+            anyhow::bail!("version file leaves the project: {}", path.display());
+        }
+        paths.push(path);
+    }
     Ok(paths)
 }
 
@@ -416,5 +443,66 @@ mod tests {
         let results = bump_all(dir.path(), &files, "0.1.0", "0.2.0").unwrap();
         assert_eq!(results.len(), 2);
         assert!(results.iter().all(|r| r.replacements == 1));
+    }
+
+    #[test]
+    fn a_pattern_that_leaves_the_project_changes_nothing() {
+        let outer = tempdir().unwrap();
+        let project = outer.path().join("mine");
+        let other = outer.path().join("theirs");
+        fs::create_dir_all(&project).unwrap();
+        fs::create_dir_all(&other).unwrap();
+        let foreign = other.join("Cargo.toml");
+        fs::write(&foreign, "version = \"0.1.0\"\n").unwrap();
+
+        for pattern in ["../theirs/Cargo.toml", "../*/Cargo.toml"] {
+            let err = bump_all(
+                &project,
+                &[VersionFile {
+                    path: pattern.to_string(),
+                }],
+                "0.1.0",
+                "0.2.0",
+            )
+            .unwrap_err();
+            assert!(err.to_string().contains("leaves the project"), "{err}");
+        }
+        let absolute = foreign.to_string_lossy().to_string();
+        assert!(bump_all(
+            &project,
+            &[VersionFile { path: absolute }],
+            "0.1.0",
+            "0.2.0"
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(&foreign).unwrap(),
+            "version = \"0.1.0\"\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_symlink_out_of_the_project_is_not_bumped() {
+        let outer = tempdir().unwrap();
+        let project = outer.path().join("mine");
+        fs::create_dir_all(&project).unwrap();
+        let foreign = outer.path().join("Cargo.toml");
+        fs::write(&foreign, "version = \"0.1.0\"\n").unwrap();
+        std::os::unix::fs::symlink(&foreign, project.join("Cargo.toml")).unwrap();
+
+        assert!(bump_all(
+            &project,
+            &[VersionFile {
+                path: "Cargo.toml".into()
+            }],
+            "0.1.0",
+            "0.2.0"
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(&foreign).unwrap(),
+            "version = \"0.1.0\"\n"
+        );
     }
 }

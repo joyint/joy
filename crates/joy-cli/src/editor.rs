@@ -8,7 +8,9 @@
 //!
 //! Editor resolution order:
 //! 1. `editor_flag` argument (passed via --editor on the command line)
-//! 2. `editor` in joy config (project / user / global layers)
+//! 2. `editor` in the member's own joy config (local or global). The
+//!    committed `.joy/config.defaults.yaml` is repository content and
+//!    never names a command to run.
 //! 3. `$VISUAL`
 //! 4. `$EDITOR`
 //!
@@ -60,11 +62,8 @@ fn resolve_editor(editor_flag: Option<&str>) -> Result<String> {
     if let Some(e) = editor_flag {
         return Ok(e.to_string());
     }
-    let config = joy_core::store::load_config();
-    if let Some(e) = config.editor {
-        if !e.trim().is_empty() {
-            return Ok(e);
-        }
+    if let Some(e) = personal_editor(&joy_core::store::load_personal_config_value()) {
+        return Ok(e);
     }
     if let Ok(e) = std::env::var("VISUAL") {
         if !e.trim().is_empty() {
@@ -84,4 +83,29 @@ fn resolve_editor(editor_flag: Option<&str>) -> Result<String> {
 
 fn scratch_path(suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("joy-edit-{}-{suffix}", std::process::id()))
+}
+
+/// The editor the member set themselves, if any.
+fn personal_editor(personal: &serde_json::Value) -> Option<String> {
+    personal
+        .get("editor")
+        .and_then(|e| e.as_str())
+        .filter(|e| !e.trim().is_empty())
+        .map(str::to_string)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_editor_comes_from_the_members_own_config_only() {
+        let own = serde_json::json!({ "editor": "vim" });
+        assert_eq!(personal_editor(&own), Some("vim".into()));
+        assert_eq!(
+            personal_editor(&serde_json::json!({ "editor": "  " })),
+            None
+        );
+        assert_eq!(personal_editor(&serde_json::json!({})), None);
+    }
 }
