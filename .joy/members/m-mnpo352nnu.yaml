@@ -1,10 +1,13 @@
 type: person
 identity:
   philipp@joyint.com:
-    enrollment_verifier: be5e6fc90ed34ca44ee2bccd5eb3af96dd35ed2568d216b27c86090a870d3a32:e60d18a823db0f1186890fc256ac8e45a9eefbf01c482bb9ec08236e3fb39d81
+    verify_key: bc80bf8e5c85f2ececa5ddb0b953bf55b9096fbcf9f8803505dd8e845ce6c643
+    kdf_nonce: b0e66fb3e4905b7bb47ed85b5ec5ab41afea146c5cdf6cca1366ce10a81d9396
+    seed_wrap: 604837b15b7efcb03bb3a2a7231bc8387ab743bf3f3754b7f80cc4891a92984fb7baad5d31e56572c0602ff4754cde80744cbf01e031288cd0fa0c92
+    seed_wrap_recovery: f4fbfb0a26ebe2e27a0fff44b182428d3b95bfc7bf38f454d4d7297924388e316982565798f3e39a9d9bd7e462a08429eb7ab42a8b04914946cababe
 capabilities: all
 origin:
   attester: horst.schwarz@joydev.com
   signed_at: 2026-08-23T16:48:48.723664035Z
   commit: 9969a7290c71e9c26850076b0dc88202aa3e0465
-updated: 2026-10-16T19:01:32.380388629Z
+updated: 2026-11-15T07:22:28.050887303Z
