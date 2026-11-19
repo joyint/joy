@@ -1,0 +1,13 @@
+id: JOY-02E1-10
+title: Enable chaining of commands
+type: idea
+status: new
+priority: medium
+created_by: philipp@joyint.com
+created: 2026-11-15T07:26:05.897780922Z
+updated: 2026-11-15T07:26:05.897780922Z
+updated_by: philipp@joyint.com
+description: |-
+  Currently when you create a new task with `joy add` then you cannot immediately change its state with e.g. `joy start` by chaining: `joy add task "some task" | joy start`.
+
+  It is obvious that only some commands should be able to be chained and also that the information that is usually printed in the terminal should not be piped into the next tool. Maybe only the affected joy item id is sufficient for elegant chaining.
