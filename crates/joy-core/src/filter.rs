@@ -127,11 +127,7 @@ fn matches_spec(item: &Item, spec: &FilterSpec, all_items: &[Item]) -> bool {
         }
     }
 
-    if spec.blocked && !item.is_blocked_by(all_items) {
-        return false;
-    }
-
-    true
+    !(spec.blocked && !item.is_blocked_by(all_items))
 }
 
 /// Resolve the milestone an item effectively belongs to: its own, or
