@@ -240,6 +240,29 @@ pub struct JobSpec {
     /// the start; absent: the runner's own naming.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub result_branch: Option<String>,
+    /// The platform that runs this job, by its domain (JI-01A7-0F). On a
+    /// new job a preset; fixed when the job is opened. A platform touches
+    /// only the jobs that name it. Absent on a job a person works.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runs_on: Option<String>,
+    /// The token the job's AI assignee acts with, issued by the person
+    /// who opened the job or last handed it back, sealed for the platform
+    /// in `runs_on`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub token: Option<JobToken>,
+}
+
+/// A job's token as the job item carries it (JI-01A7-0F): who it is
+/// sealed for, until when it holds and who issued it in clear, the token
+/// itself readable by that platform alone.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct JobToken {
+    pub platform: String,
+    pub expires: DateTime<Utc>,
+    pub opener: crate::member_ref::MemberRef,
+    /// The delegation token, sealed with the opener's key for the
+    /// platform's (`joy_crypt::sealed`), hex.
+    pub sealed: String,
 }
 
 /// Spend limits for a job. `max_cents` mirrors the platform's budget
@@ -793,6 +816,8 @@ mod tests {
             activity: Vec::new(),
             base_branch: None,
             result_branch: None,
+            runs_on: None,
+            token: None,
         });
 
         let yaml = serde_yaml_ng::to_string(&item).unwrap();

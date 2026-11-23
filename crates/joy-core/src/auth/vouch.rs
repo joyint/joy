@@ -14,7 +14,11 @@
 //!   signed once and never again, whatever they may do later. An AI
 //!   member carries the signature under its capabilities and level, the
 //!   **project maximum**, re-signed whenever those change. An AI member
-//!   has no origin: a person's delegation is what brings it in.
+//!   has no origin: a person's delegation is what brings it in. A
+//!   platform member carries the signature under its domain, its public
+//!   key and its capabilities (JI-01A7-0F), re-signed whenever those
+//!   change: the key is what a job's token is sealed for, so nobody
+//!   swaps it unseen.
 //!
 //! Every host signs through [`sign`] (or [`payload`] and [`apply`] when
 //! the key is somewhere else, as in a browser) and never builds what is
@@ -55,14 +59,32 @@ enum Form {
     Attestation,
     Origin,
     Maximum,
+    Platform,
 }
 
-fn form(project: &Project, member_id: &str) -> Form {
+fn form(project: &Project, member_id: &str, member: &Member) -> Form {
     match project.member_layout() {
         MemberLayout::InProject => Form::Attestation,
+        MemberLayout::Files if member.kind == MemberKind::Platform => Form::Platform,
         MemberLayout::Files if project.is_ai(member_id) => Form::Maximum,
         MemberLayout::Files => Form::Origin,
     }
+}
+
+/// The text the signature under a platform member covers: its domain,
+/// its public key, its capabilities in their fixed order, and the
+/// project.
+fn platform_text(project: &Project, domain: &str, member: &Member) -> String {
+    let caps: Vec<String> = capability_list(&member.capabilities)
+        .iter()
+        .map(|c| c.to_string())
+        .collect();
+    format!(
+        "platform|{domain}|{}|{}|{}",
+        member.verify_key.as_deref().unwrap_or_default(),
+        caps.join(","),
+        session::project_id_of(project)
+    )
 }
 
 /// The capabilities of a member as a list, in their fixed order.
@@ -116,7 +138,8 @@ pub fn payload(
     member: &Member,
     occasion: Occasion,
 ) -> Option<Vec<u8>> {
-    match form(project, member_id) {
+    match form(project, member_id, member) {
+        Form::Platform => Some(platform_text(project, member_id, member).into_bytes()),
         Form::Attestation => Some(
             attestation::signed_fields_for(
                 member_id,
@@ -152,7 +175,14 @@ pub fn apply(
     signature: &[u8],
 ) {
     let signature = hex::encode(signature);
-    match form(project, member_id) {
+    match form(project, member_id, member) {
+        Form::Platform => {
+            member.granted = Some(Granted {
+                by: signer.into(),
+                at: Utc::now(),
+                signature,
+            });
+        }
         Form::Attestation => {
             member.attestation = Some(crate::model::project::Attestation {
                 attester: signer.into(),
@@ -294,6 +324,55 @@ pub fn verify_origin(
         )));
     }
     Ok(())
+}
+
+/// The public key of the platform member `domain`, once a person stands
+/// behind the entry as it is: its domain, this key and its capabilities
+/// (JI-01A7-0F). The reason comes back in words a refusal can say.
+///
+/// The key is what a job's token is sealed for and what the platform
+/// proves itself with, so an entry nobody signed, or one changed after
+/// it was signed, is no platform at all.
+pub fn verify_platform(
+    project: &Project,
+    domain: &str,
+    member: &Member,
+) -> Result<PublicKey, String> {
+    if member.kind != MemberKind::Platform {
+        return Err(format!("{domain} is not a platform member"));
+    }
+    let Some(granted) = &member.granted else {
+        return Err(format!("nobody has signed for the platform {domain}"));
+    };
+    let signer = granted.by.id();
+    if project.kind_of(signer) != MemberKind::Person {
+        return Err(format!(
+            "the platform {domain} is signed for by {signer}, and only a person signs for a platform"
+        ));
+    }
+    let signer_key = project
+        .member_by_key(signer)
+        .ok_or_else(|| {
+            format!("the platform {domain} is signed for by someone who is not a member")
+        })?
+        .verify_key
+        .as_deref()
+        .and_then(|hex| PublicKey::from_hex(hex).ok())
+        .ok_or_else(|| format!("the platform {domain} is signed for by a member without a key"))?;
+    if !check(
+        &signer_key,
+        platform_text(project, domain, member).as_bytes(),
+        &granted.signature,
+    ) {
+        return Err(format!(
+            "the platform {domain} was changed without a signature for it"
+        ));
+    }
+    member
+        .verify_key
+        .as_deref()
+        .and_then(|hex| PublicKey::from_hex(hex).ok())
+        .ok_or_else(|| format!("the platform {domain} has no public key"))
 }
 
 /// Whether the project maximum of the AI member `name` is what a person

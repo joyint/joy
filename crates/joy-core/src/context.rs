@@ -40,6 +40,7 @@ impl Context {
             delegated_by: None,
             authenticated: false,
             grant: None,
+            job: None,
         });
         let guard = Guard::load(&root)?;
         Ok(Self {
@@ -57,9 +58,11 @@ impl Context {
 
     /// Check and enforce a guard action. Logs events on deny/warn.
     pub fn enforce(&self, action: &Action, target: &str) -> Result<(), JoyError> {
-        self.guard
-            .check(action, &self.identity)
-            .enforce(&self.root, target, &self.identity)
+        self.guard.check_at(action, target, &self.identity).enforce(
+            &self.root,
+            target,
+            &self.identity,
+        )
     }
 
     /// Get the identity's log_user string for event logging.

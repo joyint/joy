@@ -1123,6 +1123,7 @@ pub(crate) fn create_delegation_token(
         delegated_by: None,
         authenticated: true,
         grant: None,
+        job: None,
     };
     joy_core::guard::Guard::load(root)?
         .check(&joy_core::guard::Action::ManageProject, &identity)
@@ -1225,6 +1226,7 @@ pub(crate) fn create_delegation_token(
             // What this person allows the AI member right now, so the
             // grant cannot be dropped behind the token's back.
             grant: Some(&token_grant),
+            job: None,
         },
     );
 

@@ -1304,6 +1304,8 @@ mod tests {
                 activity: Vec::new(),
                 base_branch: None,
                 result_branch: None,
+                runs_on: None,
+                token: None,
             });
         };
         let mut later = job("later", Priority::Extreme, 50);

@@ -39,6 +39,7 @@ fn live_session(member: &str, ttl: Duration) -> String {
         session::Delegator {
             member: Some("human@example.com".to_string()),
             grant: None,
+            job: None,
         },
     );
     session::save_session("DLG", &token).unwrap();

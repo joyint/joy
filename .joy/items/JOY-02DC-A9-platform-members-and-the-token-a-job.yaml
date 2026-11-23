@@ -1,15 +1,17 @@
 id: JOY-02DC-A9
 title: Platform members, and the token a job carries from its opening
 type: story
-status: new
+status: in-progress
 priority: high
+assignees:
+- member: claude
 capabilities:
 - plan
 - implement
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T15:21:01.006615027Z
-updated: 2026-10-18T15:21:01.006615027Z
+updated: 2026-11-23T18:01:39.846777862Z
 updated_by: claude delegated-by:horst.schwarz@joydev.com
 description: |-
   Implements JI-01A7-0F in joy.

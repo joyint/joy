@@ -16,7 +16,7 @@ use std::path::Path;
 
 use crate::error::JoyError;
 use crate::identity::Identity;
-use crate::model::item::{Capability, Status};
+use crate::model::item::{Capability, Item, Status};
 use crate::model::project::{Member, MemberCapabilities, MemberKind, Project};
 use crate::store;
 
@@ -139,9 +139,10 @@ pub fn enforce(root: &Path, action: &Action, target: &str) -> Result<(), JoyErro
         delegated_by: None,
         authenticated: false,
         grant: None,
+        job: None,
     });
     Guard::load(root)?
-        .check(action, &identity)
+        .check_at(action, target, &identity)
         .enforce(root, target, &identity)
 }
 
@@ -159,6 +160,10 @@ pub struct Guard {
     /// The project as it was loaded: what an AI member may do is worked
     /// out from two signed entries in it ([`crate::auth::grants`]).
     project: Project,
+    /// Where the project lies, for the rules that have to read an item
+    /// to decide ([`Guard::check_at`]). None for a guard built from a
+    /// project in memory.
+    root: Option<std::path::PathBuf>,
 }
 
 impl Guard {
@@ -176,6 +181,7 @@ impl Guard {
                 .collect(),
             gates: BTreeMap::new(),
             project: project.clone(),
+            root: None,
         }
     }
 
@@ -188,6 +194,7 @@ impl Guard {
                 .collect(),
             gates,
             project: project.clone(),
+            root: None,
         }
     }
 
@@ -196,7 +203,9 @@ impl Guard {
         let project_path = store::joy_dir(root).join(store::PROJECT_FILE);
         let project = store::load_project(root)?;
         let gates = load_gates(&project_path)?;
-        Ok(Self::with_gates(&project, gates))
+        let mut guard = Self::with_gates(&project, gates);
+        guard.root = Some(root.to_path_buf());
+        Ok(guard)
     }
 
     /// Get the configured gates (for display in joy project).
@@ -204,8 +213,123 @@ impl Guard {
         &self.gates
     }
 
-    /// Check whether an action is allowed for the given identity.
+    /// Check whether `action` on `target` is allowed for the identity:
+    /// what every host enforces with. `target` is the id of the item or
+    /// milestone, or `project` for a management action.
+    ///
+    /// Two kinds of member are held to WHAT they write, not only to how
+    /// (JI-01A7-0F): an AI member whose token is for one job writes that
+    /// job and the items it names, and a platform member writes two
+    /// things, a job of its own back to new and a comment on a job.
+    /// Everybody else is judged by [`Guard::check`].
+    pub fn check_at(&self, action: &Action, target: &str, identity: &Identity) -> Verdict {
+        if self.project.kind_of(identity.member.id()) == MemberKind::Platform
+            && self.project.has_member_key(identity.member.id())
+        {
+            return self.platform_verdict(action, target, identity);
+        }
+        if let Some(job) = identity.job.as_deref() {
+            if let Err(reason) = self.inside_its_job(job, target) {
+                return Verdict::Deny(reason);
+            }
+        }
+        self.judge(action, identity)
+    }
+
+    /// The jobs of the project, where this guard knows where it lies.
+    fn jobs(&self) -> Vec<Item> {
+        self.root
+            .as_deref()
+            .and_then(|root| crate::items::load_jobs(root).ok())
+            .unwrap_or_default()
+    }
+
+    /// Whether `target` is the job a session is for or one of the items
+    /// that job names: a scope item, or an item under one (a scope entry
+    /// that is a container means what it holds).
+    fn inside_its_job(&self, job_id: &str, target: &str) -> Result<(), String> {
+        let outside =
+            || format!("this session is for job {job_id}, and {target} is not part of it");
+        if target == job_id {
+            return Ok(());
+        }
+        let jobs = self.jobs();
+        let scope: Vec<&str> = jobs
+            .iter()
+            .find(|job| job.id == job_id)
+            .and_then(|job| job.job.as_ref())
+            .map(|spec| spec.scope.iter().map(String::as_str).collect())
+            .unwrap_or_default();
+        let Some(root) = self.root.as_deref() else {
+            return Err(outside());
+        };
+        // up the parents, as far as they go (bounded: a loop in the data
+        // must not hang a refusal)
+        let mut at = Some(target.to_string());
+        for _ in 0..32 {
+            let Some(id) = at else { break };
+            if scope.contains(&id.as_str()) {
+                return Ok(());
+            }
+            at = crate::items::load_item(root, &id)
+                .ok()
+                .and_then(|item| item.parent);
+        }
+        Err(outside())
+    }
+
+    /// What a platform member may write itself: one of its own jobs back
+    /// to new, and a comment on a job. Its jobs are those that name it in
+    /// `runs_on`; the comment is also allowed on a job that was taken
+    /// back from it, where it says what it left behind.
+    fn platform_verdict(&self, action: &Action, target: &str, identity: &Identity) -> Verdict {
+        let name = identity.member.id();
+        if !identity.authenticated {
+            return Verdict::Deny(format!(
+                "the platform {name} has to prove itself with its key"
+            ));
+        }
+        let jobs = self.jobs();
+        let job = jobs.iter().find(|job| job.id == target);
+        let its_own = job.is_some_and(|job| crate::auth::job_token::runs_on(job) == Some(name));
+        let allowed = match action {
+            Action::ChangeJobStatus {
+                to: Status::New, ..
+            } => its_own,
+            Action::AddComment => job.is_some(),
+            _ => false,
+        };
+        if allowed {
+            Verdict::Allow
+        } else {
+            Verdict::Deny(format!(
+                "the platform {name} only sends its own jobs back to new and comments on a job"
+            ))
+        }
+    }
+
+    /// Check whether an action is allowed for the given identity, where
+    /// no target is at hand. A member that is held to what it writes
+    /// ([`Guard::check_at`]) is refused here: without a target nothing
+    /// says the write is theirs to make.
     pub fn check(&self, action: &Action, identity: &Identity) -> Verdict {
+        if let Some(job) = identity.job.as_deref() {
+            return Verdict::Deny(format!("this session is for job {job} and nothing else"));
+        }
+        if self.project.kind_of(identity.member.id()) == MemberKind::Platform
+            && self.project.has_member_key(identity.member.id())
+        {
+            return Verdict::Deny(format!(
+                "the platform {} only sends its own jobs back to new and comments on a job",
+                identity.member.id()
+            ));
+        }
+        self.judge(action, identity)
+    }
+
+    /// The rules of the trust model for a member that may write
+    /// anything its capabilities allow.
+    fn judge(&self, action: &Action, identity: &Identity) -> Verdict {
         // No members configured: no restrictions
         if self.members.is_empty() {
             return Verdict::Allow;
@@ -509,6 +633,7 @@ mod tests {
             delegated_by: None,
             authenticated: true,
             grant: None,
+            job: None,
         }
     }
 
@@ -518,6 +643,7 @@ mod tests {
             delegated_by: None,
             authenticated: false,
             grant: None,
+            job: None,
         }
     }
 
@@ -527,6 +653,7 @@ mod tests {
             delegated_by: Some(delegated_by.into()),
             authenticated: true,
             grant: None,
+            job: None,
         }
     }
 

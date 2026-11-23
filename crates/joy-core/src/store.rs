@@ -528,10 +528,11 @@ pub fn parse_project(
 /// This constant is the highest format this joy reads. What a
 /// project.yaml SAYS is what the project's data needs, and no more: 2
 /// once its members are in files, 3 from the first job that says
-/// `until`, 4 once its member files say their type. So a project is
-/// closed to an older joy exactly when it holds something that joy would
-/// get wrong, and not because a newer joy touched it.
-pub const PROJECT_FORMAT: u32 = 4;
+/// `until`, 4 once its member files say their type, 5 from the first job
+/// that names its platform or carries a token. So a project is closed to
+/// an older joy exactly when it holds something that joy would get
+/// wrong, and not because a newer joy touched it.
+pub const PROJECT_FORMAT: u32 = 5;
 
 /// The format a project needs once its members are in files.
 const FORMAT_MEMBER_FILES: u32 = 2;
@@ -541,6 +542,14 @@ const FORMAT_MEMBER_IDENTITY: u32 = 4;
 
 /// The format a project needs from the first job that says `until`.
 pub const FORMAT_JOB_UNTIL: u32 = 3;
+
+/// The format a project needs from the first job that names the platform
+/// it runs on or carries a token (JI-01A7-0F). A joy before would drop
+/// both at its next write of the job and open a job without a token,
+/// which no platform takes. Such a job exists only where the member
+/// files say their type ([`crate::auth::platform::fits`]), so this
+/// number is never said over files in the older shape.
+pub const FORMAT_JOB_TOKEN: u32 = 5;
 
 /// The `format` a project.yaml says, 1 when it says none.
 fn format_of(value: &serde_yaml_ng::Value) -> u32 {
@@ -821,7 +830,7 @@ mod tests {
         );
         // the formats this joy knows read as ever
         let created = "created: 2026-10-10T00:00:00Z\n";
-        for format in [FORMAT_MEMBER_FILES, FORMAT_JOB_UNTIL] {
+        for format in [FORMAT_MEMBER_FILES, FORMAT_JOB_UNTIL, FORMAT_JOB_TOKEN] {
             parse_project(
                 &format!("format: {format}\nname: Now\nmembers: []\n{created}"),
                 std::path::Path::new("p"),
@@ -900,6 +909,8 @@ mod tests {
                 activity: Vec::new(),
                 base_branch: None,
                 result_branch: None,
+                runs_on: None,
+                token: None,
             });
             job
         };

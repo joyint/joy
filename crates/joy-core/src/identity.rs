@@ -77,6 +77,10 @@ pub struct Identity {
     /// (JI-019D-46, see [`crate::auth::grants`]). `None` for a person,
     /// and for an AI whose token was issued before grants existed.
     pub grant: Option<String>,
+    /// For an AI member whose token is for one job (JI-01A7-0F): that
+    /// job. The guard lets it write the job and the items it names,
+    /// nothing else. `None` for everybody else.
+    pub job: Option<String>,
 }
 
 impl Identity {
@@ -91,6 +95,7 @@ impl Identity {
             delegated_by,
             authenticated,
             grant: None,
+            job: None,
         }
     }
 }
@@ -167,6 +172,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
             delegated_by: None,
             authenticated: false,
             grant: None,
+            job: None,
         });
     }
 
@@ -245,6 +251,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                                             .map(Into::into),
                                         authenticated: true,
                                         grant: sess.claims.grant.clone(),
+                                        job: sess.claims.job.clone(),
                                     });
                                 }
                             }
@@ -286,6 +293,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
                 delegated_by: None,
                 authenticated: true,
                 grant: None,
+                job: None,
             });
         }
     }
@@ -317,6 +325,7 @@ pub fn resolve_identity(root: &Path) -> Result<Identity, JoyError> {
         delegated_by: None,
         authenticated: false,
         grant: None,
+        job: None,
     })
 }
 
@@ -917,6 +926,7 @@ mod tests {
             delegated_by: None,
             authenticated: false,
             grant: None,
+            job: None,
         };
         assert_eq!(id.log_user(), "alice@example.com");
     }
@@ -928,6 +938,7 @@ mod tests {
             delegated_by: Some("horst@joydev.com".into()),
             authenticated: false,
             grant: None,
+            job: None,
         };
         assert_eq!(id.log_user(), "claude delegated-by:horst@joydev.com");
     }

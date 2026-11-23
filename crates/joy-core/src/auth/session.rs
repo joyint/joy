@@ -70,6 +70,11 @@ pub struct SessionClaims {
     /// it on every action.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub grant: Option<String>,
+    /// The one job the token this session was redeemed from is for
+    /// (JI-01A7-0F). The guard lets such a session write that job and
+    /// the items it names, nothing else.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job: Option<String>,
 }
 
 /// The person an AI session acts for, as its token names them.
@@ -80,6 +85,9 @@ pub struct Delegator {
     /// What the token says they allow the AI member
     /// ([`SessionClaims::grant`]).
     pub grant: Option<String>,
+    /// The job the token is for, if it is for one
+    /// ([`SessionClaims::job`]).
+    pub job: Option<String>,
 }
 
 /// A session token: claims + Ed25519 signature.
@@ -176,6 +184,7 @@ pub fn create_session_for_ai(
     let Delegator {
         member: delegated_by,
         grant,
+        job,
     } = delegator;
     let now = Utc::now();
     let ttl = ttl.unwrap_or_else(|| Duration::hours(DEFAULT_TTL_HOURS));
@@ -200,6 +209,7 @@ pub fn create_session_for_ai(
         // wherever the session runs.
         delegated_by,
         grant,
+        job,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = ephemeral_keypair.sign(claims_json.as_bytes());
@@ -233,6 +243,7 @@ fn create_session_with_delegation_key(
         tty,
         delegated_by: None,
         grant: None,
+        job: None,
     };
     let claims_json = serde_json::to_string(&claims).expect("claims serialize");
     let signature = keypair.sign(claims_json.as_bytes());
