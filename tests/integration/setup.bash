@@ -287,7 +287,7 @@ start_platform() {
     local dir="$TEST_DIR/platform-$1"
     mkdir -p "$dir/.well-known"
     openssl genpkey -algorithm ed25519 -out "$dir/platform.pem" 2>/dev/null
-    PLATFORM_KEY=$(openssl pkey -in "$dir/platform.pem" -pubout -outform DER | tail -c 32 | xxd -p -c 64)
+    PLATFORM_KEY=$(openssl pkey -in "$dir/platform.pem" -pubout -outform DER | tail -c 32 | od -An -tx1 | tr -d " \n")
     echo "$PLATFORM_KEY" > "$dir/.well-known/joy-platform-key"
     # a CA of this test's own, and a certificate for localhost it signed
     if [ ! -f "$TEST_DIR/ca.pem" ]; then
