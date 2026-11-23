@@ -22,18 +22,17 @@
 use chrono::{DateTime, Duration, Utc};
 
 use super::redeem::{redeem_ai_session, RedeemedSession};
-use super::{delegation, platform, session, token, IdentityKeypair, PublicKey, Salt};
+use super::{platform, session, token, PublicKey};
 use crate::identity::Identity;
 use crate::migrations::ai_member_name;
 use crate::model::item::{Item, JobFeedback, JobToken, Status};
 use crate::model::project::{MemberKind, Project};
 
-/// How long a job's token holds.
-pub const DAYS: i64 = 7;
+pub use joy_token::job::{JobTokenRequest, SealedJobToken, DAYS};
 
 /// What binds the seal to this job of this project.
 fn info(project_id: &str, job_id: &str) -> Vec<u8> {
-    format!("joy-job-token|{project_id}|{job_id}").into_bytes()
+    joy_token::job::seal_info(project_id, job_id)
 }
 
 /// The AI member a job is assigned to, by its key in the project.
@@ -62,19 +61,18 @@ pub fn handed_over(project: &Project, job: &Item, from: &Status, by: &Identity) 
     }
 }
 
-/// Issue the token of `job` in the name of the person `opener_key` and
-/// seal it for the platform `domain`.
+/// What the token of `job` says when the person `opener_key` issues it
+/// now for the platform `domain`: read off the project, for whichever
+/// host then issues it with their seed ([`joy_token::job::issue`]).
 ///
-/// The person needs a delegation to the job's assignee; issuing a
-/// job's token never makes one. `opener_seed` is their identity seed:
-/// the delegation key derives from it and it seals the token.
-pub fn issue(
+/// The person needs a delegation to the job's assignee; issuing a job's
+/// token never makes one.
+pub fn request(
     project: &Project,
     job: &Item,
     opener_key: &str,
-    opener_seed: &[u8; 32],
     domain: &str,
-) -> Result<JobToken, String> {
+) -> Result<JobTokenRequest, String> {
     platform::fits(project)?;
     let assignee = ai_assignee(project, job)
         .ok_or_else(|| format!("job {} is not assigned to an AI member", job.id))?;
@@ -86,57 +84,48 @@ pub fn issue(
     let entry = opener.delegation_to(&assignee).ok_or_else(|| {
         format!("you have not delegated to {name} yet: joy auth token add {name}")
     })?;
-    let salt = entry
-        .delegation_salt
-        .as_deref()
-        .and_then(|hex| Salt::from_hex(hex).ok())
-        .ok_or_else(|| {
-            format!(
-                "your delegation to {name} is from an older joy: joy auth delegation rotate {name}"
-            )
-        })?;
-    let project_id = session::project_id_of(project);
-    let delegation_seed =
-        delegation::derive_delegation_seed(opener_seed, &salt, &project_id, &assignee);
-    let delegation_keypair = IdentityKeypair::from_seed(&delegation_seed);
-    if delegation_keypair.public_key().to_hex() != entry.delegation_verifier {
-        return Err(format!(
-            "your delegation to {name} does not match your key any more: \
-             joy auth delegation rotate {name}"
-        ));
-    }
-    let grant = super::grants::token_grant(opener, &assignee);
-    let issued = token::create_token(
-        token::TokenSigningKeys {
-            delegator: &IdentityKeypair::from_seed(opener_seed),
-            delegation: &delegation_keypair,
-            delegation_seed: &delegation_seed,
-        },
-        token::TokenIssueParams {
-            ai_member: &assignee,
-            human: opener_key,
-            project_id: &project_id,
-            ttl: Some(Duration::days(DAYS)),
-            grant: Some(&grant),
-            job: Some(&job.id),
-        },
-    );
-    let expires = issued
-        .claims
-        .expires
-        .unwrap_or_else(|| Utc::now() + Duration::days(DAYS));
-    let sealed = joy_crypt::sealed::seal_for(
-        opener_seed,
-        &platform_key,
-        &info(&project_id, &job.id),
-        token::encode_token(&issued).as_bytes(),
-    );
-    Ok(JobToken {
+    let delegation_salt = entry.delegation_salt.clone().ok_or_else(|| {
+        format!("your delegation to {name} is from an older joy: joy auth delegation rotate {name}")
+    })?;
+    Ok(JobTokenRequest {
+        ai_member: assignee.clone(),
+        opener: opener_key.to_string(),
+        project_id: session::project_id_of(project),
+        delegation_salt,
+        delegation_verifier: entry.delegation_verifier.clone(),
+        grant: super::grants::token_grant(opener, &assignee),
+        job: job.id.clone(),
         platform: domain.to_string(),
-        expires,
-        opener: opener_key.to_string().into(),
-        sealed,
+        platform_key: platform_key.to_hex(),
     })
+}
+
+/// A sealed token as the job carries it.
+pub fn carried(request: &JobTokenRequest, sealed: SealedJobToken) -> JobToken {
+    JobToken {
+        platform: request.platform.clone(),
+        expires: sealed.expires,
+        opener: request.opener.clone().into(),
+        sealed: sealed.sealed,
+    }
+}
+
+/// Issue the token of `job` in the name of the person `opener_key` and
+/// seal it for the platform `domain`, for a host that holds their
+/// identity seed: the delegation key derives from it and it seals the
+/// token.
+pub fn issue(
+    project: &Project,
+    job: &Item,
+    opener_key: &str,
+    opener_seed: &[u8; 32],
+    domain: &str,
+) -> Result<JobToken, String> {
+    let request = request(project, job, opener_key, domain)?;
+    let name = ai_member_name::read(&request.ai_member).to_string();
+    let sealed = joy_token::job::issue(opener_seed, &request)
+        .map_err(|e| format!("{e}: joy auth delegation rotate {name}"))?;
+    Ok(carried(&request, sealed))
 }
 
 /// Whether `token` can stand at `job` as the token `opener_key` issued
@@ -241,21 +230,21 @@ fn unseal(
     String::from_utf8(plain).map_err(|_| "the job's token is not a token".to_string())
 }
 
-/// A session for one round of `job` on the platform `domain`: the seal
-/// opened with the platform's key, the token redeemed against the
-/// project as it stands, and the session held to what the job says.
+/// The token of `job` for one round on the platform `domain`, in clear
+/// and checked, with what redeeming it gives: the seal opened with the
+/// platform's key, the token redeemed against the project as it stands,
+/// and held to what the job says.
 ///
 /// The reason of a refusal is what the job is sent back to new with:
 /// the token expired or is not the opener's, their delegation was
-/// rotated or removed, or it is a token for another job or member. That
-/// their GRANT changed shows at the session's first write, where the
-/// guard holds the token's grant against their entry.
-pub fn session(
+/// rotated or removed, their grant changed since, or it is a token for
+/// another job or member.
+pub fn open(
     project: &Project,
     job: &Item,
     domain: &str,
     platform_seed: &[u8; 32],
-) -> Result<RedeemedSession, String> {
+) -> Result<(String, RedeemedSession), String> {
     let token_str = unseal(project, job, domain, platform_seed, Utc::now())?;
     let claims = token::decode_token(&token_str)
         .map_err(|e| e.to_string())?
@@ -284,7 +273,17 @@ pub fn session(
             .unwrap_or_default(),
         redeemed.token.claims.grant.as_deref(),
     )?;
-    Ok(redeemed)
+    Ok((token_str, redeemed))
+}
+
+/// [`open`], for a caller that wants the session alone.
+pub fn session(
+    project: &Project,
+    job: &Item,
+    domain: &str,
+    platform_seed: &[u8; 32],
+) -> Result<RedeemedSession, String> {
+    open(project, job, domain, platform_seed).map(|(_, redeemed)| redeemed)
 }
 
 /// The identity a session of a job's token acts with.
@@ -302,8 +301,8 @@ pub fn identity_of(redeemed: &RedeemedSession) -> Identity {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use crate::auth::generate_salt;
     use crate::auth::vouch::{self, Occasion};
+    use crate::auth::{delegation, generate_salt, IdentityKeypair};
     use crate::guard::{Action, Guard, Verdict};
     use crate::model::item::{Assignee, Capability, ItemType, JobSpec, Priority};
     use crate::model::project::{
