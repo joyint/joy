@@ -110,6 +110,16 @@ pub fn carried(request: &JobTokenRequest, sealed: SealedJobToken) -> JobToken {
     }
 }
 
+/// Issue the token a [`request`] describes with the person's seed, as
+/// the job carries it: for a host that got the request from elsewhere
+/// (a browser from its platform).
+pub fn issue_from(opener_seed: &[u8; 32], request: &JobTokenRequest) -> Result<JobToken, String> {
+    let name = ai_member_name::read(&request.ai_member).to_string();
+    let sealed = joy_token::job::issue(opener_seed, request)
+        .map_err(|e| format!("{e}: joy auth delegation rotate {name}"))?;
+    Ok(carried(request, sealed))
+}
+
 /// Issue the token of `job` in the name of the person `opener_key` and
 /// seal it for the platform `domain`, for a host that holds their
 /// identity seed: the delegation key derives from it and it seals the
@@ -121,11 +131,7 @@ pub fn issue(
     opener_seed: &[u8; 32],
     domain: &str,
 ) -> Result<JobToken, String> {
-    let request = request(project, job, opener_key, domain)?;
-    let name = ai_member_name::read(&request.ai_member).to_string();
-    let sealed = joy_token::job::issue(opener_seed, &request)
-        .map_err(|e| format!("{e}: joy auth delegation rotate {name}"))?;
-    Ok(carried(&request, sealed))
+    issue_from(opener_seed, &request(project, job, opener_key, domain)?)
 }
 
 /// Whether `token` can stand at `job` as the token `opener_key` issued
