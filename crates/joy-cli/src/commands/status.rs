@@ -49,6 +49,10 @@ pub struct StatusArgs {
     #[arg(long, conflicts_with = "items")]
     no_items: bool,
 
+    /// When opening a job: the platform that runs it
+    #[arg(long, value_name = "DOMAIN")]
+    platform: Option<String>,
+
     /// Set when invoked via `joy stop`: restricts the transition to
     /// in-progress -> open (the symmetric counterpart of `joy start`).
     #[arg(skip)]
@@ -62,7 +66,15 @@ impl StatusArgs {
             status,
             items: false,
             no_items: false,
+            platform: None,
             via_stop: false,
+        }
+    }
+
+    pub fn approve(id: String, platform: Option<String>) -> Self {
+        Self {
+            platform,
+            ..Self::new(id, "open".to_string())
         }
     }
 
@@ -263,6 +275,19 @@ pub fn run(args: StatusArgs) -> Result<()> {
     let log_user = ctx.log_user();
     let before = item.clone();
     item.status = new_status.clone();
+    // A job handed to its AI assignee gets its token here, in the write
+    // that hands it over.
+    if matches!(item.item_type, ItemType::Job) {
+        crate::job_handover::step(
+            &ctx.root,
+            &ctx.identity,
+            &mut item,
+            &old_status,
+            args.platform.as_deref(),
+        )?;
+    } else if args.platform.is_some() {
+        anyhow::bail!("--platform is only valid for job items");
+    }
     // A decision that is properly closed becomes the binding rule. Default its
     // validity to accepted unless it was set explicitly (e.g. rejected).
     if matches!(new_status, Status::Closed)

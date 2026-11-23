@@ -288,6 +288,7 @@ A `job` is an assignment of work over a scope of items, executed by its assignee
 - Job gates require the `jobs` capability, deliberately separate from `review`: accepting delivered job work and accepting the product items can be different people.
 - Closing a job does not close its scope items; `joy close <JOB-ID>` asks per item (`--items` / `--no-items` in scripts). A job whose execution finally failed sits in `review` carrying the error.
 - Execution loops are recorded as the job's activity (outcome, tokens, cost, branch); retries stay `in-progress`, there is no extra status axis.
+- A job of an AI member runs on a platform, with a token the person who opened it issued for that job (`runs_on` and the sealed token at the job). In a job round your session is bound to that job: you can write the job itself and the items in its scope (and what lies under them), nothing else, and you create no new items. A write outside is refused with "this session is for job <ID>"; say so in the job's comments instead of working around it.
 
 ## Commit messages
 

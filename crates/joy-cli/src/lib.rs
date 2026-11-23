@@ -15,6 +15,7 @@ mod crypt_session;
 mod editor;
 mod effort;
 mod forge;
+mod job_handover;
 mod member_names;
 mod member_resolver;
 mod migrations;
@@ -86,6 +87,7 @@ Project & Members:
   ai       AI tool integration
   chat     Inspect the project chats (.joy/chats)
   forge    Sign in to a forge, and see which connector answers
+  job      Take a job back from the platform that runs it
 
 Maintenance:
   update       Update the joy binary and sync this repo's joy-managed state
@@ -194,7 +196,7 @@ enum Commands {
     /// Show milestone roadmap (alias for ls --tree --group milestone)
     Roadmap(RoadmapArgs),
     /// Shortcut: approve an item (new -> open)
-    Approve(ShortcutArgs),
+    Approve(ApproveArgs),
     /// Shortcut: set item status to in-progress
     Start(ShortcutArgs),
     /// Shortcut: stop an in-progress item (in-progress -> open)
@@ -224,6 +226,8 @@ enum Commands {
     Ai(commands::ai::AiArgs),
     /// Inspect the project chats (.joy/chats)
     Chat(commands::chat::ChatArgs),
+    /// Take a job back from the platform that runs it
+    Job(commands::job::JobArgs),
     /// Authenticate (enter passphrase to start a session)
     Auth(commands::auth::AuthArgs),
     /// End the current session
@@ -300,6 +304,17 @@ struct ShortcutArgs {
     /// Item ID (e.g. IT-0001)
     #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
     id: String,
+}
+
+#[derive(clap::Args)]
+struct ApproveArgs {
+    /// Item ID (e.g. IT-0001)
+    #[arg(add = clap_complete::engine::ArgValueCompleter::new(complete::complete_item_id))]
+    id: String,
+
+    /// For a job: the platform that runs it
+    #[arg(long, value_name = "DOMAIN")]
+    platform: Option<String>,
 }
 
 #[derive(clap::Args)]
@@ -696,7 +711,7 @@ pub fn cli_main() -> anyhow::Result<()> {
                 commands::ls::run(commands::ls::LsArgs::roadmap(args.all))
             }
             Some(Commands::Approve(args)) => commands::status::run(
-                commands::status::StatusArgs::new(args.id, "open".to_string()),
+                commands::status::StatusArgs::approve(args.id, args.platform),
             ),
             Some(Commands::Start(args)) => commands::status::run(
                 commands::status::StatusArgs::new(args.id, "in-progress".to_string()),
@@ -726,6 +741,7 @@ pub fn cli_main() -> anyhow::Result<()> {
             Some(Commands::Config(_)) => unreachable!("handled above"),
             Some(Commands::Ai(args)) => commands::ai::run(args),
             Some(Commands::Chat(args)) => commands::chat::run(args),
+            Some(Commands::Job(args)) => commands::job::run(args),
             Some(Commands::Auth(args)) => commands::auth::run(args),
             Some(Commands::Deauth(args)) => commands::deauth::run(args),
             Some(Commands::Crypt(args)) => commands::crypt::run(args),

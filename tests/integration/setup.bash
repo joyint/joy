@@ -110,6 +110,10 @@ setup() {
 
 # Clean up after each test
 teardown() {
+    # the platforms a case started (`start_platform`)
+    if [ -f "$TEST_DIR/server.pids" ]; then
+        while read -r pid; do kill "$pid" 2>/dev/null || true; done < "$TEST_DIR/server.pids"
+    fi
     cd /
     rm -rf "$TEST_DIR"
     unset HOME
@@ -269,4 +273,53 @@ member_file() {
         fi
     done
     return 0
+}
+
+# A platform that runs jobs (JI-01A7-0F), as joy meets one: a local
+# HTTPS server that serves a public key at /.well-known/joy-platform-key,
+# with a certificate from a CA this repository's git config trusts
+# (http.sslCAInfo), the way a company CA is trusted. joy honours that on
+# Linux only, so a case that needs a platform is skipped elsewhere.
+# $1 names the platform among those of one case.
+# Sets PLATFORM (its domain) and PLATFORM_KEY.
+start_platform() {
+    [ "$(uname)" = "Linux" ] || skip "a CA file from git config is honoured on Linux only"
+    local dir="$TEST_DIR/platform-$1"
+    mkdir -p "$dir/.well-known"
+    openssl genpkey -algorithm ed25519 -out "$dir/platform.pem" 2>/dev/null
+    PLATFORM_KEY=$(openssl pkey -in "$dir/platform.pem" -pubout -outform DER | tail -c 32 | xxd -p -c 64)
+    echo "$PLATFORM_KEY" > "$dir/.well-known/joy-platform-key"
+    # a CA of this test's own, and a certificate for localhost it signed
+    if [ ! -f "$TEST_DIR/ca.pem" ]; then
+        openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj "/CN=joy test CA" \
+            -keyout "$TEST_DIR/ca.key" -out "$TEST_DIR/ca.pem" 2>/dev/null
+        git config http.sslCAInfo "$TEST_DIR/ca.pem"
+    fi
+    openssl req -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+        -keyout "$dir/tls.key" -out "$dir/tls.csr" 2>/dev/null
+    printf 'subjectAltName=DNS:localhost\nbasicConstraints=CA:FALSE\n' > "$dir/tls.ext"
+    openssl x509 -req -in "$dir/tls.csr" -CA "$TEST_DIR/ca.pem" -CAkey "$TEST_DIR/ca.key" \
+        -CAcreateserial -days 1 -extfile "$dir/tls.ext" -out "$dir/tls.crt" 2>/dev/null
+    python3 - "$dir" > "$dir/port" 2> "$dir/server.log" <<'PY' &
+import http.server, ssl, sys, os, functools
+root = sys.argv[1]
+handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=root)
+server = http.server.HTTPServer(("127.0.0.1", 0), handler)
+ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+ctx.load_cert_chain(os.path.join(root, "tls.crt"), os.path.join(root, "tls.key"))
+server.socket = ctx.wrap_socket(server.socket, server_side=True)
+print(server.server_address[1], flush=True)
+server.serve_forever()
+PY
+    echo $! >> "$TEST_DIR/server.pids"
+    while [ ! -s "$dir/port" ]; do
+        kill -0 "$(tail -1 "$TEST_DIR/server.pids")" || { cat "$dir/server.log"; return 1; }
+    done
+    PLATFORM="localhost:$(cat "$dir/port")"
+}
+
+# Add a platform to the project, signed for by the founder.
+add_platform() {
+    start_platform "${1:-one}"
+    joy project member add --platform "https://$PLATFORM" --passphrase "$TEST_PASSPHRASE" >/dev/null
 }

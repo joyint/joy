@@ -181,7 +181,12 @@ struct MemberShowArgs {
 #[derive(clap::Args)]
 struct MemberAddArgs {
     /// Member: a person's address, or a name for an AI member
-    id: String,
+    #[arg(required_unless_present = "platform")]
+    id: Option<String>,
+
+    /// Add a platform that runs jobs, by its https address.
+    #[arg(long, value_name = "URL", conflicts_with_all = ["id", "capabilities", "level", "adapter", "model", "with_token"])]
+    platform: Option<String>,
 
     /// Capabilities, or `all`. Default: the work capabilities, create and assign.
     #[arg(short = 'c', long, num_args = 1.., value_delimiter = ',')]
@@ -824,8 +829,8 @@ fn show_project(project: &Project, root: &std::path::Path) {
     );
 
     if project.has_members() {
-        println!("\n{}:", color::label("Members"));
-        print_members_table(project, root);
+        println!();
+        print_member_blocks(project, root);
     }
 
     // Workflow visualization with gates
@@ -859,7 +864,8 @@ pub(crate) fn add_ai_member(
     let mut ctx = Context::load()?;
     let mut project = store::load_project(&ctx.root)?;
     let add = MemberAddArgs {
-        id: name.to_string(),
+        id: Some(name.to_string()),
+        platform: None,
         capabilities: Vec::new(),
         level: None,
         adapter,
@@ -873,6 +879,62 @@ pub(crate) fn add_ai_member(
         &mut project,
         &mut ctx,
     )
+}
+
+/// What a platform serves as its public key, fetched with the proxy and
+/// the certificates git is set up with.
+fn fetch_platform_key(root: &std::path::Path, url: &str) -> Result<String> {
+    let git = joy_forge_net::gitconfig::GitConfig::load(Some(root));
+    let trust = joy_forge_net::trust::decide(None, &git, &mut |sentence| {
+        eprintln!("joy: {sentence}");
+    });
+    let http = joy_forge_net::Http::new(trust, git, format!("joy/{}", env!("CARGO_PKG_VERSION")));
+    let answer = http.get(url).call().map_err(|e| anyhow::anyhow!("{e}"))?;
+    if !answer.ok() {
+        bail!(
+            "{url} answered {}: that is no platform that runs jobs",
+            answer.status
+        );
+    }
+    joy_core::auth::platform::read_key(&answer.body).map_err(|why| anyhow::anyhow!(why))
+}
+
+/// `joy project member add --platform <URL>`: fetch the platform's key
+/// and add it as a member the acting manager signs for.
+fn add_platform(url: &str, project: &mut Project, ctx: &mut Context) -> Result<()> {
+    use joy_core::auth::platform;
+    platform::fits(project).map_err(|why| anyhow::anyhow!(why))?;
+    let domain = platform::domain_of(url).map_err(|why| anyhow::anyhow!(why))?;
+    if project.has_member_key(&domain) {
+        bail!("member {domain} already exists");
+    }
+    let key = fetch_platform_key(&ctx.root, &platform::key_url(&domain))?;
+    put_platform(&domain, &key, project, ctx)?;
+    if crate::output::is_json() {
+        return crate::output::emit(serde_json::json!({ "added": domain, "key": key }));
+    }
+    println!("Added platform {}", color::user(&domain));
+    println!("  key {key}");
+    Ok(())
+}
+
+/// Put the platform `domain` with its key into the project, signed for
+/// by the acting manager.
+fn put_platform(domain: &str, key: &str, project: &mut Project, ctx: &mut Context) -> Result<()> {
+    let signer = joy_core::identity::acting_human_key(&ctx.root)?;
+    let unlocked = crate::auth_gate::unlock(&ctx.root, project, &signer)?;
+    let mut member = joy_core::auth::platform::new_member(key);
+    joy_core::auth::vouch::sign(
+        project,
+        &signer,
+        &unlocked.keypair,
+        domain,
+        &mut member,
+        joy_core::auth::vouch::Occasion::New,
+    );
+    project.register_member(domain, member)?;
+    store::save_project(&ctx.root, project)?;
+    Ok(())
 }
 
 fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Result<()> {
@@ -893,7 +955,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             if !project.has_members() {
                 println!("No members configured.");
             } else {
-                print_members_table(project, &ctx.root);
+                print_member_blocks(project, &ctx.root);
             }
         }
         Some(MemberCommand::Show(a)) => {
@@ -1040,8 +1102,12 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
         }
         Some(MemberCommand::Add(a)) => {
             crate::auth_gate::enforce(ctx, &Action::ManageProject, "project")?;
-            if project.has_member_key(&a.id) {
-                bail!("member {} already exists", a.id);
+            if let Some(url) = a.platform.as_deref() {
+                return add_platform(url, project, ctx);
+            }
+            let id = a.id.clone().unwrap_or_default();
+            if project.has_member_key(&id) {
+                bail!("member {} already exists", id);
             }
             // In anonymous mode a human member must be onboarded through the OTP
             // enrollment flow (opaque id + members.yaml entry + zone-key wrap),
@@ -1050,17 +1116,17 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // documented path is to add the member in open mode and switch back.
             // AI members carry no PII and keep their readable id, so they are fine.
             if project.privacy_mode() == PrivacyMode::Anonymous
-                && !joy_core::model::project::is_ai_member(&a.id)
+                && !joy_core::model::project::is_ai_member(&id)
             {
                 bail!(
                     "cannot add a human member while privacy is anonymous: it would write \
                      the e-mail in cleartext.\nAdd them in open mode and switch back:\n  \
                      joy project set privacy open\n  joy project member add {}\n  \
                      joy project set privacy anonymous",
-                    a.id
+                    id
                 );
             }
-            let is_ai = joy_core::model::project::is_ai_member(&a.id);
+            let is_ai = joy_core::model::project::is_ai_member(&id);
             if !is_ai && (a.level.is_some() || a.adapter.is_some() || a.model.is_some()) {
                 bail!("--level, --adapter and --model are for an AI member");
             }
@@ -1120,7 +1186,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             if is_ai {
                 joy_core::auth::grants::change_maximum(&mut new_member, None, level)?;
                 // The tool that runs it: said, or the one its name names.
-                let name = a.id.as_str();
+                let name = id.as_str();
                 new_member.adapter = match a.adapter.as_deref() {
                     Some(adapter) => Some(
                         joy_ai::naming::tool_adapter(adapter)
@@ -1135,11 +1201,11 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                 project,
                 &attester_key,
                 attester_kp,
-                &a.id,
+                &id,
                 &mut new_member,
                 joy_core::auth::vouch::Occasion::New,
             );
-            project.register_member(&a.id, new_member)?;
+            project.register_member(&id, new_member)?;
 
             store::save_project(&ctx.root, project)?;
 
@@ -1148,7 +1214,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             // nothing is asked a second time.
             let token_result: Option<(String, i64)> = if is_ai && a.with_token {
                 Some(crate::commands::auth::create_delegation_token(
-                    &ctx.root, &attester, &a.id, None,
+                    &ctx.root, &attester, &id, None,
                 )?)
             } else {
                 None
@@ -1165,13 +1231,13 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     ttl_hours: Option<i64>,
                 }
                 crate::output::emit(AddPayload {
-                    member: &a.id,
+                    member: &id,
                     otp: otp_opt.as_deref(),
                     token: token_result.as_ref().map(|(t, _)| t.as_str()),
                     ttl_hours: token_result.as_ref().map(|(_, h)| *h),
                 })?;
             } else {
-                println!("Added member {}", color::user(&a.id));
+                println!("Added member {}", color::user(&id));
                 if let Some((ref token, _hours)) = token_result {
                     println!();
                     println!("\"{}\"", token);
@@ -1179,7 +1245,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     println!();
                     println!("Next steps:");
                     println!("  1. Issue a delegation token:");
-                    println!("       joy auth token add {}", a.id);
+                    println!("       joy auth token add {}", id);
                     println!("  2. Share the token with the AI in chat.");
                     println!("  3. The AI redeems it with:");
                     println!("       joy auth --token <TOKEN> --json");
@@ -1195,7 +1261,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
                     println!();
                     println!(
                         "Share the OTP with {} via a trusted channel. They redeem it with:",
-                        a.id
+                        id
                     );
                     println!("  joy auth --otp {otp}");
                 }
@@ -1204,7 +1270,7 @@ fn run_member(args: MemberArgs, project: &mut Project, ctx: &mut Context) -> Res
             let log_user = ctx.log_user();
             joy_core::git_ops::auto_git_post_command(
                 &ctx.root,
-                &format!("project member add {}", a.id),
+                &format!("project member add {}", id),
                 &log_user,
             );
         }
@@ -1609,8 +1675,39 @@ pub(crate) fn derive_acting_keypair(
     Ok(crate::auth_gate::unlock(root, project, member_key)?.keypair)
 }
 
-fn print_members_table(project: &Project, root: &std::path::Path) {
+/// The members in their own blocks (JI-01A7-0F): persons, AI members
+/// and platforms, each under its word, an empty block not shown.
+fn print_member_blocks(project: &Project, root: &std::path::Path) {
+    use joy_core::model::project::MemberKind;
+    let mut first = true;
+    for (kind, label) in [
+        (MemberKind::Person, "Persons"),
+        (MemberKind::Ai, "AI members"),
+        (MemberKind::Platform, "Platforms"),
+    ] {
+        if !project.member_values().any(|member| member.kind == kind) {
+            continue;
+        }
+        if !first {
+            println!();
+        }
+        first = false;
+        println!("{}:", color::label(label));
+        print_members_table(project, root, kind);
+    }
+}
+
+fn print_members_table(
+    project: &Project,
+    root: &std::path::Path,
+    kind: joy_core::model::project::MemberKind,
+) {
     use joy_core::model::item::Capability;
+
+    let members: Vec<(&String, &Member)> = project
+        .members()
+        .filter(|(_, member)| member.kind == kind)
+        .collect();
 
     let cap_headers: &[(&str, Capability)] = &[
         ("con", Capability::Conceive),
@@ -1631,8 +1728,9 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
 
     // Resolve auth status for each member
     let project_id = joy_core::auth::session::project_id(root).unwrap_or_default();
-    let auth_statuses: Vec<(&str, String)> = project
-        .members()
+    let auth_statuses: Vec<(&str, String)> = members
+        .iter()
+        .copied()
         .map(|(id, member)| {
             let auth = member_auth_status(id, member, project, &project_id, use_emoji);
             (id.as_str(), auth)
@@ -1649,9 +1747,9 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
     // Resolve each member id to its display value (ADR-042): name/e-mail in
     // anonymous mode, the key itself in open mode. Column width is sized on the
     // resolved value so the table never lays out around a raw opaque id.
-    let display_names: Vec<String> = project
-        .member_keys()
-        .map(|id| joy_core::member_ref::resolve_str(id))
+    let display_names: Vec<String> = members
+        .iter()
+        .map(|(id, _)| joy_core::member_ref::resolve_str(id))
         .collect();
     let max_member = display_names
         .iter()
@@ -1699,8 +1797,9 @@ fn print_members_table(project: &Project, root: &std::path::Path) {
     println!();
 
     // Rows
-    for (((_id, member), (_, auth)), display_name) in project
-        .members()
+    for (((_id, member), (_, auth)), display_name) in members
+        .iter()
+        .copied()
         .zip(auth_statuses.iter())
         .zip(display_names.iter())
     {

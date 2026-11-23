@@ -27,9 +27,13 @@ make_job() {
     JOB_ID=$(joy ls -J 2>/dev/null | grep "Deliver scoped work" | awk '{print $1}')
 }
 
+# A job for claude that can be opened: the founder delegated to claude,
+# and a platform runs the project's jobs (JI-01A7-0F).
 make_job_for_claude() {
     make_job "$1"
     joy assign "$JOB_ID" claude >/dev/null
+    joy auth token add claude --passphrase "$TEST_PASSPHRASE" >/dev/null
+    add_platform
 }
 
 @test "a job that names no level runs at proposing" {

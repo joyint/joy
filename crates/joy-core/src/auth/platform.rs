@@ -49,7 +49,9 @@ pub fn domain_of(url: &str) -> Result<String, String> {
         .strip_prefix("https://")
         .ok_or_else(|| "a platform is added by its https address".to_string())?;
     let domain = rest.split(['/', '?', '#']).next().unwrap_or_default();
-    let plain = !domain.is_empty()
+    // A dot or a port: what tells a domain from the name of an AI member
+    // where only an id is at hand (`joy_model::is_ai_member`).
+    let plain = (domain.contains('.') || domain.contains(':'))
         && !domain.contains('@')
         && domain
             .chars()
@@ -177,6 +179,9 @@ mod tests {
             "a platform is added by its https address"
         );
         assert!(domain_of("https://").is_err());
+        assert!(domain_of("https://intranet").is_err());
+        assert!(!joy_model::is_ai_member("app.joyint.com"));
+        assert!(!joy_model::is_ai_member("localhost:8443"));
         assert!(domain_of("https://user@evil.example").is_err());
         assert_eq!(
             key_url("app.joyint.com"),

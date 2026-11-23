@@ -38,7 +38,11 @@ pub fn is_ai_member(id: &str) -> bool {
     if migrations::ai_member_name::is_legacy(id) {
         return true;
     }
-    !id.is_empty() && !id.contains('@') && !id.starts_with("m-")
+    // A platform is known by its domain (JI-01A7-0F), which has a dot
+    // or a port: where only an id is at hand, it is never taken for an
+    // AI member.
+    let a_domain = id.contains('.') || id.contains(':');
+    !id.is_empty() && !id.contains('@') && !id.starts_with("m-") && !a_domain
 }
 
 #[cfg(test)]
