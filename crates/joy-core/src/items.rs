@@ -416,6 +416,15 @@ pub fn save_item(root: &Path, item: &Item) -> Result<(), JoyError> {
     if says_until {
         store::raise_format(root, store::FORMAT_JOB_UNTIL)?;
     }
+    // The same for a job that names its platform or carries its token
+    // (JI-01A7-0F): a joy before would lose both.
+    let on_a_platform = item
+        .job
+        .as_ref()
+        .is_some_and(|job| job.runs_on.is_some() || job.token.is_some());
+    if on_a_platform {
+        store::raise_format(root, store::FORMAT_JOB_TOKEN)?;
+    }
     write_item_file(&path, item)?;
     let sub = if item.item_type == ItemType::Job {
         store::JOBS_DIR

@@ -317,6 +317,8 @@ mod tests {
             activity: last.map(|o| vec![activity(o, 0)]).unwrap_or_default(),
             base_branch: None,
             result_branch: None,
+            runs_on: None,
+            token: None,
         });
         item
     }

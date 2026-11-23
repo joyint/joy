@@ -261,6 +261,15 @@ fn print_jobs_table(jobs: &[&Item]) {
             .unwrap_or_default()
     };
 
+    // Where the job runs; the column is there once a job names a
+    // platform.
+    let platform_cell = |i: &Item| -> String {
+        joy_core::auth::job_token::runs_on(i)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let on_platforms = jobs.iter().any(|i| !platform_cell(i).is_empty());
+
     let col_raw = |header: &str, f: &dyn Fn(&Item) -> String| -> usize {
         jobs.iter()
             .map(|i| display_width(&f(i)))
@@ -277,6 +286,11 @@ fn print_jobs_table(jobs: &[&Item]) {
     let w_cost = col_raw("COST", &job_cost_cell);
     let w_fbk = col_raw("FBK", &fbk_cell);
     let w_last = col_raw("LAST", &last_cell);
+    let w_platform = if on_platforms {
+        col_raw("PLATFORM", &platform_cell)
+    } else {
+        0
+    };
 
     let fixed_width = w_id
         + 2
@@ -293,7 +307,8 @@ fn print_jobs_table(jobs: &[&Item]) {
         + w_fbk
         + 2
         + w_last
-        + 2;
+        + 2
+        + if on_platforms { w_platform + 2 } else { 0 };
     let min_title_width = 20;
     let title_width = if term_width > fixed_width {
         (term_width - fixed_width).max(min_title_width)
@@ -303,8 +318,15 @@ fn print_jobs_table(jobs: &[&Item]) {
     let sep_len = term_width.min(fixed_width + title_width);
 
     println!("{}", color::label(&"-".repeat(sep_len)));
+    let platform_column = |cell: String, raw: &str| -> String {
+        if on_platforms {
+            format!("{}  ", pad_colored(&cell, raw, w_platform))
+        } else {
+            String::new()
+        }
+    };
     println!(
-        "{}  {}  {}  {}  {}  {}  {}  {}  {}",
+        "{}  {}  {}  {}  {}  {}  {}  {}  {}{}",
         pad_colored(&color::label("ID"), "ID", w_id),
         pad_colored(&color::label("STA"), "STA", w_status),
         pad_colored(&color::label("PRI"), "PRI", w_prio),
@@ -313,6 +335,7 @@ fn print_jobs_table(jobs: &[&Item]) {
         pad_colored(&color::label("COST"), "COST", w_cost),
         pad_colored(&color::label("FBK"), "FBK", w_fbk),
         pad_colored(&color::label("LAST"), "LAST", w_last),
+        platform_column(color::label("PLATFORM"), "PLATFORM"),
         color::label("TITLE"),
     );
     println!("{}", color::label(&"-".repeat(sep_len)));
@@ -325,8 +348,9 @@ fn print_jobs_table(jobs: &[&Item]) {
         let cost = job_cost_cell(item);
         let fbk = fbk_cell(item);
         let last = last_cell(item);
+        let platform = platform_cell(item);
         println!(
-            "{}  {}  {}  {}  {}  {}  {}  {}  {}",
+            "{}  {}  {}  {}  {}  {}  {}  {}  {}{}",
             pad_colored(&color::id(&item.id), &item.id, w_id),
             pad_colored(&status_str, &status_raw, w_status),
             pad_colored(&prio_str, &prio_raw, w_prio),
@@ -335,6 +359,7 @@ fn print_jobs_table(jobs: &[&Item]) {
             pad_colored(&cost, &cost, w_cost),
             pad_colored(&fbk, &fbk, w_fbk),
             pad_colored(&last, &last, w_last),
+            platform_column(platform.clone(), &platform),
             truncate_title(&item.title, title_width),
         );
     }

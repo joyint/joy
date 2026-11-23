@@ -221,6 +221,8 @@ pub fn run(args: AddArgs) -> Result<()> {
             activity: vec![],
             base_branch: None,
             result_branch: None,
+            runs_on: None,
+            token: None,
         });
     }
 

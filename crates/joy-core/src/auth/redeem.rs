@@ -149,6 +149,7 @@ pub fn redeem_ai_session(
         session::Delegator {
             member: delegated_by_at_rest,
             grant: token::grant_scope(&claims).map(str::to_string),
+            job: token::job_scope(&claims).map(str::to_string),
         },
     );
 
@@ -216,6 +217,7 @@ mod tests {
                 project_id: PID,
                 ttl: None,
                 grant: None,
+                job: None,
             },
         );
         encode_token(&token)
@@ -244,6 +246,7 @@ mod tests {
                 project_id: PID,
                 ttl: None,
                 grant: None,
+                job: None,
             },
         ));
         let redeemed = redeem_ai_session(&project, PID, &token).expect("redeems by key");
@@ -262,6 +265,7 @@ mod tests {
                 project_id: PID,
                 ttl: None,
                 grant: None,
+                job: None,
             },
         ));
         assert!(redeem_ai_session(&project, PID, &bogus).is_err());

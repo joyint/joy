@@ -52,9 +52,14 @@ fn git(e: git2::Error) -> JoyError {
 /// The project's members that can hold a key, in the shape
 /// [`joy_chat::sealed`] wants. Who among them a given chat is for is the
 /// pure crate's rule ([`sealed::recipients`]), not this file's.
+/// The members a chat can be sealed for: everybody with a key who
+/// reads chats. A platform member has a key and is none of them
+/// (JI-01A7-0F): it runs jobs, and "everyone" in a team chat never
+/// meant the machine.
 fn sealing_members(project: &Project) -> Vec<sealed::Member> {
     project
         .members()
+        .filter(|(_, m)| m.kind != joy_core::model::project::MemberKind::Platform)
         .filter_map(|(id, m)| {
             let hex = m.verify_key.as_ref()?;
             let key = joy_core::auth::PublicKey::from_hex(hex).ok()?;
@@ -535,6 +540,36 @@ mod tests {
     use joy_core::auth::IdentityKeypair;
     use joy_core::member_ref::MemberRef;
     use joy_core::model::project::{Member, MemberCapabilities};
+
+    /// A platform member has a key and reads no chat (JI-01A7-0F): the
+    /// "everyone" of a team chat is the persons and the AI members.
+    #[test]
+    fn a_platform_member_is_nobody_a_chat_is_sealed_for() {
+        use joy_core::auth::IdentityKeypair;
+        use joy_core::model::project::{Member, MemberCapabilities};
+        let key = |byte: u8| {
+            IdentityKeypair::from_seed(&[byte; 32])
+                .public_key()
+                .to_hex()
+        };
+        let mut project = Project::new("Shop".into(), Some("SH".into()));
+        let mut person = Member::person(MemberCapabilities::All);
+        person.verify_key = Some(key(1));
+        project
+            .register_member("founder@example.com", person)
+            .unwrap();
+        project
+            .register_member(
+                "app.example.com",
+                joy_core::auth::platform::new_member(&key(9)),
+            )
+            .unwrap();
+        let ids: Vec<String> = sealing_members(&project)
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(ids, vec!["founder@example.com".to_string()]);
+    }
 
     fn ts(s: u32) -> DateTime<Utc> {
         format!("2026-07-19T00:00:{s:02}Z").parse().unwrap()

@@ -326,6 +326,10 @@ pub fn run(args: EditArgs) -> Result<()> {
                 .parse::<JobFeedback>()
                 .map_err(|e: String| anyhow::anyhow!("{}", e))?;
             item.job.get_or_insert_with(empty_job_spec).feedback = Some(parsed);
+            // The answer to the AI's question hands the job back to it,
+            // with a fresh token.
+            let stands = item.status.clone();
+            crate::job_handover::step(&ctx.root, &ctx.identity, &mut item, &stands, None)?;
         }
         changed = true;
     }
@@ -402,6 +406,8 @@ fn empty_job_spec() -> JobSpec {
         activity: Vec::new(),
         base_branch: None,
         result_branch: None,
+        runs_on: None,
+        token: None,
     }
 }
 

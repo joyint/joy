@@ -232,6 +232,7 @@ fn a_delegation_session(root: &Path, human: &str, ai: &str) -> String {
             project_id: &project_id,
             ttl: None,
             grant: None,
+            job: None,
         },
     ));
     let redeemed = redeem_ai_session(&project, &project_id, &token).expect("the token redeems");
