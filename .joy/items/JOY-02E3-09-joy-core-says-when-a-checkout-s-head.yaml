@@ -1,12 +1,16 @@
 id: JOY-02E3-09
 title: joy-core says when a checkout's HEAD was committed, for the platform's project list
 type: task
-status: review
+status: closed
 priority: medium
 capabilities:
 - implement
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-11-26T09:02:20.361958901Z
-updated: 2026-11-26T09:03:01.617141181Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-11-26T09:41:34.359544054Z
+updated_by: horst.schwarz@joydev.com
 description: The platform's project list shows each project's last change (JP-0184-A6). Its guard-vcs keeps git2 inside joy-core/src/vcs, so the HEAD commit time comes from forge::head_time next to head_author and head_oid.
+comments:
+- author: horst.schwarz@joydev.com
+  date: 2026-11-26T09:41:34.306139479Z
+  text: Accepted by Horst on 2026-11-26.
