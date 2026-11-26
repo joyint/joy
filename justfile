@@ -777,9 +777,15 @@ publish-crates: sync-tutorial
 # user session with the keychain unlocked. A runner started over ssh
 # cannot sign: macOS refuses the login keychain to a non-interactive
 # session with "User interaction is not allowed".
-# Publish workspace crates, then push + forge release.
+# Publish workspace crates, then push commits and tag. The forge release is
+# NOT created here (JOY-02E4-79): the Release workflow creates it together with
+# its installers (release.yml, "Create or update GitHub Release"), with
+# joy's notes from the annotated tag. Created here it was "Latest" for the
+# ten minutes the installers take to build, and every install of the
+# latest joy in that time (the joy-merge checks, the website's installer
+# check) got a 404.
 publish: publish-crates
-    joy release publish
+    joy release publish --forge none
 
 # Push the AUR package joyint-joy-bin for the published release <version>
 # (with or without the v): the template in packaging/aur takes the
