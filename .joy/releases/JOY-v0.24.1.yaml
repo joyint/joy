@@ -1,0 +1,40 @@
+version: v0.24.1
+date: 2026-11-26
+previous: v0.24.0
+contributors:
+- id: claude delegated-by:horst.schwarz@joydev.com
+  events: 53
+  items: 13
+- id: horst.schwarz@joydev.com
+  events: 14
+  items: 10
+items:
+  stories:
+  - id: JOY-02DB-09
+    title: 'Member files: identity block and member type'
+  - id: JOY-02DC-A9
+    title: Platform members, and the token a job carries from its opening
+  - id: JOY-02DD-D2
+    title: The joy merge job advises instead of pushing
+  - id: JOY-02E0-EC
+    title: The identity resolver says which addresses it found
+  tasks:
+  - id: JOY-02D9-0F
+    title: 'Job lifecycle: one module decides status, signal, offered steps and the words'
+  - id: JOY-02D8-1C
+    title: 'Project data from an older joy: ask for the update where it is needed'
+  - id: JOY-02DB-25
+    title: One door to the OS credential store, closed by one variable in tests
+  bugs:
+  - id: JOY-02DC-DA
+    title: A .joy commit turns a server checkout's submodule pointers back
+  - id: JOY-02DA-62
+    title: 'A job''s trail ends at its creation: the status steps are not in the history'
+  - id: JOY-02D6-C7
+    title: The hint about a newer joy stands above the output and scrolls away
+  - id: JOY-02DE-40
+    title: The update commit names a version from the local marker
+  - id: JOY-02DF-6E
+    title: The web update leaves SECURITY.md and the .gitattributes block behind
+  - id: JOY-02E1-27
+    title: Repository content names files and commands outside the project (security audit C1, E2, E3, I1)
