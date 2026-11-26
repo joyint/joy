@@ -1,7 +1,7 @@
 id: JOY-02DD-D2
 title: The joy merge job advises instead of pushing
 type: story
-status: review
+status: closed
 priority: high
 parent: JOY-02AC-53
 capabilities:
@@ -10,8 +10,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T18:32:20.419251298Z
-updated: 2026-10-20T07:45:05.024051730Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-11-26T08:04:10.209355819Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Since mid 2026 GitHub puts every workflow run that a GITHUB_TOKEN push creates on a pull request into an approval-required state (docs: Triggering a workflow, GITHUB_TOKEN; verified on 2026-10-18 in joyint-test/joy-merge-probe and on joyint/joy#89, #90). The merge commit that 'joy merge ci' pushed is such a push, so every pull request it helped waited for a person to click 'Approve and run'. The push setting of the repository changes nothing, workflow_dispatch runs do not count for the pull request, and no event announces the waiting run. The only pushes the forge trusts come from an identity a person set up (GitHub App, token), and that is one mechanism per forge.
 
@@ -44,3 +44,6 @@ comments:
     Fixed on fix/joy-02dd-d2-merge-job-injection (21531438): in the GitHub and Gitea templates every value of the pull request reaches the scripts as a step environment variable (BASE_REF, HEAD_REF, BASE_URL, PR_NUMBER) and the scripts read "$HEAD_REF" etc. Nobody sets anything in their project; GitHub fills the variables from the event as before. What the job does and says is unchanged. GitLab already read $CI_MERGE_REQUEST_SOURCE_BRANCH_NAME. This repository's joy-merge.yml refreshed from the template.
 
     Test: init.rs no_job_script_expands_an_expression (no run script of the GitHub or Gitea template contains ${{; fails on the old templates); the_job_advises_and_never_pushes now expects --head "$HEAD_REF". joy-core init tests green. Other repositories (jyn, crypt, joy-vscode, jon, joyint-forge-test, users) get the file with joy update after the next release.
+- author: horst.schwarz@joydev.com
+  date: 2026-11-26T08:04:10.164020893Z
+  text: Accepted by Horst on 2026-11-26.

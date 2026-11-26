@@ -1,7 +1,7 @@
 id: JOY-02DC-A9
 title: Platform members, and the token a job carries from its opening
 type: story
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -11,8 +11,8 @@ capabilities:
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-10-18T15:21:01.006615027Z
-updated: 2026-11-23T18:20:35.770214500Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-11-26T08:04:10.141819925Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Implements JI-01A7-0F in joy.
 
@@ -28,3 +28,6 @@ comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-11-23T18:20:35.708486581Z
   text: 'Built on feat/jobs-run-with-a-token-from-the-opener (needs crypt CRYPT-001A-3E). joy-core: JobSpec.runs_on and JobSpec.token; auth::platform (a platform member by its domain, its key, signed for through vouch); auth::job_token (issue for seven days and one job, seal for the platform, accept, session for a round, back to new or revoke); the session claim and Identity.job; Guard::check_at holds a job session to the job, the items in its scope and what lies under them, and a platform to its two writes (its own job back to new, a comment on a job); project format 5 from the first job on a platform. CLI: joy project member add --platform <https-url> (key fetched from /.well-known/joy-platform-key), joy approve/status --platform, a fresh token at every step a person hands the job over with (approve, start, rework, --feedback received), joy job revoke, members in three blocks, joy ls -J with the platform. Also: a platform member is no chat recipient, and a domain is never taken for an AI member where only an id is at hand. Decided while building, to be confirmed: the job scope includes the scope items (a proposing round writes its work as comments there) and a job session creates no items; a platform may comment on any job (it has to say what it left at a job taken back). Tests: joy-core job_token (7), chat store (1), bats jobs_platform (10, a local HTTPS platform; Linux only because a CA file from git config is honoured there only), jobs_level adapted. Run: cargo test --workspace --all-features 1647 passed; bats 648 ok before the jobs_level adaptation, jobs_level + jobs_platform 23 ok after. just lint stops on this machine at joy-core/src/filter.rs:130 (clippy 1.95 nonminimal_bool, code from main, not touched); with that capped no other finding.'
+- author: horst.schwarz@joydev.com
+  date: 2026-11-26T08:04:10.039621585Z
+  text: Accepted by Horst on 2026-11-26.

@@ -1,7 +1,7 @@
 id: JOY-02E1-27
 title: Repository content names files and commands outside the project (security audit C1, E2, E3, I1)
 type: bug
-status: review
+status: closed
 priority: high
 assignees:
 - member: claude
@@ -11,8 +11,8 @@ capabilities:
 effort: 3
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-11-13T20:53:17.799677827Z
-updated: 2026-11-13T20:59:31.892265738Z
-updated_by: claude delegated-by:horst.schwarz@joydev.com
+updated: 2026-11-26T08:04:10.349889792Z
+updated_by: horst.schwarz@joydev.com
 description: |-
   Security audit 2026-10-22, re-checked 2026-11-13 (Joyint Docs, Horst > Reviews). A cloned repository is untrusted content. Three places trusted it.
 
@@ -27,3 +27,6 @@ comments:
 - author: claude delegated-by:horst.schwarz@joydev.com
   date: 2026-11-13T20:59:31.873694776Z
   text: 'Result on branch fix/security-audit. cargo test --workspace: all suites ok (792 in joy-core''s largest suite, none failed). New tests: a_pattern_that_leaves_the_project_changes_nothing, a_symlink_out_of_the_project_is_not_bumped, the_editor_comes_from_the_members_own_config_only. Limits: the editor test proves the helper that reads the personal config, not that the committed defaults file is ignored end to end. jyn''s Cargo.lock got the same rustls updates (rustls 0.23.46, rustls-webpki 0.103.17) on its own branch fix/security-audit; jyn tests ok. E1 (hooks from the committed .joy/hooks) is not changed, it needs Horst''s decision. Not pushed.'
+- author: horst.schwarz@joydev.com
+  date: 2026-11-26T08:04:10.298484598Z
+  text: Accepted by Horst on 2026-11-26.
