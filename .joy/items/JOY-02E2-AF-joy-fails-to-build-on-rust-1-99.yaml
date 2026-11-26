@@ -1,0 +1,13 @@
+id: JOY-02E2-AF
+title: 'joy fails to build on Rust 1.99+: filetime 0.2.30 deprecates set_file_mtime and CI denies warnings'
+type: bug
+status: review
+priority: medium
+capabilities:
+- implement
+- review
+created_by: claude delegated-by:horst.schwarz@joydev.com
+created: 2026-11-26T08:40:06.085152918Z
+updated: 2026-11-26T08:41:13.892839286Z
+updated_by: claude delegated-by:horst.schwarz@joydev.com
+description: The release's lockfile refresh on 2026-11-26 took filetime 0.2.29 -> 0.2.30, which deprecates set_file_mtime when built with Rust >= 1.99 (std::fs::set_times is stable there). CI runs 1.100 with -D warnings, so Lint, Test and bats fail to compile joy-core. joy still builds on older toolchains (zara had 1.95), where std::fs::set_times does not exist, so the calls stay on filetime with the deprecation allowed at the four sites, and the Windows reason for filetime (FILE_WRITE_ATTRIBUTES on read-only loose objects) is kept.

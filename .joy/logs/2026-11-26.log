@@ -6,3 +6,6 @@
 2026-11-26T08:04:10.280Z JOY-02E0-EC item.status_changed "review -> closed" [horst.schwarz@joydev.com]
 2026-11-26T08:04:10.302Z JOY-02E1-27 comment.added [horst.schwarz@joydev.com]
 2026-11-26T08:04:10.352Z JOY-02E1-27 item.status_changed "review -> closed" [horst.schwarz@joydev.com]
+2026-11-26T08:40:06.040Z auth auth.session_created "session created for claude via delegation token" [claude delegated-by:horst.schwarz@joydev.com]
+2026-11-26T08:40:06.087Z JOY-02E2-AF item.created [claude delegated-by:horst.schwarz@joydev.com]
+2026-11-26T08:41:13.895Z JOY-02E2-AF item.status_changed "in-progress -> review" [claude delegated-by:horst.schwarz@joydev.com]
