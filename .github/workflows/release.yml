@@ -557,12 +557,15 @@ jobs:
           # Remove the granular manifests
           rm -f artifacts/*-dist-manifest.json
       # Hand-patched (do NOT regenerate this step via 'dist generate'):
-      # If the release already exists -- because `joy release create --full`
-      # answered Y to the forge-release prompt and joy created the release
-      # first -- we just upload artifacts to it. Otherwise we create the
-      # release ourselves from cargo-dist's announcement notes. This is the
-      # only deviation from the cargo-dist-generated workflow; everything
-      # else stays as cargo-dist produces it. See dist-workspace.toml note.
+      # The release is created HERE, together with its artifacts
+      # (JOY-02E4-79): `just publish` pushes the tag only, so no release
+      # stands as "Latest" without its installers. The notes are joy's
+      # own, which `joy release record` wrote as the annotated tag's
+      # message; a tag without a message gets cargo-dist's announcement.
+      # A release that exists already (somebody created it by hand) just
+      # gets the artifacts. This is the only deviation from the
+      # cargo-dist-generated workflow; everything else stays as cargo-dist
+      # produces it. See dist-workspace.toml note.
       - name: Create or update GitHub Release
         env:
           TAG: "${{ needs.plan.outputs.tag }}"
@@ -572,13 +575,23 @@ jobs:
           RELEASE_COMMIT: "${{ github.sha }}"
         run: |
           echo "$ANNOUNCEMENT_BODY" > $RUNNER_TEMP/notes.txt
+          TITLE="$ANNOUNCEMENT_TITLE"
+          # joy's notes: the message of the annotated tag, when it has one
+          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq 'select(.object.type == "tag") | .object.sha' 2>/dev/null || true)"
+          if [ -n "$tag_object" ]; then
+            tag_notes="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_object" --jq .message 2>/dev/null || true)"
+            if [ -n "$tag_notes" ]; then
+              printf '%s\n' "$tag_notes" > $RUNNER_TEMP/notes.txt
+              TITLE="$TAG"
+            fi
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG exists; uploading artifacts to it."
             gh release upload "$TAG" artifacts/* --clobber
           else
             echo "Release $TAG does not exist; creating with artifacts."
             gh release create "$TAG" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG \
-              --title "$ANNOUNCEMENT_TITLE" --notes-file "$RUNNER_TEMP/notes.txt" \
+              --title "$TITLE" --notes-file "$RUNNER_TEMP/notes.txt" \
               artifacts/*
           fi
 
