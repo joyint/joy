@@ -1,0 +1,17 @@
+version: v0.24.2
+date: 2026-11-26
+previous: v0.24.1
+contributors:
+- id: claude delegated-by:horst.schwarz@joydev.com
+  events: 4
+  items: 2
+- id: horst.schwarz@joydev.com
+  events: 4
+  items: 2
+items:
+  tasks:
+  - id: JOY-02E3-09
+    title: joy-core says when a checkout's HEAD was committed, for the platform's project list
+  bugs:
+  - id: JOY-02E2-AF
+    title: 'joy fails to build on Rust 1.99+: filetime 0.2.30 deprecates set_file_mtime and CI denies warnings'
