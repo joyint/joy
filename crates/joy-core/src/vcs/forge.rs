@@ -3998,6 +3998,16 @@ pub fn head_author(repo_dir: &Path) -> Option<String> {
     email
 }
 
+/// The commit time of the checkout's HEAD, in seconds since the epoch:
+/// when the project last changed, for the platform's project list
+/// (JP-0184-A6, JOY-02E3-09).
+pub fn head_time(repo_dir: &Path) -> Option<i64> {
+    let repo = open(repo_dir).ok()?;
+    let head = repo.head().ok()?.peel_to_commit().ok()?;
+    let seconds = head.time().seconds();
+    Some(seconds)
+}
+
 /// Local commits not on the remote-tracking branch and vice versa, as of
 /// the last fetch (the sync button's honest counters).
 pub fn ahead_behind(repo_dir: &Path) -> anyhow::Result<(u32, u32)> {
