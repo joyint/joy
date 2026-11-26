@@ -1437,6 +1437,8 @@ mod tests {
                     }
                     was_read_only.then_some(permissions)
                 };
+                #[allow(deprecated)]
+                // filetime until std::fs::set_times is in every toolchain (JOY-02E2-AF)
                 filetime::set_file_mtime(&path, when).unwrap();
                 #[cfg(windows)]
                 if let Some(mut permissions) = restore {

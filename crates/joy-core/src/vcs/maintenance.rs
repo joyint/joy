@@ -462,6 +462,9 @@ fn mark_run(store: &Path) {
         let _ = fs::create_dir_all(parent);
     }
     let _ = fs::write(&stamp, b"");
+    // filetime, not std::fs::set_times: std has it only from Rust 1.99 and joy
+    // still builds on older toolchains (JOY-02E2-AF); filetime deprecates it there.
+    #[allow(deprecated)]
     let _ = filetime::set_file_mtime(&stamp, filetime::FileTime::now());
 }
 
@@ -898,6 +901,8 @@ fn probe_directory(dir: &Path) -> Option<Owner> {
     if fs::write(&scratch, b"").is_err() {
         return None;
     }
+    // see mark_run(): filetime stays until std::fs::set_times is in every toolchain
+    #[allow(deprecated)]
     let settable = filetime::set_file_mtime(&scratch, filetime::FileTime::now()).is_ok();
     let owner = owner_of(&scratch);
     let _ = fs::remove_file(&scratch);
@@ -1182,6 +1187,7 @@ mod tests {
             }
             readonly
         };
+        #[allow(deprecated)] // JOY-02E2-AF
         filetime::set_file_mtime(path, filetime::FileTime::from_system_time(when)).unwrap();
         #[cfg(windows)]
         if was_readonly {
