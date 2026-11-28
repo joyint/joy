@@ -1,0 +1,16 @@
+id: JOY-02E5-25
+title: Change state of multiple items in one command
+type: task
+status: new
+priority: medium
+capabilities:
+- implement
+created_by: philipp@joyint.com
+created: 2026-11-28T08:18:08.863420397Z
+updated: 2026-11-28T08:18:08.863420397Z
+updated_by: philipp@joyint.com
+description: |-
+  example
+  ```shell
+  joy close JOY-0001 JOY-0002 JOY-0003
+  ```
