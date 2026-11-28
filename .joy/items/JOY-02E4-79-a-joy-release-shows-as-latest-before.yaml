@@ -1,15 +1,15 @@
 id: JOY-02E4-79
 title: A joy release shows as Latest before its downloads exist
 type: bug
-status: review
+status: closed
 priority: medium
 capabilities:
 - implement
 - review
 created_by: claude delegated-by:horst.schwarz@joydev.com
 created: 2026-11-26T13:44:07.211982499Z
-updated: 2026-11-28T06:50:21.459659323Z
-updated_by: vibe delegated-by:horst.schwarz@joydev.com
+updated: 2026-11-28T06:51:08.069133143Z
+updated_by: horst.schwarz@joydev.com
 description: '2026-11-26, three times in one day: ''just publish'' ran ''joy release publish'', which created the GitHub release at once; the Release workflow uploads the installers about ten minutes later. In between releases/latest/download/joy-cli-installer.sh answers 404, so every joy-merge check (platform#89) and the website''s installer check on the umbrella''s main (runs 45794408979, 45795903444) fail. The release.yml host step already creates the release WITH its artifacts when none exists. So joy''s own publish pushes the tag only (--forge none) and the workflow creates the release in one step, with joy''s notes, which the annotated tag carries (release record writes them as the tag message). Until then releases/latest stays the previous release, which has its downloads.'
 comments:
 - author: vibe delegated-by:horst.schwarz@joydev.com
